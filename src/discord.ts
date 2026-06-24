@@ -31,6 +31,15 @@ function formatDeck(cards: Player["cards"] | undefined) {
 	return cards?.map((card) => card.name).join(" · ") ?? "—";
 }
 
+function buildSupportField(player: Player | undefined, label: string) {
+	if (!player?.supportCards?.length) return;
+	return {
+		name: label,
+		value: player.supportCards.map((card) => card.name).join(", "),
+		inline: true,
+	};
+}
+
 function buildEmbed(battle: Battle, me: Player) {
 	const myCrowns = totalCrowns(battle.team);
 	const opponentCrowns = totalCrowns(battle.opponent);
@@ -41,25 +50,20 @@ function buildEmbed(battle: Battle, me: Player) {
 	const opponent = battle.opponent[0];
 
 	const fields = [
-		{ name: "Deck", value: formatDeck(me.cards) },
-		{ name: "Opponent Deck", value: formatDeck(opponent?.cards) },
-		me.supportCards?.length
-			? {
-					name: "Tower Troop",
-					value: me.supportCards.map((card) => card.name).join(", "),
-					inline: true,
-				}
-			: undefined,
-		{ name: "Opponent", value: opponent?.name ?? "Unknown", inline: true },
+		{ name: "Deck", value: formatDeck(me.cards), inline: true },
+		buildSupportField(me, "Tower Troop"),
+		{ name: "Opponent Deck", value: formatDeck(opponent?.cards), inline: true },
+		buildSupportField(opponent, "Opponent Tower Troop"),
 	].filter(Boolean);
 
 	const embed = {
-		title: `${result} ${String(myCrowns)}-${String(opponentCrowns)} · ${me.name}`,
+		title: `${result} · ${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
 		color,
 		fields,
 		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
 		timestamp: battle.battleTime,
 	};
+
 	return embed;
 }
 
