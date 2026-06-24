@@ -1,0 +1,25 @@
+{
+	"hooks": {
+		"PostToolUse": [
+			{
+				"matcher": "Write|Edit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "cd \"$CLAUDE_PROJECT_DIR\" && pnpm run fmt",
+						"statusMessage": "Formatting..."
+					}
+				]
+			}
+		]
+	},
+	"attribution": {
+		"commit": "",
+		"pr": ""
+	},
+	"enabledPlugins": {
+		"code-simplifier@claude-plugins-official": true,
+		"typescript-lsp@claude-plugins-official": true,
+		"commit-commands@claude-plugins-official": true
+	}
+}
