@@ -5,15 +5,17 @@
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy --minify",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings",
-		"lint": "oxlint && eslint",
+		"lint": "oxlint",
 		"fmt": "oxfmt"
 	},
 	"dependencies": {
-		"hono": "^4.12.27"
+		"hono": "^4.12.27",
+		"valibot": "^1.4.1"
 	},
 	"devDependencies": {
 		"oxfmt": "^0.56.0",
 		"oxlint": "^1.71.0",
+		"oxlint-tsgolint": "^0.23.0",
 		"wrangler": "^4.4.0"
 	}
 }

@@ -3,36 +3,28 @@
 	"name": "stalk",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-06-24",
-	// "compatibility_flags": [
-	//   "nodejs_compat"
-	// ],
-	// "vars": {
-	//   "MY_VAR": "my-variable"
-	// },
-	// "kv_namespaces": [
-	//   {
-	//     "binding": "MY_KV_NAMESPACE",
-	//     "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-	//   }
-	// ],
-	// "r2_buckets": [
-	//   {
-	//     "binding": "MY_BUCKET",
-	//     "bucket_name": "my-bucket"
-	//   }
-	// ],
-	// "d1_databases": [
-	//   {
-	//     "binding": "MY_DB",
-	//     "database_name": "my-database",
-	//     "database_id": ""
-	//   }
-	// ],
-	// "ai": {
-	//   "binding": "AI"
-	// },
-	// "observability": {
-	//   "enabled": true,
-	//   "head_sampling_rate": 1
-	// }
+	// No public *.workers.dev URL: this worker only runs on its cron trigger,
+	// so there is nothing to expose and the account subdomain stays hidden.
+	"workers_dev": false,
+	"triggers": {
+		// Poll every 5 minutes.
+		"crons": ["*/5 * * * *"],
+	},
+	"vars": {
+		// Player tag to track (keep the leading #).
+		"PLAYER_TAG": "#G9GY008R",
+	},
+	"kv_namespaces": [
+		{
+			"binding": "STALK_KV",
+			"id": "da481916d0774beeba227fd2bb8b5c67",
+			"remote": true,
+		},
+	],
+	"observability": {
+		"enabled": true,
+	},
+	// Secrets (set via `wrangler secret put`, never in this file):
+	//   CR_API_TOKEN          — Clash Royale API token (whitelisted to the RoyaleAPI proxy IP)
+	//   DISCORD_WEBHOOK_URL   — Discord channel webhook URL
 }
