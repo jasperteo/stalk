@@ -4,6 +4,12 @@ const COLOR_WIN = 0x57_f2_87; /* Green */
 const COLOR_LOSS = 0xed_42_45; /* Red */
 const COLOR_DRAW = 0xfe_e7_5c; /* Yellow */
 
+const OUTCOMES = {
+	[1]: { result: "<:goblin_boohoo:1517617172623397076> Victory", color: COLOR_WIN },
+	[-1]: { result: "<:cough:1518800394627584031> Defeat", color: COLOR_LOSS },
+	[0]: { result: "🤝 Draw", color: COLOR_DRAW },
+};
+
 function normalizeTag(tag: string) {
 	const normalized = tag.replace(/^#/, "").toUpperCase();
 	return normalized;
@@ -21,22 +27,22 @@ function totalCrowns(players: Player[]) {
 	return total;
 }
 
+function formatDeck(cards: Player["cards"] | undefined) {
+	return cards?.map((card) => card.name).join(" · ") || "—";
+}
+
 function buildEmbed(battle: Battle, me: Player) {
 	const myCrowns = totalCrowns(battle.team);
 	const opponentCrowns = totalCrowns(battle.opponent);
-	const opponentName = battle.opponent[0]?.name ?? "Unknown";
+	const diff = Math.sign(myCrowns - opponentCrowns);
 
-	const won = myCrowns > opponentCrowns;
-	const lost = myCrowns < opponentCrowns;
-	const result = won
-		? "<:goblin_boohoo:1517617172623397076> Victory"
-		: lost
-			? "<:cough:1518800394627584031> Defeat"
-			: "🤝 Draw";
-	const color = won ? COLOR_WIN : lost ? COLOR_LOSS : COLOR_DRAW;
+	const { result, color } = OUTCOMES[diff as 1 | -1 | 0];
+
+	const opponent = battle.opponent[0];
 
 	const fields = [
-		{ name: "Deck", value: me.cards.map((card) => card.name).join(" · ") || "—" },
+		{ name: "Deck", value: formatDeck(me.cards) },
+		{ name: "Opponent Deck", value: formatDeck(opponent?.cards) },
 		me.supportCards?.length
 			? {
 					name: "Tower Troop",
@@ -44,11 +50,11 @@ function buildEmbed(battle: Battle, me: Player) {
 					inline: true,
 				}
 			: undefined,
-		{ name: "Opponent", value: opponentName, inline: true },
+		{ name: "Opponent", value: opponent?.name ?? "Unknown", inline: true },
 	].filter(Boolean);
 
 	const embed = {
-		title: `${result} ${myCrowns}-${opponentCrowns} · ${me.name}`,
+		title: `${result} ${String(myCrowns)}-${String(opponentCrowns)} · ${me.name}`,
 		color,
 		fields,
 		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
@@ -70,6 +76,6 @@ export async function notifyBattle(webhookUrl: string, playerTag: string, battle
 	});
 	if (!response.ok) {
 		const body = await response.text();
-		throw new Error(`Discord webhook ${response.status}: ${body.slice(0, 200)}`);
+		throw new Error(`Discord webhook ${String(response.status)}: ${body.slice(0, 200)}`);
 	}
 }
