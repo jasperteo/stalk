@@ -5,7 +5,12 @@ const oxlintConfig = defineConfig({
 	categories: { correctness: "error" },
 	options: { typeAware: true, typeCheck: true },
 	env: { builtin: true, es2026: true },
-	// rules: {},
+	rules: {
+		"@typescript-eslint/no-import-type-side-effects": "error",
+		"@typescript-eslint/consistent-type-imports": "error",
+		"@typescript-eslint/consistent-type-exports": "error",
+		"@typescript-eslint/consistent-type-definitions": ["error", "type"],
+	},
 });
 
 export default oxlintConfig;
