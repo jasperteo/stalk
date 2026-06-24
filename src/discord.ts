@@ -28,7 +28,7 @@ function totalCrowns(players: Player[]) {
 }
 
 function formatDeck(cards: Player["cards"] | undefined) {
-	return cards?.map((card) => card.name).join(" · ") || "—";
+	return cards?.map((card) => card.name).join(" · ") ?? "—";
 }
 
 function buildEmbed(battle: Battle, me: Player) {
