@@ -7,9 +7,24 @@ const COLOR_DRAW = 0xfe_e7_5c; /* Yellow */
 const SPACER_FIELD = { name: "\u200B", value: "\u200B", inline: false } as const;
 
 const OUTCOMES = {
-	[1]: { result: "<:goblin_boohoo:1517617172623397076> Victory", color: COLOR_WIN },
-	[-1]: { result: "<:cough:1518800394627584031> Defeat", color: COLOR_LOSS },
-	[0]: { result: "🤝 Draw", color: COLOR_DRAW },
+	[1]: {
+		result: "Victory",
+		color: COLOR_WIN,
+		thumbnail:
+			"https://media.discordapp.net/stickers/1519442354766086144.webp?size=320&quality=lossless",
+	},
+	[-1]: {
+		result: "Defeat",
+		color: COLOR_LOSS,
+		thumbnail:
+			"https://media.discordapp.net/stickers/1518800467675578589.webp?size=320&quality=lossless",
+	},
+	[0]: {
+		result: "Draw",
+		color: COLOR_DRAW,
+		thumbnail:
+			"https://media.discordapp.net/stickers/1519078867950764182.webp?size=320&quality=lossless",
+	},
 };
 
 function normalizeTag(tag: string) {
@@ -47,7 +62,7 @@ function buildEmbed(battle: Battle, me: Player) {
 	const opponentCrowns = totalCrowns(battle.opponent);
 	const diff = Math.sign(myCrowns - opponentCrowns);
 
-	const { result, color } = OUTCOMES[diff as 1 | -1 | 0];
+	const { result, color, thumbnail } = OUTCOMES[diff as 1 | -1 | 0];
 
 	const opponent = battle.opponent[0];
 
@@ -62,6 +77,7 @@ function buildEmbed(battle: Battle, me: Player) {
 	const embed = {
 		title: `${result} · ${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
 		color,
+		thumbnail: { url: thumbnail },
 		fields,
 		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
 		timestamp: battle.battleTime,
