@@ -28,6 +28,7 @@ export const BattleSchema = v.object({
 		),
 		v.isoTimestamp()
 	),
+	// oxlint-disable-next-line unicorn/max-nested-calls
 	gameMode: v.optional(v.object({ name: v.string() })),
 	team: v.array(PlayerSchema),
 	opponent: v.array(PlayerSchema),
