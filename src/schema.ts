@@ -20,6 +20,7 @@ const PlayerSchema = v.object({
 export const BattleSchema = v.object({
 	type: v.string(),
 	// Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); normalize to standard ISO.
+	// oxlint-disable-next-line unicorn/max-nested-calls
 	battleTime: v.pipe(
 		v.string(),
 		v.transform((value) =>

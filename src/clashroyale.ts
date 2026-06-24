@@ -23,7 +23,9 @@ export async function fetchBattlelog(playerTag: string, token: string) {
 
 	if (!response.ok) {
 		const body = await response.text();
-		throw new Error(`Clash Royale API ${response.status} for ${playerTag}: ${body.slice(0, 200)}`);
+		throw new Error(
+			`Clash Royale API ${String(response.status)} for ${playerTag}: ${body.slice(0, 200)}`
+		);
 	}
 
 	const json = await response.json();
