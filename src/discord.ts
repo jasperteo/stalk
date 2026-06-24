@@ -28,24 +28,27 @@ function buildEmbed(battle: Battle, me: Player) {
 
 	const won = myCrowns > opponentCrowns;
 	const lost = myCrowns < opponentCrowns;
-	const result = won ? "🏆 Victory" : lost ? "💀 Defeat" : "🤝 Draw";
+	const result = won
+		? "<:goblin_boohoo:1517617172623397076> Victory"
+		: lost
+			? "<:cough:1518800394627584031> Defeat"
+			: "🤝 Draw";
 	const color = won ? COLOR_WIN : lost ? COLOR_LOSS : COLOR_DRAW;
 
-	const fields: { name: string; value: string; inline?: boolean }[] = [
+	const fields = [
 		{ name: "Deck", value: me.cards.map((card) => card.name).join(" · ") || "—" },
-	];
-
-	if (me.supportCards && me.supportCards.length > 0) {
-		fields.push({
-			name: "Tower Troop",
-			value: me.supportCards.map((card) => card.name).join(", "),
-			inline: true,
-		});
-	}
-	fields.push({ name: "Opponent", value: opponentName, inline: true });
+		me.supportCards?.length
+			? {
+					name: "Tower Troop",
+					value: me.supportCards.map((card) => card.name).join(", "),
+					inline: true,
+				}
+			: undefined,
+		{ name: "Opponent", value: opponentName, inline: true },
+	].filter(Boolean);
 
 	const embed = {
-		title: `${result} ${myCrowns}–${opponentCrowns} · ${me.name}`,
+		title: `${result} ${myCrowns}-${opponentCrowns} · ${me.name}`,
 		color,
 		fields,
 		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
