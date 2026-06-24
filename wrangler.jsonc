@@ -7,8 +7,8 @@
 	// so there is nothing to expose and the account subdomain stays hidden.
 	"workers_dev": false,
 	"triggers": {
-		// Poll every 5 minutes.
-		"crons": ["*/5 * * * *"],
+		// Poll every 1 minute.
+		"crons": ["*/1 * * * *"],
 	},
 	"vars": {
 		// Player tag to track (keep the leading #).
