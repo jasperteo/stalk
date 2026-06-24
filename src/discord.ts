@@ -4,6 +4,8 @@ const COLOR_WIN = 0x57_f2_87; /* Green */
 const COLOR_LOSS = 0xed_42_45; /* Red */
 const COLOR_DRAW = 0xfe_e7_5c; /* Yellow */
 
+const SPACER_FIELD = { name: "\u200B", value: "\u200B", inline: false } as const;
+
 const OUTCOMES = {
 	[1]: { result: "<:goblin_boohoo:1517617172623397076> Victory", color: COLOR_WIN },
 	[-1]: { result: "<:cough:1518800394627584031> Defeat", color: COLOR_LOSS },
@@ -52,6 +54,7 @@ function buildEmbed(battle: Battle, me: Player) {
 	const fields = [
 		{ name: "Deck", value: formatDeck(me.cards), inline: true },
 		buildSupportField(me, "Tower Troop"),
+		me.supportCards?.length ? SPACER_FIELD : undefined,
 		{ name: "Opponent Deck", value: formatDeck(opponent?.cards), inline: true },
 		buildSupportField(opponent, "Opponent Tower Troop"),
 	].filter(Boolean);
