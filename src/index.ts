@@ -13,14 +13,14 @@ type Env = CloudflareBindings & {
 
 const app = new Hono<{ Bindings: Env }>();
 
-// Health check endpoint for Workers Dev and Cloudflare health checks.
+/** Health check endpoint for Workers Dev and Cloudflare health checks. */
 app.get("/", (ctx) => ctx.json({ status: "ok" }));
 
 async function poll(env: Env, target: Target) {
 	const { tag, webhook } = target;
 	try {
-		const battles = await fetchBattlelog(tag, env.CR_API_TOKEN);
-		const latest = latestBattle(battles);
+		const entries = await fetchBattlelog(tag, env.CR_API_TOKEN);
+		const latest = latestBattle(entries);
 		if (latest === undefined) return;
 
 		// Cursor is namespaced per tag, so multiple players share one KV without colliding.
@@ -43,8 +43,10 @@ async function poll(env: Env, target: Target) {
 	}
 }
 
-// Parse the TARGETS secret, failing soft: a malformed secret logs once and polls nobody
-// rather than throwing on every cron tick.
+/**
+ * Parse the TARGETS secret, failing soft: a malformed secret logs once and polls nobody rather than
+ * throwing on every cron tick.
+ */
 function parseTargets(env: Env): Target[] {
 	try {
 		return v.parse(TargetsSchema, JSON.parse(env.TARGETS));
