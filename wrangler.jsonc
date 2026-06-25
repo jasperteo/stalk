@@ -4,10 +4,9 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2026-06-24",
 	"workers_dev": true,
-	"triggers": {
-		// Poll every 1 minute.
-		"crons": ["*/1 * * * *"],
-	},
+	"minify": true,
+	"observability": { "enabled": true },
+	"triggers": { "crons": ["*/1 * * * *"] }, // Poll every 1 minute.
 	"kv_namespaces": [
 		{
 			"binding": "STALK_KV",
@@ -15,9 +14,7 @@
 			"remote": true,
 		},
 	],
-	"observability": {
-		"enabled": true,
-	},
+
 	// Secrets (set via `wrangler secret put`, never in this file):
 	//   CR_API_TOKEN   — Clash Royale API token (whitelisted to the RoyaleAPI proxy IP)
 	//   TARGETS        — JSON array of { tag, webhook } pairs, one per tracked player
