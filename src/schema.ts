@@ -20,7 +20,6 @@ const PlayerSchema = v.object({
 export const BattleSchema = v.object({
 	type: v.string(),
 	// Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); normalize to standard ISO.
-	// oxlint-disable-next-line unicorn/max-nested-calls
 	battleTime: v.pipe(
 		v.string(),
 		v.transform((value) =>
@@ -36,3 +35,13 @@ export const BattleSchema = v.object({
 
 export type Player = v.InferOutput<typeof PlayerSchema>;
 export type Battle = v.InferOutput<typeof BattleSchema>;
+
+/** A single player to track and the Discord webhook to notify for them. */
+const TargetSchema = v.object({
+	tag: v.string(),
+	webhook: v.pipe(v.string(), v.url()),
+});
+
+export const TargetsSchema = v.array(TargetSchema);
+
+export type Target = v.InferOutput<typeof TargetsSchema>[number];
