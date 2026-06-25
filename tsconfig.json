@@ -9,6 +9,7 @@
 		"lib": ["ESNext"],
 		"jsx": "react-jsx",
 		"jsxImportSource": "hono/jsx",
+		"types": ["./worker-configuration.d.ts"],
 		"allowJs": true,
 		"resolveJsonModule": true,
 		"allowImportingTsExtensions": true,

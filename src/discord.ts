@@ -10,20 +10,17 @@ const OUTCOMES = {
 	[1]: {
 		result: "Victory",
 		color: COLOR_WIN,
-		thumbnail:
-			"https://media.discordapp.net/stickers/1519442354766086144.webp?size=320&quality=lossless",
+		thumbnail: "https://media.discordapp.net/stickers/1519442354766086144.webp?size=320",
 	},
 	[-1]: {
 		result: "Defeat",
 		color: COLOR_LOSS,
-		thumbnail:
-			"https://media.discordapp.net/stickers/1518800467675578589.webp?size=320&quality=lossless",
+		thumbnail: "https://media.discordapp.net/stickers/1518800467675578589.webp?size=320",
 	},
 	[0]: {
 		result: "Draw",
 		color: COLOR_DRAW,
-		thumbnail:
-			"https://media.discordapp.net/stickers/1519078867950764182.webp?size=320&quality=lossless",
+		thumbnail: "https://media.discordapp.net/stickers/1519078867950764182.webp?size=320",
 	},
 };
 

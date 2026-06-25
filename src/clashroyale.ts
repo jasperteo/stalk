@@ -1,15 +1,11 @@
 import * as v from "valibot";
 
-import { BattleSchema } from "@/schema";
+import { BattleSchema, type Battle } from "@/schema";
 
 // RoyaleAPI proxy: gives Workers a stable outbound IP to whitelist on the token.
 const PROXY_BASE = "https://proxy.royaleapi.dev/v1";
 
-/**
- * Fetches a player's battle log through the RoyaleAPI proxy and returns the battles that pass
- * validation. Unusual battle types that don't match the schema are skipped rather than failing the
- * whole run.
- */
+/** Fetches a player's battle log. Entries that don't match the schema are skipped silently. */
 export async function fetchBattlelog(playerTag: string, token: string) {
 	// encodeURIComponent turns the leading "#" into "%23".
 	const url = `${PROXY_BASE}/players/${encodeURIComponent(playerTag)}/battlelog`;
@@ -31,10 +27,17 @@ export async function fetchBattlelog(playerTag: string, token: string) {
 	const json = await response.json();
 	const entries = v.parse(v.array(v.unknown()), json);
 
-	const battles = entries.flatMap((entry) => {
+	return entries.flatMap((entry) => {
 		const result = v.safeParse(BattleSchema, entry);
 		return result.success ? [result.output] : [];
 	});
+}
 
-	return battles;
+// battleTime is a normalized ISO 8601 string, so lexicographic order == chronological order.
+export function latestBattle(battles: Battle[]) {
+	let latest: Battle | undefined;
+	for (const battle of battles) {
+		if (!latest || battle.battleTime > latest.battleTime) latest = battle;
+	}
+	return latest;
 }

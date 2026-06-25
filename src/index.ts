@@ -1,45 +1,65 @@
 import { Hono } from "hono";
+import * as v from "valibot";
 
-import { fetchBattlelog } from "@/clashroyale";
+import { fetchBattlelog, latestBattle } from "@/clashroyale";
 import { notifyBattle } from "@/discord";
-import { latestBattle } from "@/tracker";
+import { TargetsSchema, type Target } from "@/schema";
 
 type Env = CloudflareBindings & {
 	CR_API_TOKEN: string;
-	DISCORD_WEBHOOK_URL: string;
+	// JSON array of { tag, webhook } pairs; see TargetsSchema.
+	TARGETS: string;
 };
-
-async function poll(env: Env) {
-	const playerTag = env.PLAYER_TAG;
-	try {
-		const battles = await fetchBattlelog(playerTag, env.CR_API_TOKEN);
-		const latest = latestBattle(battles);
-		if (latest === undefined) return;
-
-		const key = `lastBattle:${playerTag}`;
-		// KV returns null for a missing key; normalize to undefined.
-		const lastSeen = (await env.STALK_KV.get(key)) ?? undefined;
-		if (latest.battleTime === lastSeen) return;
-
-		// First run: seed the cursor without posting a possibly-stale battle.
-		if (lastSeen !== undefined) {
-			await notifyBattle(env.DISCORD_WEBHOOK_URL, playerTag, latest);
-		}
-		await env.STALK_KV.put(key, latest.battleTime);
-	} catch (error) {
-		// Log and move on; the next cron run retries without overwriting the cursor.
-		console.error(`Poll failed for ${playerTag}:`, error);
-	}
-}
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/", (c) => c.text("stalk: ok"));
+// Health check endpoint for Workers Dev and Cloudflare health checks.
+app.get("/", (ctx) => ctx.json({ status: "ok" }));
+
+async function poll(env: Env, target: Target) {
+	const { tag, webhook } = target;
+	try {
+		const battles = await fetchBattlelog(tag, env.CR_API_TOKEN);
+		const latest = latestBattle(battles);
+		if (latest === undefined) return;
+
+		// Cursor is namespaced per tag, so multiple players share one KV without colliding.
+		const key = `lastBattle:${tag}`;
+		const lastSeen = await env.STALK_KV.get(key);
+
+		// No new battles since the last run; nothing to do.
+		if (latest.battleTime === lastSeen) return;
+
+		// First run: seed the cursor without posting a possibly-stale battle.
+		if (lastSeen !== null) {
+			await notifyBattle(webhook, tag, latest);
+		}
+
+		// Update the cursor to the latest battle time so that we don't post it again next run.
+		await env.STALK_KV.put(key, latest.battleTime);
+	} catch (error) {
+		// Log and move on; the next cron run retries without overwriting the cursor.
+		console.error(`Poll failed for ${tag}:`, error);
+	}
+}
+
+// Parse the TARGETS secret, failing soft: a malformed secret logs once and polls nobody
+// rather than throwing on every cron tick.
+function parseTargets(env: Env): Target[] {
+	try {
+		return v.parse(TargetsSchema, JSON.parse(env.TARGETS));
+	} catch (error) {
+		console.error("Invalid TARGETS secret:", error);
+		return [];
+	}
+}
 
 const handler: ExportedHandler<Env> = {
 	fetch: app.fetch,
-	scheduled: (_event, env: Env, ctx) => {
-		ctx.waitUntil(poll(env));
+	scheduled: (_controller, env, ctx) => {
+		const targets = parseTargets(env);
+		// allSettled so one player's failure can't sink the others.
+		ctx.waitUntil(Promise.allSettled(targets.map((target) => poll(env, target))));
 	},
 };
 
