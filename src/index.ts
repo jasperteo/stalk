@@ -35,7 +35,9 @@ async function poll(env: Env, target: Target) {
 			await notifyBattle(webhook, tag, latest);
 		}
 
-		// Update the cursor to the latest battle time so that we don't post it again next run.
+		// Advance the cursor only after a successful post: at-least-once delivery. If the webhook
+		// succeeds but this put throws, the next run re-posts a duplicate rather than dropping the
+		// battle — we prefer a rare duplicate over a lost notification.
 		await env.STALK_KV.put(key, latest.battleTime);
 	} catch (error) {
 		// Log and move on; the next cron run retries without overwriting the cursor.
@@ -43,17 +45,24 @@ async function poll(env: Env, target: Target) {
 	}
 }
 
+// Memoized below: TARGETS is a secret, so it's constant for an isolate's lifetime (updating it
+// ships a new Worker version on a fresh isolate). Parsing once per isolate instead of once per cron
+// tick is safe because the cache can't outlive the value it caches.
+let cachedTargets: Target[] | undefined;
+
 /**
  * Parse the TARGETS secret, failing soft: a malformed secret logs once and polls nobody rather than
  * throwing on every cron tick.
  */
 function parseTargets(env: Env): Target[] {
+	if (cachedTargets !== undefined) return cachedTargets;
 	try {
-		return v.parse(TargetsSchema, JSON.parse(env.TARGETS));
+		cachedTargets = v.parse(TargetsSchema, JSON.parse(env.TARGETS));
 	} catch (error) {
 		console.error("Invalid TARGETS secret:", error);
-		return [];
+		cachedTargets = [];
 	}
+	return cachedTargets;
 }
 
 const handler: ExportedHandler<Env> = {
