@@ -41,8 +41,16 @@ function totalCrowns(players: Player[]) {
 	return total;
 }
 
+/** Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. */
+const EVOLUTION_PREFIX: Record<number, string> = { 1: "Evo ", 2: "Hero " };
+
+function formatCardName(card: Player["cards"][number]) {
+	const prefix = EVOLUTION_PREFIX[card.evolutionLevel ?? 0] ?? "";
+	return `${prefix}${card.name}`;
+}
+
 function formatDeck(cards: Player["cards"] | undefined) {
-	return cards?.map((card) => card.name).join(" · ") ?? "—";
+	return cards?.map((card) => formatCardName(card)).join(" · ") ?? "—";
 }
 
 function buildSupportField(player: Player | undefined, label: string) {

@@ -7,6 +7,8 @@ import * as v from "valibot";
 
 const CardSchema = v.object({
 	name: v.string(),
+	// Evolutions report `evolutionLevel: 1`, Heroes `evolutionLevel: 2`; absent for ordinary cards.
+	evolutionLevel: v.optional(v.number()),
 });
 
 const PlayerSchema = v.object({
