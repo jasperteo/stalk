@@ -3,16 +3,10 @@
 	"name": "stalk",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-06-24",
-	// No public *.workers.dev URL: this worker only runs on its cron trigger,
-	// so there is nothing to expose and the account subdomain stays hidden.
-	"workers_dev": false,
+	"workers_dev": true,
 	"triggers": {
 		// Poll every 1 minute.
 		"crons": ["*/1 * * * *"],
-	},
-	"vars": {
-		// Player tag to track (keep the leading #).
-		"PLAYER_TAG": "#G9GY008R",
 	},
 	"kv_namespaces": [
 		{
@@ -25,6 +19,6 @@
 		"enabled": true,
 	},
 	// Secrets (set via `wrangler secret put`, never in this file):
-	//   CR_API_TOKEN          — Clash Royale API token (whitelisted to the RoyaleAPI proxy IP)
-	//   DISCORD_WEBHOOK_URL   — Discord channel webhook URL
+	//   CR_API_TOKEN   — Clash Royale API token (whitelisted to the RoyaleAPI proxy IP)
+	//   TARGETS        — JSON array of { tag, webhook } pairs, one per tracked player
 }
