@@ -5,8 +5,8 @@ import { BattleSchema, type Battle } from "@/schema";
 // RoyaleAPI proxy: gives Workers a stable outbound IP to whitelist on the token.
 const PROXY_BASE = "https://proxy.royaleapi.dev/v1";
 
-/** Fetches a player's battle log. Entries that don't match the schema are skipped silently. */
-export async function fetchBattlelog(playerTag: string, token: string) {
+/** Fetches a player's raw battle log entries. Schema validation is deferred to `latestBattle`. */
+export async function fetchBattlelog(playerTag: string, token: string): Promise<unknown[]> {
 	// encodeURIComponent turns the leading "#" into "%23".
 	const url = `${PROXY_BASE}/players/${encodeURIComponent(playerTag)}/battlelog`;
 
@@ -24,20 +24,37 @@ export async function fetchBattlelog(playerTag: string, token: string) {
 		);
 	}
 
-	const json = await response.json();
-	const entries = v.parse(v.array(v.unknown()), json);
-
-	return entries.flatMap((entry) => {
-		const result = v.safeParse(BattleSchema, entry);
-		return result.success ? [result.output] : [];
-	});
+	return v.parse(v.array(v.unknown()), await response.json());
 }
 
-// battleTime is a normalized ISO 8601 string, so lexicographic order == chronological order.
-export function latestBattle(battles: Battle[]) {
-	let latest: Battle | undefined;
-	for (const battle of battles) {
-		if (!latest || battle.battleTime > latest.battleTime) latest = battle;
+/**
+ * Reuses BattleSchema's own battleTime rule (defined once there) and drops every other key, so we
+ * can order entries without paying for full battle validation. battleTime normalizes to standard
+ * ISO 8601, which is fixed-width and zero-padded, so string order matches chronological order.
+ */
+const BattleTimeSchema = v.pick(BattleSchema, ["battleTime"]);
+
+function rawBattleTime(entry: unknown): string {
+	const result = v.safeParse(BattleTimeSchema, entry);
+	return result.success ? result.output.battleTime : "";
+}
+
+/**
+ * Returns the newest battle entry, fully validated (or undefined if the log is empty or that entry
+ * fails the schema). Picks the newest by cheap timestamp comparison and runs `BattleSchema` on just
+ * that one, so per-target CPU stays flat as the number of tracked players grows.
+ */
+export function latestBattle(entries: unknown[]): Battle | undefined {
+	let newest: unknown;
+	let newestTime = "";
+	for (const entry of entries) {
+		const battleTime = rawBattleTime(entry);
+		if (battleTime > newestTime) {
+			newest = entry;
+			newestTime = battleTime;
+		}
 	}
-	return latest;
+
+	const result = v.safeParse(BattleSchema, newest);
+	return result.success ? result.output : undefined;
 }

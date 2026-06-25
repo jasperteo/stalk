@@ -12,8 +12,10 @@ pnpm cf-typegen   # Regenerate CloudflareBindings types from wrangler.jsonc
 
 ```sh
 pnpm run fmt      # Format (oxfmt)
-pnpm run lint     # Lint (oxlint)
+pnpm run lint     # Lint + type-check (oxlint with oxlint-tsgolint, type-aware)
 ```
+
+`pnpm run lint` is type-aware (oxlint-tsgolint), so it covers type checking — do **not** run a separate `tsc --noEmit`.
 
 ## Architecture
 

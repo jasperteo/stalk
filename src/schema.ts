@@ -33,9 +33,6 @@ export const BattleSchema = v.object({
 	opponent: v.array(PlayerSchema),
 });
 
-export type Player = v.InferOutput<typeof PlayerSchema>;
-export type Battle = v.InferOutput<typeof BattleSchema>;
-
 /** A single player to track and the Discord webhook to notify for them. */
 const TargetSchema = v.object({
 	tag: v.string(),
@@ -44,4 +41,6 @@ const TargetSchema = v.object({
 
 export const TargetsSchema = v.array(TargetSchema);
 
-export type Target = v.InferOutput<typeof TargetsSchema>[number];
+export type Player = v.InferOutput<typeof PlayerSchema>;
+export type Battle = v.InferOutput<typeof BattleSchema>;
+export type Target = v.InferOutput<typeof TargetSchema>;
