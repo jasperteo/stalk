@@ -50,8 +50,8 @@ wrangler secret put TARGETS
 
 ```json
 [
-	{ "tag": "#G9GY008R", "webhook": "https://discord.com/api/webhooks/aaa/bbb" },
-	{ "tag": "#ABC123", "webhook": "https://discord.com/api/webhooks/ccc/ddd" }
+	{ "tag": "#A9AA008R", "webhook": "https://discord.com/api/webhooks/aaa/bbb" },
+	{ "tag": "#P7BB114L", "webhook": "https://discord.com/api/webhooks/ccc/ddd" }
 ]
 ```
 
