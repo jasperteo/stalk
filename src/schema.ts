@@ -8,7 +8,9 @@ import * as v from "valibot";
 const CardSchema = v.object({
 	name: v.string(),
 	// Evolutions report `evolutionLevel: 1`, Heroes `evolutionLevel: 2`; absent for ordinary cards.
-	evolutionLevel: v.optional(v.number()),
+	// `fallback` coerces any other/unknown level to `undefined`, so one new card can't fail the battle.
+	// oxlint-disable-next-line unicorn/no-useless-undefined -- the fallback value is intentional
+	evolutionLevel: v.fallback(v.optional(v.picklist([1, 2])), undefined),
 });
 
 const PlayerSchema = v.object({
@@ -29,7 +31,6 @@ export const BattleSchema = v.object({
 		),
 		v.isoTimestamp()
 	),
-	// oxlint-disable-next-line unicorn/max-nested-calls
 	gameMode: v.optional(v.object({ name: v.string() })),
 	team: v.array(PlayerSchema),
 	opponent: v.array(PlayerSchema),
@@ -46,3 +47,4 @@ export const TargetsSchema = v.array(TargetSchema);
 export type Player = v.InferOutput<typeof PlayerSchema>;
 export type Battle = v.InferOutput<typeof BattleSchema>;
 export type Target = v.InferOutput<typeof TargetSchema>;
+export type Card = v.InferOutput<typeof CardSchema>;

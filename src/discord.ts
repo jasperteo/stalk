@@ -1,4 +1,4 @@
-import type { Battle, Player } from "@/schema";
+import type { Battle, Card, Player } from "@/schema";
 
 const COLOR_WIN = 0x57_f2_87; /* Green */
 const COLOR_LOSS = 0xed_42_45; /* Red */
@@ -22,7 +22,13 @@ const OUTCOMES = {
 		color: COLOR_DRAW,
 		thumbnail: "https://media.discordapp.net/stickers/1519078867950764182.webp?size=320",
 	},
-};
+} as const;
+
+/** Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. */
+const EVOLUTION_PREFIX = {
+	1: "Evo ",
+	2: "Hero ",
+} as const satisfies Record<NonNullable<Card["evolutionLevel"]>, string>;
 
 function normalizeTag(tag: string) {
 	const normalized = tag.replace(/^#/, "").toUpperCase();
@@ -41,15 +47,12 @@ function totalCrowns(players: Player[]) {
 	return total;
 }
 
-/** Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. */
-const EVOLUTION_PREFIX: Record<number, string> = { 1: "Evo ", 2: "Hero " };
-
-function formatCardName(card: Player["cards"][number]) {
-	const prefix = EVOLUTION_PREFIX[card.evolutionLevel ?? 0] ?? "";
+function formatCardName(card: Card) {
+	const prefix = card.evolutionLevel ? EVOLUTION_PREFIX[card.evolutionLevel] : "";
 	return `${prefix}${card.name}`;
 }
 
-function formatDeck(cards: Player["cards"] | undefined) {
+function formatDeck(cards: Card[] | undefined) {
 	return cards?.map((card) => formatCardName(card)).join(" · ") ?? "—";
 }
 
