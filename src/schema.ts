@@ -25,7 +25,7 @@ const PlayerSchema = v.object({
 	// rather than vanishing. King defaults to 0; the princess array is always padded to its full two.
 	kingTowerHitPoints: v.optional(v.number(), 0),
 	princessTowersHitPoints: v.pipe(
-		v.optional(v.array(v.number()), []),
+		v.nullish(v.array(v.number()), []),
 		v.transform((hp): [number, number] => [hp[0] ?? 0, hp[1] ?? 0])
 	),
 	cards: v.array(CardSchema),
