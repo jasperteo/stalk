@@ -107,6 +107,15 @@ function buildMessage(battle: Battle, me: Player) {
 		buildSupportField(opponent, "Opponent Tower Troop"),
 	].filter(Boolean);
 
+	// Weakest-tower HP margin on decisive games, shown as the embed description under the score. A
+	// draw has no verb, so it gets no description (undefined drops the key) and never computes HP.
+	// The margin is the weakest surviving tower on the winning side — the tower the loser was closest
+	// to taking next. Using the winning side avoids "0hp" when both sides felled a tower (e.g. 2-1).
+	const winningSide = diff === 1 ? battle.team : battle.opponent;
+	const description = verb
+		? `${verb} by ${weakestSurvivingTowerHp(winningSide).toLocaleString()}hp`
+		: undefined;
+
 	const embed = {
 		author: {
 			name: "Match History",
@@ -114,6 +123,7 @@ function buildMessage(battle: Battle, me: Player) {
 			url: `https://royaleapi.com/player/${normalizeTag(me.tag)}/battles`,
 		},
 		title: `${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
+		description,
 		color,
 		thumbnail: { url: thumbnail },
 		fields,
@@ -121,15 +131,9 @@ function buildMessage(battle: Battle, me: Player) {
 		timestamp: battle.battleTime,
 	};
 
-	// Content (above the embed): the result as a header, plus a weakest-tower HP margin on decisive
-	// games. A draw has no verb, so it shows the result alone and never computes HP. The margin is
-	// the weakest surviving tower on the winning side — the tower the loser was closest to taking
-	// next. Using the winning side avoids "0hp" when both sides have a destroyed tower (e.g. 2-1).
-	const winningSide = diff === 1 ? battle.team : battle.opponent;
-	const margin = verb
-		? `\n${verb} by ${weakestSurvivingTowerHp(winningSide).toLocaleString()}hp`
-		: "";
-	const content = `# ${result}${margin}`;
+	// Content (above the embed) is just the result header — it doubles as the push-notification text,
+	// which a bare embed wouldn't provide. The HP margin lives in the embed description above.
+	const content = `# ${result}`;
 
 	return { content, embeds: [embed] };
 }
