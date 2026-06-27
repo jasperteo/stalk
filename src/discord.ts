@@ -52,16 +52,21 @@ function totalCrowns(players: Player[]) {
 }
 
 /**
- * Lowest HP among a side's towers — the one closest to falling, or already fallen. The schema
- * backfills destroyed towers as 0, so a felled tower is correctly the lowest. Raw HP is the right
- * unit: a tower dies at 0 regardless of king vs. princess, so "lowest remaining" = "closest to next
- * crown". Returns 0 for an empty side too (no players, so `min` stays Infinity).
+ * Lowest HP among a side's _surviving_ towers (HP > 0) — the one the opponent was closest to taking
+ * next. Destroyed towers (backfilled to 0) are skipped: they've already fallen and are no longer
+ * the "next crown". Returns 0 if no towers survive (all destroyed, or empty side).
  */
-function lowestTowerHp(players: Player[]) {
+function weakestSurvivingTowerHp(players: Player[]) {
 	let min = Infinity;
 	for (const player of players) {
-		min = Math.min(min, player.kingTowerHitPoints);
-		for (const hp of player.princessTowersHitPoints) min = Math.min(min, hp);
+		if (player.kingTowerHitPoints > 0) {
+			min = Math.min(min, player.kingTowerHitPoints);
+		}
+		for (const hp of player.princessTowersHitPoints) {
+			if (hp > 0) {
+				min = Math.min(min, hp);
+			}
+		}
 	}
 	return min === Infinity ? 0 : min;
 }
@@ -110,10 +115,12 @@ function buildMessage(battle: Battle, me: Player) {
 	};
 
 	// Content (above the embed): the result as a header, plus a weakest-tower HP margin on decisive
-	// games. A draw has no verb, so it shows the result alone and never computes HP. The margin is the
-	// absolute gap between each side's weakest tower; the Won/Lost direction already comes from crowns.
+	// games. A draw has no verb, so it shows the result alone and never computes HP. The margin is
+	// the weakest surviving tower on the winning side — the tower the loser was closest to taking
+	// next. Using the winning side avoids "0hp" when both sides have a destroyed tower (e.g. 2-1).
+	const winningSide = diff === 1 ? battle.team : battle.opponent;
 	const margin = verb
-		? `\n${verb} by ${Math.abs(lowestTowerHp(battle.team) - lowestTowerHp(battle.opponent)).toLocaleString()}hp`
+		? `\n${verb} by ${weakestSurvivingTowerHp(winningSide).toLocaleString()}hp`
 		: "";
 	const content = `# ${result}${margin}`;
 
