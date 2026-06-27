@@ -52,15 +52,16 @@ function totalCrowns(players: Player[]) {
 }
 
 /**
- * Lowest HP among a side's surviving towers — the one closest to falling. Raw HP is the right unit:
- * a tower dies at 0 regardless of king vs. princess, so "lowest remaining" = "closest to next
- * crown". Returns 0 when no towers survive (every comparison skipped, so `min` stays Infinity).
+ * Lowest HP among a side's towers — the one closest to falling, or already fallen. The schema
+ * backfills destroyed towers as 0, so a felled tower is correctly the lowest. Raw HP is the right
+ * unit: a tower dies at 0 regardless of king vs. princess, so "lowest remaining" = "closest to next
+ * crown". Returns 0 for an empty side too (no players, so `min` stays Infinity).
  */
 function lowestTowerHp(players: Player[]) {
 	let min = Infinity;
 	for (const player of players) {
-		if (player.kingTowerHitPoints !== undefined) min = Math.min(min, player.kingTowerHitPoints);
-		for (const hp of player.princessTowersHitPoints ?? []) min = Math.min(min, hp);
+		min = Math.min(min, player.kingTowerHitPoints);
+		for (const hp of player.princessTowersHitPoints) min = Math.min(min, hp);
 	}
 	return min === Infinity ? 0 : min;
 }
