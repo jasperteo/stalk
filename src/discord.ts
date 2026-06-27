@@ -4,21 +4,25 @@ const COLOR_WIN = 0x57_f2_87; /* Green */
 const COLOR_LOSS = 0xed_42_45; /* Red */
 const COLOR_DRAW = 0xfe_e7_5c; /* Yellow */
 
-const SPACER_FIELD = { name: "\u200B", value: "\u200B", inline: false } as const;
+const SPACER_FIELD = { name: "\u200B", value: "\u200B" } as const;
 
 const OUTCOMES = {
 	[1]: {
 		result: "Victory",
+		verb: "Won",
 		color: COLOR_WIN,
 		thumbnail: "https://media.discordapp.net/stickers/1519442354766086144.webp?size=320",
 	},
 	[-1]: {
 		result: "Defeat",
+		verb: "Lost",
 		color: COLOR_LOSS,
 		thumbnail: "https://media.discordapp.net/stickers/1518800467675578589.webp?size=320",
 	},
 	[0]: {
 		result: "Draw",
+		// A draw has no margin line, so no verb — `buildMessage` keys the HP line off this being absent.
+		verb: undefined,
 		color: COLOR_DRAW,
 		thumbnail: "https://media.discordapp.net/stickers/1519078867950764182.webp?size=320",
 	},
@@ -47,6 +51,20 @@ function totalCrowns(players: Player[]) {
 	return total;
 }
 
+/**
+ * Lowest HP among a side's surviving towers — the one closest to falling. Raw HP is the right unit:
+ * a tower dies at 0 regardless of king vs. princess, so "lowest remaining" = "closest to next
+ * crown". Returns 0 when no towers survive (every comparison skipped, so `min` stays Infinity).
+ */
+function lowestTowerHp(players: Player[]) {
+	let min = Infinity;
+	for (const player of players) {
+		if (player.kingTowerHitPoints !== undefined) min = Math.min(min, player.kingTowerHitPoints);
+		for (const hp of player.princessTowersHitPoints ?? []) min = Math.min(min, hp);
+	}
+	return min === Infinity ? 0 : min;
+}
+
 function formatCardName(card: Card) {
 	const prefix = card.evolutionLevel ? EVOLUTION_PREFIX[card.evolutionLevel] : "";
 	return `${prefix}${card.name}`;
@@ -57,33 +75,32 @@ function formatDeck(cards: Card[] | undefined) {
 }
 
 function buildSupportField(player: Player | undefined, label: string) {
-	if (!player?.supportCards?.length) return;
+	if (!player?.supportCards.length) return;
 	return {
 		name: label,
 		value: player.supportCards.map((card) => card.name).join(", "),
-		inline: true,
 	};
 }
 
-function buildEmbed(battle: Battle, me: Player) {
+function buildMessage(battle: Battle, me: Player) {
 	const myCrowns = totalCrowns(battle.team);
 	const opponentCrowns = totalCrowns(battle.opponent);
 	const diff = Math.sign(myCrowns - opponentCrowns);
 
-	const { result, color, thumbnail } = OUTCOMES[diff as 1 | -1 | 0];
+	const { result, verb, color, thumbnail } = OUTCOMES[diff as 1 | -1 | 0];
 
 	const opponent = battle.opponent[0];
 
 	const fields = [
-		{ name: "Deck", value: formatDeck(me.cards), inline: true },
+		{ name: "Deck", value: formatDeck(me.cards) },
 		buildSupportField(me, "Tower Troop"),
-		me.supportCards?.length ? SPACER_FIELD : undefined,
-		{ name: "Opponent Deck", value: formatDeck(opponent?.cards), inline: true },
+		SPACER_FIELD,
+		{ name: "Opponent Deck", value: formatDeck(opponent?.cards) },
 		buildSupportField(opponent, "Opponent Tower Troop"),
 	].filter(Boolean);
 
 	const embed = {
-		title: `${result} · ${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
+		title: `${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
 		color,
 		thumbnail: { url: thumbnail },
 		fields,
@@ -91,19 +108,26 @@ function buildEmbed(battle: Battle, me: Player) {
 		timestamp: battle.battleTime,
 	};
 
-	return embed;
+	// Content (above the embed): the result as a header, plus a weakest-tower HP margin on decisive
+	// games. A draw has no verb, so it shows the result alone and never computes HP. The margin is the
+	// absolute gap between each side's weakest tower; the Won/Lost direction already comes from crowns.
+	const margin = verb
+		? `\n${verb} by ${Math.abs(lowestTowerHp(battle.team) - lowestTowerHp(battle.opponent)).toLocaleString()}hp`
+		: "";
+	const content = `# ${result}${margin}`;
+
+	return { content, embeds: [embed] };
 }
 
-/** Posts a single battle to the webhook as an embed. */
+/** Posts a single battle to the webhook: result in the content, matchup details in the embed. */
 export async function notifyBattle(webhookUrl: string, playerTag: string, battle: Battle) {
 	const me = findTrackedPlayer(battle.team, playerTag);
 	if (me === undefined) return;
 
-	const embed = buildEmbed(battle, me);
 	const response = await fetch(webhookUrl, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ embeds: [embed] }),
+		body: JSON.stringify(buildMessage(battle, me)),
 	});
 	if (!response.ok) {
 		const body = await response.text();
