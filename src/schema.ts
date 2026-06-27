@@ -17,8 +17,12 @@ const PlayerSchema = v.object({
 	tag: v.string(),
 	name: v.string(),
 	crowns: v.number(),
+	// Tower HP remaining at match end. The API omits destroyed towers, so both are optional and the
+	// princess array can be length 0–2.
+	kingTowerHitPoints: v.optional(v.number()),
+	princessTowersHitPoints: v.optional(v.array(v.number())),
 	cards: v.array(CardSchema),
-	supportCards: v.optional(v.array(CardSchema)),
+	supportCards: v.array(CardSchema),
 });
 
 export const BattleSchema = v.object({
