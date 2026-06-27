@@ -4,6 +4,8 @@ const COLOR_WIN = 0x57_f2_87; /* Green */
 const COLOR_LOSS = 0xed_42_45; /* Red */
 const COLOR_DRAW = 0xfe_e7_5c; /* Yellow */
 
+const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
+
 const SPACER_FIELD = { name: "\u200B", value: "\u200B" } as const;
 
 const OUTCOMES = {
@@ -106,6 +108,11 @@ function buildMessage(battle: Battle, me: Player) {
 	].filter(Boolean);
 
 	const embed = {
+		author: {
+			name: "Match History",
+			icon_url: ROYALE_API_ICON,
+			url: `https://royaleapi.com/player/${normalizeTag(me.tag)}/battles`,
+		},
 		title: `${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
 		color,
 		thumbnail: { url: thumbnail },
