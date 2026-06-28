@@ -13,7 +13,7 @@ const OUTCOMES = {
 		result: "Victory",
 		verb: "Won",
 		color: COLOR_WIN,
-		thumbnail: "https://media.discordapp.net/stickers/1519442354766086144.webp?size=320",
+		thumbnail: "https://media.discordapp.net/stickers/1520592119734206575.webp?size=320",
 	},
 	[-1]: {
 		result: "Defeat",
