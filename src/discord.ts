@@ -82,6 +82,23 @@ function formatDeck(cards: Card[] | undefined) {
 	return cards?.map((card) => formatCardName(card)).join(" · ") ?? "—";
 }
 
+/**
+ * Trophy progression for a player, e.g. "5,432 → 5,463 (+31)". Absent on modes without trophies
+ * (`startingTrophies` undefined), so the field is dropped entirely. Trophies after the match are
+ * `startingTrophies + trophyChange`; a missing `trophyChange` counts as 0.
+ */
+function buildTrophyField(player: Player | undefined, label: string) {
+	if (player?.startingTrophies === undefined) return;
+	const change = player.trophyChange ?? 0;
+	const after = player.startingTrophies + change;
+	const sign = change > 0 ? "+" : "";
+	return {
+		name: label,
+		value: `${player.startingTrophies.toLocaleString()} → ${after.toLocaleString()} (${sign}${change.toLocaleString()})`,
+		inline: true,
+	};
+}
+
 function buildSupportField(player: Player | undefined, label: string) {
 	if (!player?.supportCards.length) return;
 	return {
@@ -99,7 +116,16 @@ function buildMessage(battle: Battle, me: Player) {
 
 	const opponent = battle.opponent[0];
 
+	// Trophy rows only exist in trophy modes; the spacer below them is dropped too when they're absent,
+	// so non-trophy matches don't open with a dangling empty row.
+	const trophyFields = [
+		buildTrophyField(me, "Trophies"),
+		buildTrophyField(opponent, "Opponent Trophies"),
+	].filter(Boolean);
+
 	const fields = [
+		...trophyFields,
+		...(trophyFields.length > 0 ? [SPACER_FIELD] : []),
 		{ name: "Deck", value: formatDeck(me.cards) },
 		buildSupportField(me, "Tower Troop"),
 		SPACER_FIELD,

@@ -20,6 +20,11 @@ const PlayerSchema = v.object({
 	tag: v.string(),
 	name: v.string(),
 	crowns: v.number(),
+	// Trophy progression for the match. Present on trophy-road/ladder games; absent in modes without
+	// trophies (tournaments, friendlies, Path of Legend), so both are optional. Trophies after the
+	// match are derived as `startingTrophies + trophyChange`.
+	startingTrophies: v.optional(v.number()),
+	trophyChange: v.optional(v.number()),
 	// Tower HP remaining at match end. The API omits destroyed towers, so we backfill them as 0 — a
 	// tower is destroyed exactly when its HP hits 0, so a felled tower reads as the lowest possible
 	// rather than vanishing. King defaults to 0; the princess array is always padded to its full two.
