@@ -13,32 +13,43 @@ app.get("/", (ctx) => ctx.json({ status: "ok" }));
 // One KV handle for the isolate's lifetime; Deno.openKv() opens the Deploy-managed store.
 const kv = await Deno.openKv();
 
-async function poll(target: Target, token: string) {
+/** Per-target result of a poll, tallied into the cron tick's summary log line. */
+type PollOutcome = "posted" | "seeded" | "skipped" | "failed";
+
+async function poll(target: Target, token: string): Promise<PollOutcome> {
 	const { tag, webhook } = target;
 	try {
 		const entries = await fetchBattlelog(tag, token);
 		const latest = latestBattle(entries);
-		if (latest === undefined) return;
+		if (latest === undefined) return "skipped";
 
 		// Cursor is namespaced per tag, so multiple players share one KV without colliding.
 		const key = ["lastBattle", tag];
 		const { value: lastSeen } = await kv.get<string>(key);
 
 		// No new battles since the last run; nothing to do.
-		if (latest.battleTime === lastSeen) return;
+		if (latest.battleTime === lastSeen) return "skipped";
 
 		// First run: seed the cursor without posting a possibly-stale battle.
-		if (lastSeen !== null) {
-			await notifyBattle(webhook, tag, latest);
-		}
+		const isFirstRun = lastSeen === null;
+		if (!isFirstRun) await notifyBattle(webhook, tag, latest);
 
 		// Advance the cursor only after a successful post: at-least-once delivery. If the webhook
 		// succeeds but this put throws, the next run re-posts a duplicate rather than dropping the
 		// battle — we prefer a rare duplicate over a lost notification.
 		await kv.set(key, latest.battleTime);
+
+		// Log only after the effects landed, so the dashboard never claims an action that didn't happen.
+		if (isFirstRun) {
+			console.log(`Seeded cursor for ${tag} (first run, no notification sent)`);
+			return "seeded";
+		}
+		console.log(`Posted battle for ${tag} at ${latest.battleTime}`);
+		return "posted";
 	} catch (error) {
 		// Log and move on; the next cron run retries without overwriting the cursor.
 		console.error(`Poll failed for ${tag}:`, error);
+		return "failed";
 	}
 }
 
@@ -68,12 +79,28 @@ function loadConfig() {
 
 // Poll every minute. Deno.cron registers at module load and runs on Deno Deploy's scheduler.
 Deno.cron("poll-battlelogs", "*/1 * * * *", async () => {
-	// Can't poll without a token; loadConfig has already logged the reason.
 	const { token, targets } = loadConfig();
-	if (token === undefined) return;
 
-	// allSettled so one player's failure can't sink the others.
-	await Promise.allSettled(targets.map((target) => poll(target, token)));
+	// Can't poll without a token; loadConfig already logged why, once. Still emit a heartbeat so a
+	// misconfigured deploy shows up as a loud skipped tick, not a silent dashboard.
+	if (token === undefined) {
+		console.log("poll-battlelogs: skipped tick — CR_API_TOKEN not set");
+		return;
+	}
+
+	// poll() catches its own errors and resolves "failed", so one player's failure can't sink the
+	// others — no rejection path, hence Promise.all over allSettled.
+	const outcomes = await Promise.all(targets.map((target) => poll(target, token)));
+
+	const tally: Record<PollOutcome, number> = { posted: 0, seeded: 0, skipped: 0, failed: 0 };
+	for (const outcome of outcomes) tally[outcome]++;
+
+	// Heartbeat: one line per tick so a quiet minute still shows up on the Deno Deploy dashboard.
+	// Counts are derived from the tally record, so a new PollOutcome can't go missing here.
+	const counts = Object.entries(tally)
+		.map(([outcome, count]) => `${outcome} ${String(count)}`)
+		.join(", ");
+	console.log(`poll-battlelogs: ${String(targets.length)} targets — ${counts}`);
 });
 
 export default app;
