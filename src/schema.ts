@@ -1,4 +1,4 @@
-import * as v from "valibot";
+import * as v from "@valibot/valibot";
 
 /**
  * Only the fields we actually use are validated. `v.object` strips unknown keys, so the Clash

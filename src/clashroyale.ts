@@ -1,6 +1,6 @@
-import * as v from "valibot";
+import * as v from "@valibot/valibot";
 
-import { BattleSchema, type Battle } from "@/schema";
+import { BattleSchema, type Battle } from "@/schema.ts";
 
 // RoyaleAPI proxy: gives Workers a stable outbound IP to whitelist on the token.
 const PROXY_BASE = "https://proxy.royaleapi.dev/v1";
