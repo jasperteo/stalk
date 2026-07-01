@@ -1,8 +1,8 @@
 import type { Battle, Card, Player } from "@/schema.ts";
 
-const COLOR_WIN = 0x57_f2_87; /* Green */
-const COLOR_LOSS = 0xed_42_45; /* Red */
-const COLOR_DRAW = 0xfe_e7_5c; /* Yellow */
+const COLOR_WIN = 0x46_a7_58; /* Green */
+const COLOR_LOSS = 0xe5_48_4d; /* Red */
+const COLOR_DRAW = 0xff_e6_29; /* Yellow */
 
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
 
@@ -13,20 +13,20 @@ const OUTCOMES = {
 		result: "Victory",
 		verb: "Won",
 		color: COLOR_WIN,
-		thumbnail: "https://media.discordapp.net/stickers/1520592119734206575.webp?size=320",
+		thumbnail: "https://cdn.discordapp.com/stickers/1521984131737583717.png?size=512",
 	},
 	[-1]: {
 		result: "Defeat",
 		verb: "Lost",
 		color: COLOR_LOSS,
-		thumbnail: "https://media.discordapp.net/stickers/1518800467675578589.webp?size=320",
+		thumbnail: "https://cdn.discordapp.com/stickers/1521984212402700409.png?size=512",
 	},
 	[0]: {
 		result: "Draw",
 		// A draw has no margin line, so no verb — `buildMessage` keys the HP line off this being absent.
 		verb: undefined,
 		color: COLOR_DRAW,
-		thumbnail: "https://media.discordapp.net/stickers/1519078867950764182.webp?size=320",
+		thumbnail: "https://cdn.discordapp.com/stickers/1521984288466407554.png?size=512",
 	},
 } as const;
 
