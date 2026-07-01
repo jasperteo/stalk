@@ -1,0 +1,26 @@
+{
+	"nodeModulesDir": "auto",
+	"jsrDepsInNodeModules": true,
+	"tasks": {
+		"dev": "deno serve --watch --env-file=.env src/index.ts",
+		"deploy": "deno run -A jsr:@deno/deployctl deploy",
+		"fmt": "oxfmt",
+		"lint": "oxlint && deno lint && deno check --unstable-tsgo src/index.ts"
+	},
+	"imports": {
+		"@/": "./src/",
+		"@hono/hono": "jsr:@hono/hono@^4.12.27",
+		"@valibot/valibot": "jsr:@valibot/valibot@^1.4.2"
+	},
+	"unstable": ["kv", "cron"],
+	"compilerOptions": {
+		"lib": ["deno.window", "deno.unstable"]
+	},
+	"lint": {
+		"rules": { "tags": ["recommended"] }
+	},
+	"fmt": {
+		"exclude": ["**/*"]
+	},
+	"exclude": ["deno.d.ts", "node_modules"]
+}

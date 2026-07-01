@@ -1,4 +1,4 @@
-import type { Battle, Card, Player } from "@/schema";
+import type { Battle, Card, Player } from "@/schema.ts";
 
 const COLOR_WIN = 0x57_f2_87; /* Green */
 const COLOR_LOSS = 0xed_42_45; /* Red */
