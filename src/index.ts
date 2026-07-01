@@ -13,12 +13,9 @@ app.get("/", (ctx) => ctx.json({ status: "ok" }));
 // One KV handle for the isolate's lifetime; Deno.openKv() opens the Deploy-managed store.
 const kv = await Deno.openKv();
 
-async function poll(target: Target) {
+async function poll(target: Target, token: string) {
 	const { tag, webhook } = target;
 	try {
-		const token = Deno.env.get("CR_API_TOKEN");
-		if (token === undefined) throw new Error("CR_API_TOKEN is not set");
-
 		const entries = await fetchBattlelog(tag, token);
 		const latest = latestBattle(entries);
 		if (latest === undefined) return;
@@ -45,29 +42,38 @@ async function poll(target: Target) {
 	}
 }
 
-// Memoized: TARGETS is constant for the isolate's lifetime (changing it redeploys onto a fresh
-// isolate), so parse once per isolate instead of once per cron tick.
-let cachedTargets: Target[] | undefined;
+// Memoized: env vars are constant for the isolate's lifetime (changing one redeploys onto a fresh
+// isolate), so read and validate config once per isolate instead of once per cron tick. Both reads
+// fail soft — a missing token or malformed TARGETS logs once and polls nobody rather than throwing
+// every tick.
+let cachedConfig: { token: string | undefined; targets: Target[] } | undefined;
 
-/**
- * Parse the TARGETS env var, failing soft: a malformed value logs once and polls nobody rather than
- * throwing on every cron tick.
- */
-function parseTargets(): Target[] {
-	if (cachedTargets !== undefined) return cachedTargets;
+function loadConfig() {
+	if (cachedConfig !== undefined) return cachedConfig;
+
+	const token = Deno.env.get("CR_API_TOKEN");
+	if (token === undefined) console.error("CR_API_TOKEN is not set");
+
+	let targets: Target[];
 	try {
-		cachedTargets = v.parse(TargetsSchema, JSON.parse(Deno.env.get("TARGETS") ?? ""));
+		targets = v.parse(TargetsSchema, JSON.parse(Deno.env.get("TARGETS") ?? ""));
 	} catch (error) {
 		console.error("Invalid TARGETS env var:", error);
-		cachedTargets = [];
+		targets = [];
 	}
-	return cachedTargets;
+
+	cachedConfig = { token, targets };
+	return cachedConfig;
 }
 
 // Poll every minute. Deno.cron registers at module load and runs on Deno Deploy's scheduler.
 Deno.cron("poll-battlelogs", "*/1 * * * *", async () => {
+	// Can't poll without a token; loadConfig has already logged the reason.
+	const { token, targets } = loadConfig();
+	if (token === undefined) return;
+
 	// allSettled so one player's failure can't sink the others.
-	await Promise.allSettled(parseTargets().map((target) => poll(target)));
+	await Promise.allSettled(targets.map((target) => poll(target, token)));
 });
 
 export default app;
