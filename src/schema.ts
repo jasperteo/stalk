@@ -16,8 +16,17 @@ const CardSchema = v.object({
 	evolutionLevel: v.fallback(v.optional(v.picklist([1, 2])), undefined),
 });
 
+/**
+ * Canonical player tag: uppercase with a leading "#". Config and API tags both normalize here, so
+ * consumers (player lookup, KV cursor keys) can compare them with plain `===`.
+ */
+const TagSchema = v.pipe(
+	v.string(),
+	v.transform((tag) => (tag.startsWith("#") ? tag : `#${tag}`).toUpperCase())
+);
+
 const PlayerSchema = v.object({
-	tag: v.string(),
+	tag: TagSchema,
 	name: v.string(),
 	crowns: v.number(),
 	// Trophy progression for the match. Present on trophy-road/ladder games; absent in modes without
@@ -39,13 +48,19 @@ const PlayerSchema = v.object({
 
 export const BattleSchema = v.object({
 	type: v.string(),
-	// Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); normalize to standard ISO.
+	// Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that basic
+	// format natively and rejects invalid dates. fractionalSecondDigits keeps the exact fixed-width
+	// ".000Z" shape the KV cursors already store, so string order stays chronological.
 	battleTime: v.pipe(
 		v.string(),
-		v.transform((value) =>
-			value.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/, "$1-$2-$3T$4:$5:$6")
-		),
-		v.isoTimestamp()
+		v.rawTransform(({ dataset, addIssue, NEVER }) => {
+			try {
+				return Temporal.Instant.from(dataset.value).toString({ fractionalSecondDigits: 3 });
+			} catch {
+				addIssue({ message: "Invalid battleTime" });
+				return NEVER;
+			}
+		})
 	),
 	gameMode: v.optional(v.object({ name: v.string() })),
 	team: v.array(PlayerSchema),
@@ -54,11 +69,15 @@ export const BattleSchema = v.object({
 
 /** A single player to track and the Discord webhook to notify for them. */
 const TargetSchema = v.object({
-	tag: v.string(),
+	tag: TagSchema,
 	webhook: v.pipe(v.string(), v.url()),
 });
 
-export const TargetsSchema = v.array(TargetSchema);
+/**
+ * The raw TARGETS env var: a JSON string of Target pairs. parseJson makes malformed JSON a normal
+ * validation issue, and an unset env var (undefined) fails the string step instead of throwing.
+ */
+export const TargetsEnvSchema = v.pipe(v.string(), v.parseJson(), v.array(TargetSchema));
 
 export type Player = v.InferOutput<typeof PlayerSchema>;
 export type Battle = v.InferOutput<typeof BattleSchema>;
