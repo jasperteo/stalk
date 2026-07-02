@@ -31,13 +31,15 @@ export async function fetchBattlelog(playerTag: string, token: string): Promise<
  * Reuses BattleSchema's own battleTime rule (defined once there) and drops every other key, so we
  * can order entries without paying for full battle validation. battleTime normalizes to standard
  * ISO 8601, which is fixed-width and zero-padded, so string order matches chronological order.
+ * Entries that fail the schema fall back to "", which never wins the newest-comparison.
  */
-const BattleTimeSchema = v.pick(BattleSchema, ["battleTime"]);
-
-function rawBattleTime(entry: unknown): string {
-	const result = v.safeParse(BattleTimeSchema, entry);
-	return result.success ? result.output.battleTime : "";
-}
+const BattleTimeSchema = v.fallback(
+	v.pipe(
+		v.pick(BattleSchema, ["battleTime"]),
+		v.transform((battle) => battle.battleTime)
+	),
+	""
+);
 
 /**
  * Returns the newest battle entry, fully validated (or undefined if the log is empty or that entry
@@ -48,7 +50,7 @@ export function latestBattle(entries: unknown[]): Battle | undefined {
 	let newest: unknown;
 	let newestTime = "";
 	for (const entry of entries) {
-		const battleTime = rawBattleTime(entry);
+		const battleTime = v.parse(BattleTimeSchema, entry);
 		if (battleTime > newestTime) {
 			newest = entry;
 			newestTime = battleTime;

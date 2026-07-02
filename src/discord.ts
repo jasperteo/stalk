@@ -36,15 +36,9 @@ const EVOLUTION_PREFIX = {
 	2: "Hero ",
 } as const satisfies Record<NonNullable<Card["evolutionLevel"]>, string>;
 
-function normalizeTag(tag: string) {
-	const normalized = tag.replace(/^#/, "").toUpperCase();
-	return normalized;
-}
-
+// Both tags arrive schema-normalized to canonical "#UPPERCASE" form, so plain equality works.
 function findTrackedPlayer(team: Player[], playerTag: string) {
-	const normalized = normalizeTag(playerTag);
-	const trackedPlayer = team.find((player) => normalizeTag(player.tag) === normalized) ?? team[0];
-	return trackedPlayer;
+	return team.find((player) => player.tag === playerTag) ?? team[0];
 }
 
 function totalCrowns(players: Player[]) {
@@ -146,7 +140,8 @@ function buildMessage(battle: Battle, me: Player) {
 		author: {
 			name: "Match History",
 			icon_url: ROYALE_API_ICON,
-			url: `https://royaleapi.com/player/${normalizeTag(me.tag)}/battles`,
+			// royaleapi.com profile paths use the tag without its leading "#".
+			url: `https://royaleapi.com/player/${me.tag.replace("#", "")}/battles`,
 		},
 		title: `${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
 		description,
