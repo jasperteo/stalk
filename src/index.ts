@@ -3,7 +3,7 @@ import * as v from "@valibot/valibot";
 
 import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
 import { notifyBattle } from "@/discord.ts";
-import { TargetsSchema, type Target } from "@/schema.ts";
+import { TargetsEnvSchema, type Target } from "@/schema.ts";
 
 const app = new Hono();
 
@@ -79,13 +79,9 @@ function loadConfig() {
 	const token = Deno.env.get("CR_API_TOKEN");
 	if (token === undefined) console.error("CR_API_TOKEN is not set");
 
-	let targets: Target[];
-	try {
-		targets = v.parse(TargetsSchema, JSON.parse(Deno.env.get("TARGETS") ?? ""));
-	} catch (error) {
-		console.error("Invalid TARGETS env var:", error);
-		targets = [];
-	}
+	const parsed = v.safeParse(TargetsEnvSchema, Deno.env.get("TARGETS"));
+	if (!parsed.success) console.error("Invalid TARGETS env var:", v.flatten(parsed.issues));
+	const targets = parsed.success ? parsed.output : [];
 
 	cachedConfig = { token, targets };
 	return cachedConfig;
