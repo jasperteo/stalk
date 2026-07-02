@@ -9,11 +9,19 @@ declare namespace Deno {
 
 	export function cron(name: string, schedule: string, handler: () => void | Promise<void>): void;
 
-	export type KvEntryMaybe<T> = {
+	export type KvEntry<T> = {
 		key: readonly unknown[];
-		value: T | null;
-		versionstamp: string | null;
+		value: T;
+		versionstamp: string;
 	};
+
+	export type KvEntryMaybe<T> =
+		| KvEntry<T>
+		| {
+				key: readonly unknown[];
+				value: null;
+				versionstamp: null;
+		  };
 
 	export type KvCommitResult = {
 		ok: true;
@@ -23,6 +31,7 @@ declare namespace Deno {
 	export type Kv = {
 		get<T = unknown>(key: readonly unknown[]): Promise<KvEntryMaybe<T>>;
 		set(key: readonly unknown[], value: unknown): Promise<KvCommitResult>;
+		list<T = unknown>(selector: { prefix: readonly unknown[] }): AsyncIterableIterator<KvEntry<T>>;
 	};
 
 	export function openKv(path?: string): Promise<Kv>;

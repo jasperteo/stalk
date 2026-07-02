@@ -7,11 +7,26 @@ import { TargetsSchema, type Target } from "@/schema.ts";
 
 const app = new Hono();
 
+// One KV handle for the isolate's lifetime; Deno.openKv() opens the Deploy-managed store.
+const kv = await Deno.openKv();
+
+// Single definition of the cursor key schema, shared by poll() and the read-only endpoint so the
+// two can't drift. Keys are namespaced per tag, so multiple players share one KV without colliding.
+const LAST_BATTLE_PREFIX = "lastBattle";
+const lastBattleKey = (tag: string) => [LAST_BATTLE_PREFIX, tag] as const;
+
 /** Health check endpoint for Deno Deploy health checks. */
 app.get("/", (ctx) => ctx.json({ status: "ok" }));
 
-// One KV handle for the isolate's lifetime; Deno.openKv() opens the Deploy-managed store.
-const kv = await Deno.openKv();
+/** Read-only view of the lastBattle cursors; no secrets live in KV, so this is safe to expose. */
+app.get("/kv/last-battle", async (ctx) => {
+	const cursors: Record<string, string> = {};
+	for await (const entry of kv.list<string>({ prefix: [LAST_BATTLE_PREFIX] })) {
+		const [, tag] = entry.key;
+		cursors[String(tag)] = entry.value;
+	}
+	return ctx.json(cursors);
+});
 
 /** Per-target result of a poll, tallied into the cron tick's summary log line. */
 type PollOutcome = "posted" | "seeded" | "skipped" | "failed";
@@ -23,8 +38,7 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		const latest = latestBattle(entries);
 		if (latest === undefined) return "skipped";
 
-		// Cursor is namespaced per tag, so multiple players share one KV without colliding.
-		const key = ["lastBattle", tag];
+		const key = lastBattleKey(tag);
 		const { value: lastSeen } = await kv.get<string>(key);
 
 		// No new battles since the last run; nothing to do.
