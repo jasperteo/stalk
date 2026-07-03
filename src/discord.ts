@@ -1,8 +1,11 @@
 import type { Battle, Card, Player } from "@/schema.ts";
 
-const COLOR_WIN = 0x46_a7_58; /* Green */
-const COLOR_LOSS = 0xe5_48_4d; /* Red */
-const COLOR_DRAW = 0xff_e6_29; /* Yellow */
+/** Green */
+const COLOR_WIN = 0x46_a7_58;
+/** Red */
+const COLOR_LOSS = 0xe5_48_4d;
+/** Yellow */
+const COLOR_DRAW = 0xff_e6_29;
 
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
 
@@ -23,7 +26,10 @@ const OUTCOMES = {
 	},
 	[0]: {
 		result: "Draw",
-		// A draw has no margin line, so no verb — `buildMessage` keys the HP line off this being absent.
+		/**
+		 * A draw has no margin line, so no verb — `buildMessage` keys the HP line off this being
+		 * absent.
+		 */
 		verb: undefined,
 		color: COLOR_DRAW,
 		thumbnail: "https://cdn.discordapp.com/stickers/1521984288466407554.png?size=512",
@@ -36,14 +42,18 @@ const EVOLUTION_PREFIX = {
 	2: "Hero ",
 } as const satisfies Record<NonNullable<Card["evolutionLevel"]>, string>;
 
-// Both tags arrive schema-normalized to canonical "#UPPERCASE" form, so plain equality works.
+/** Both tags arrive schema-normalized to canonical "#UPPERCASE" form, so plain equality works. */
 function findTrackedPlayer(team: Player[], playerTag: string) {
 	return team.find((player) => player.tag === playerTag) ?? team[0];
 }
 
 function totalCrowns(players: Player[]) {
 	let total = 0;
-	for (const player of players) total += player.crowns;
+
+	for (const player of players) {
+		total += player.crowns;
+	}
+
 	return total;
 }
 
@@ -54,10 +64,12 @@ function totalCrowns(players: Player[]) {
  */
 function weakestSurvivingTowerHp(players: Player[]) {
 	let min = Infinity;
+
 	for (const player of players) {
 		if (player.kingTowerHitPoints > 0) {
 			min = Math.min(min, player.kingTowerHitPoints);
 		}
+
 		for (const hp of player.princessTowersHitPoints) {
 			if (hp > 0) {
 				min = Math.min(min, hp);
@@ -82,10 +94,14 @@ function formatDeck(cards: Card[] | undefined) {
  * `startingTrophies + trophyChange`; a missing `trophyChange` counts as 0.
  */
 function buildTrophyField(player: Player | undefined, label: string) {
-	if (player?.startingTrophies === undefined) return;
+	if (player?.startingTrophies === undefined) {
+		return;
+	}
+
 	const change = player.trophyChange ?? 0;
 	const after = player.startingTrophies + change;
 	const sign = change > 0 ? "+" : "";
+
 	return {
 		name: label,
 		value: `${player.startingTrophies.toLocaleString()} → ${after.toLocaleString()} (${sign}${change.toLocaleString()})`,
@@ -94,7 +110,10 @@ function buildTrophyField(player: Player | undefined, label: string) {
 }
 
 function buildSupportField(player: Player | undefined, label: string) {
-	if (!player?.supportCards.length) return;
+	if (!player?.supportCards.length) {
+		return;
+	}
+
 	return {
 		name: label,
 		value: player.supportCards.map((card) => card.name).join(", "),
@@ -110,8 +129,8 @@ function buildMessage(battle: Battle, me: Player) {
 
 	const opponent = battle.opponent[0];
 
-	// Trophy rows only exist in trophy modes; the spacer below them is dropped too when they're absent,
-	// so non-trophy matches don't open with a dangling empty row.
+	// Trophy rows only exist in trophy modes; the spacer below them is dropped too when they're
+	// absent, so non-trophy matches don't open with a dangling empty row.
 	const trophyFields = [
 		buildTrophyField(me, "Trophies"),
 		buildTrophyField(opponent, "Opponent Trophies"),
@@ -140,7 +159,7 @@ function buildMessage(battle: Battle, me: Player) {
 		author: {
 			name: "Match History",
 			icon_url: ROYALE_API_ICON,
-			// royaleapi.com profile paths use the tag without its leading "#".
+			// The royaleapi.com profile path uses the tag without its leading "#".
 			url: `https://royaleapi.com/player/${me.tag.replace("#", "")}/battles`,
 		},
 		title: `${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
@@ -160,17 +179,23 @@ function buildMessage(battle: Battle, me: Player) {
 }
 
 /** Posts a single battle to the webhook: result in the content, matchup details in the embed. */
-export async function notifyBattle(webhookUrl: string, playerTag: string, battle: Battle) {
+async function notifyBattle(webhookUrl: string, playerTag: string, battle: Battle) {
 	const me = findTrackedPlayer(battle.team, playerTag);
-	if (me === undefined) return;
+
+	if (me === undefined) {
+		return;
+	}
 
 	const response = await fetch(webhookUrl, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(buildMessage(battle, me)),
 	});
+
 	if (!response.ok) {
 		const body = await response.text();
 		throw new Error(`Discord webhook ${String(response.status)}: ${body.slice(0, 200)}`);
 	}
 }
+
+export { notifyBattle };
