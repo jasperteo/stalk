@@ -22,7 +22,7 @@ const OUTCOMES = {
 		result: "Defeat",
 		verb: "Lost",
 		color: COLOR_LOSS,
-		thumbnail: "https://cdn.discordapp.com/stickers/1521984212402700409.png?size=512",
+		thumbnail: "https://cdn.discordapp.com/stickers/1522517572539514940.png?size=512",
 	},
 	[0]: {
 		result: "Draw",
