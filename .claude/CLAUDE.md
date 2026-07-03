@@ -46,7 +46,7 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 
 ### Flow
 
-1. `Deno.cron` fires every minute → parse `TARGETS`, then `poll(target)` for each player concurrently (`Promise.allSettled`)
+1. `Deno.cron` fires every minute → `loadConfig()` supplies the token and `TARGETS` (read and validated once per isolate, memoized), then `poll(target)` runs for each player concurrently (`Promise.all` — `poll` catches its own errors, so it never rejects)
 2. Fetch battle log for the target's `tag` via `https://proxy.royaleapi.dev/v1`
 3. Compare the latest `battleTime` against the cursor stored in Deno KV under the tuple key `["lastBattle", tag]` — cursors are namespaced per tag, so all players share one KV without colliding
 4. On first run: seed the cursor without posting (avoids a stale notification)
