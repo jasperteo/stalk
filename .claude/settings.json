@@ -1,4 +1,8 @@
 {
+	"attribution": {
+		"commit": "",
+		"pr": ""
+	},
 	"hooks": {
 		"PostToolUse": [
 			{
@@ -13,13 +17,10 @@
 			}
 		]
 	},
-	"attribution": {
-		"commit": "",
-		"pr": ""
-	},
 	"enabledPlugins": {
 		"code-simplifier@claude-plugins-official": true,
 		"typescript-lsp@claude-plugins-official": true,
-		"commit-commands@claude-plugins-official": true
+		"commit-commands@claude-plugins-official": true,
+		"deno-skills@denoland-skills": true
 	}
 }
