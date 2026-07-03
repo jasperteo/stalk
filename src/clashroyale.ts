@@ -1,13 +1,17 @@
 import * as v from "@valibot/valibot";
 
-import { BattleSchema, type Battle } from "@/schema.ts";
+import { BattleSchema } from "@/schema.ts";
+import type { Battle } from "@/schema.ts";
 
-// RoyaleAPI proxy: gives Workers a stable outbound IP to whitelist on the token.
+/**
+ * RoyaleAPI proxy: Deno Deploy has no static egress IP to whitelist on the CR token, so requests
+ * route through the proxy and its fixed IP is whitelisted instead.
+ */
 const PROXY_BASE = "https://proxy.royaleapi.dev/v1";
 
 /** Fetches a player's raw battle log entries. Schema validation is deferred to `latestBattle`. */
-export async function fetchBattlelog(playerTag: string, token: string): Promise<unknown[]> {
-	// encodeURIComponent turns the leading "#" into "%23".
+async function fetchBattlelog(playerTag: string, token: string): Promise<unknown[]> {
+	// `encodeURIComponent` turns the leading "#" into "%23".
 	const url = `${PROXY_BASE}/players/${encodeURIComponent(playerTag)}/battlelog`;
 
 	const response = await fetch(url, {
@@ -19,6 +23,7 @@ export async function fetchBattlelog(playerTag: string, token: string): Promise<
 
 	if (!response.ok) {
 		const body = await response.text();
+
 		throw new Error(
 			`Clash Royale API ${String(response.status)} for ${playerTag}: ${body.slice(0, 200)}`
 		);
@@ -44,13 +49,15 @@ const BattleTimeSchema = v.fallback(
 /**
  * Returns the newest battle entry, fully validated (or undefined if the log is empty or that entry
  * fails the schema). Picks the newest by cheap timestamp comparison and runs `BattleSchema` on just
- * that one, so per-target CPU stays flat as the number of tracked players grows.
+ * that one, so full validation runs once per log instead of once per entry.
  */
-export function latestBattle(entries: unknown[]): Battle | undefined {
+function latestBattle(entries: unknown[]): Battle | undefined {
 	let newest: unknown;
 	let newestTime = "";
+
 	for (const entry of entries) {
 		const battleTime = v.parse(BattleTimeSchema, entry);
+
 		if (battleTime > newestTime) {
 			newest = entry;
 			newestTime = battleTime;
@@ -58,5 +65,8 @@ export function latestBattle(entries: unknown[]): Battle | undefined {
 	}
 
 	const result = v.safeParse(BattleSchema, newest);
+
 	return result.success ? result.output : undefined;
 }
+
+export { fetchBattlelog, latestBattle };
