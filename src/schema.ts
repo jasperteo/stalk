@@ -7,11 +7,14 @@ import * as v from "@valibot/valibot";
 
 const CardSchema = v.object({
 	name: v.string(),
-	// Evolutions report `evolutionLevel: 1`, Heroes `evolutionLevel: 2`; absent for ordinary cards.
-	// `fallback` coerces any other/unknown level to `undefined`, so one new card can't fail the battle.
-	// `optional` must nest *inside* `fallback`: it makes the key absent-able and widens the output to
-	// `1 | 2 | undefined`, which is what lets `undefined` be a valid fallback value (a fallback must
-	// match the wrapped schema's output type — `undefined` alone isn't assignable to bare `1 | 2`).
+	/**
+	 * Evolutions report `evolutionLevel: 1`, Heroes `evolutionLevel: 2`; absent for ordinary cards.
+	 * `fallback` coerces any other/unknown level to `undefined`, so one new card can't fail the
+	 * battle. `optional` must nest _inside_ `fallback`: it makes the key absent-able and widens the
+	 * output to `1 | 2 | undefined`, which is what lets `undefined` be a valid fallback value (a
+	 * fallback must match the wrapped schema's output type — `undefined` alone isn't assignable to
+	 * bare `1 | 2`).
+	 */
 	// oxlint-disable-next-line unicorn/no-useless-undefined -- the fallback value is intentional
 	evolutionLevel: v.fallback(v.optional(v.picklist([1, 2])), undefined),
 });
@@ -22,21 +25,27 @@ const CardSchema = v.object({
  */
 const TagSchema = v.pipe(
 	v.string(),
-	v.transform((tag) => (tag.startsWith("#") ? tag : `#${tag}`).toUpperCase())
+	v.transform((tag) => (tag.startsWith("#") ? tag : `#${tag}`)),
+	v.toUpperCase()
 );
 
 const PlayerSchema = v.object({
 	tag: TagSchema,
 	name: v.string(),
 	crowns: v.number(),
-	// Trophy progression for the match. Present on trophy-road/ladder games; absent in modes without
-	// trophies (tournaments, friendlies, Path of Legend), so both are optional. Trophies after the
-	// match are derived as `startingTrophies + trophyChange`.
+	/**
+	 * Trophy progression for the match. Present on trophy-road/ladder games; absent in modes without
+	 * trophies (tournaments, friendlies, Path of Legend), so both are optional. Trophies after the
+	 * match are derived as `startingTrophies + trophyChange`.
+	 */
 	startingTrophies: v.optional(v.number()),
 	trophyChange: v.optional(v.number()),
-	// Tower HP remaining at match end. The API omits destroyed towers, so we backfill them as 0 — a
-	// tower is destroyed exactly when its HP hits 0, so a felled tower reads as the lowest possible
-	// rather than vanishing. King defaults to 0; the princess array is always padded to its full two.
+	/**
+	 * Tower HP remaining at match end. The API omits destroyed towers, so we backfill them as 0 — a
+	 * tower is destroyed exactly when its HP hits 0, so a felled tower reads as the lowest possible
+	 * rather than vanishing. King defaults to 0; the princess array is always padded to its full
+	 * two.
+	 */
 	kingTowerHitPoints: v.optional(v.number(), 0),
 	princessTowersHitPoints: v.pipe(
 		v.nullish(v.array(v.number()), []),
@@ -46,11 +55,13 @@ const PlayerSchema = v.object({
 	supportCards: v.array(CardSchema),
 });
 
-export const BattleSchema = v.object({
+const BattleSchema = v.object({
 	type: v.string(),
-	// Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that basic
-	// format natively and rejects invalid dates. fractionalSecondDigits keeps the exact fixed-width
-	// ".000Z" shape the KV cursors already store, so string order stays chronological.
+	/**
+	 * Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that basic
+	 * format natively and rejects invalid dates. fractionalSecondDigits keeps the exact fixed-width
+	 * ".000Z" shape the KV cursors already store, so string order stays chronological.
+	 */
 	battleTime: v.pipe(
 		v.string(),
 		v.rawTransform(({ dataset, addIssue, NEVER }) => {
@@ -77,9 +88,12 @@ const TargetSchema = v.object({
  * The raw TARGETS env var: a JSON string of Target pairs. parseJson makes malformed JSON a normal
  * validation issue, and an unset env var (undefined) fails the string step instead of throwing.
  */
-export const TargetsEnvSchema = v.pipe(v.string(), v.parseJson(), v.array(TargetSchema));
+const TargetsEnvSchema = v.pipe(v.string(), v.parseJson(), v.array(TargetSchema));
 
-export type Player = v.InferOutput<typeof PlayerSchema>;
-export type Battle = v.InferOutput<typeof BattleSchema>;
-export type Target = v.InferOutput<typeof TargetSchema>;
-export type Card = v.InferOutput<typeof CardSchema>;
+type Player = v.InferOutput<typeof PlayerSchema>;
+type Battle = v.InferOutput<typeof BattleSchema>;
+type Target = v.InferOutput<typeof TargetSchema>;
+type Card = v.InferOutput<typeof CardSchema>;
+
+export { BattleSchema, TargetsEnvSchema };
+export type { Battle, Card, Player, Target };
