@@ -16,7 +16,7 @@ Battle log entries that fail schema validation are skipped. To stay cheap, the n
 
 | File                 | Responsibility                                                                                                                                         |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/index.ts`       | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler |
+| `src/main.ts`        | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler |
 | `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                     |
 | `src/discord.ts`     | Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troops)                                                |
 | `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends                                     |
@@ -94,7 +94,7 @@ deno task deploy  # Deploy to Deno Deploy (via deployctl)
 
 ```sh
 deno task fmt     # Format (oxfmt)
-deno task lint    # oxlint && deno lint && deno check --unstable-tsgo src/index.ts
+deno task lint    # oxlint && deno lint && deno check --unstable-tsgo src/main.ts
 ```
 
 `deno task lint` covers everything — do **not** run a separate `tsc --noEmit` or a standalone `deno check`. It chains oxlint (type-aware via oxlint-tsgolint), `deno lint` (Deno-idiom rules), and `deno check --unstable-tsgo` (Deno's own types via the native TypeScript-Go checker).

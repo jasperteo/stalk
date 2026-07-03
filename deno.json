@@ -2,10 +2,10 @@
 	"nodeModulesDir": "auto",
 	"jsrDepsInNodeModules": true,
 	"tasks": {
-		"dev": "deno serve --watch --env-file=.env src/index.ts",
+		"dev": "deno serve --watch --env-file=.env src/main.ts",
 		"deploy": "deno run -A jsr:@deno/deployctl deploy",
 		"fmt": "oxfmt",
-		"lint": "oxlint && deno lint && deno check --unstable-tsgo src/index.ts"
+		"lint": "oxlint && deno lint && deno check --unstable-tsgo src/main.ts"
 	},
 	"imports": {
 		"@/": "./src/",

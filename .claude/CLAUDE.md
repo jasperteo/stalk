@@ -11,7 +11,7 @@ deno task deploy  # Deploy to Deno Deploy (via deployctl)
 
 ```sh
 deno task fmt     # Format (oxfmt)
-deno task lint    # oxlint && deno lint && deno check --unstable-tsgo src/index.ts
+deno task lint    # oxlint && deno lint && deno check --unstable-tsgo src/main.ts
 ```
 
 `deno task lint` is the single command that covers everything — do **not** run a separate `tsc --noEmit` or a standalone `deno check`. It chains three passes: oxlint (type-aware via oxlint-tsgolint, resolving `Deno.*` through the ambient stub in `deno.d.ts`), `deno lint` (Deno-idiom rules, no type info), and `deno check --unstable-tsgo` (Deno's own types — real `deno.ns`/unstable surface — via the native TypeScript-Go checker).
@@ -39,7 +39,7 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 
 ### Source files
 
-- `src/index.ts` — Hono app entry point; `export default app` provides the `fetch` handler and `Deno.cron` drives polling. Internal imports use the `@/` import map with explicit `.ts` extensions.
+- `src/main.ts` — Hono app entry point; `export default app` provides the `fetch` handler and `Deno.cron` drives polling. Internal imports use the `@/` import map with explicit `.ts` extensions.
 - `src/clashroyale.ts` — Fetches and parses the battle log via the RoyaleAPI proxy; skips entries that fail schema validation
 - `src/discord.ts` — Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troop support cards)
 - `src/schema.ts` — Valibot schemas for `Battle` and `Player`; normalises the compact ISO 8601 timestamps the CR API sends
