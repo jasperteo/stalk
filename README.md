@@ -4,22 +4,22 @@ A **Deno** application (deployed on **Deno Deploy**), built with **Hono**, that 
 
 ## How it works
 
-1. `Deno.cron` fires every minute → `parseTargets()` reads the `TARGETS` env var, then `poll(target)` runs for each player concurrently (`Promise.allSettled`, so one player's failure can't sink the others).
+1. `Deno.cron` fires every minute → `loadConfig()` supplies the token and `TARGETS` (read and validated once per isolate, then memoized), then `poll(target)` runs for each player concurrently (`Promise.all` — `poll` catches its own errors and never rejects, so one player's failure can't sink the others).
 2. The player's battle log is fetched for their `tag` via the [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy) (`https://proxy.royaleapi.dev/v1`), which gives a stable outbound IP to whitelist on the API token.
 3. The latest `battleTime` is compared against a cursor stored in Deno KV under the tuple key `["lastBattle", tag]`. Cursors are namespaced per tag, so every player shares one KV store without colliding.
 4. **First run:** the cursor is seeded without posting, to avoid a stale notification.
 5. **Subsequent runs with a new battle:** a Discord embed is posted to that player's webhook, then the cursor is updated.
 
-Battle log entries that fail schema validation are skipped. To stay cheap, the newest entry is picked by a fast timestamp comparison and only that one entry is fully validated against the schema — so per-target CPU stays flat as the number of tracked players grows.
+Battle log entries that fail schema validation are skipped. To stay cheap, the newest entry is picked by a fast timestamp comparison and only that one entry is fully validated against the schema — so full validation runs once per log instead of once per entry.
 
 ## Source files
 
-| File                 | Responsibility                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `src/index.ts`       | Hono app entry point; `export default app` (the `fetch` handler, `GET /` health check) and the `Deno.cron` handler |
-| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                 |
-| `src/discord.ts`     | Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troops)            |
-| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends |
+| File                 | Responsibility                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/index.ts`       | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler |
+| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                     |
+| `src/discord.ts`     | Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troops)                                                |
+| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends                                     |
 
 ## Dependencies
 
@@ -46,7 +46,7 @@ CR_API_TOKEN=...
 TARGETS=[{ "tag": "#A9AA008R", "webhook": "https://discord.com/api/webhooks/aaa/bbb" }]
 ```
 
-`TARGETS` is a JSON array pairing each player tag (keep the leading `#`) with the Discord webhook to notify. It is validated by `TargetsSchema` (`src/schema.ts`). Add as many entries as you want to track:
+`TARGETS` is a JSON array pairing each player tag (keep the leading `#`) with the Discord webhook to notify. It is validated by `TargetsEnvSchema` (`src/schema.ts`). Add as many entries as you want to track:
 
 ```json
 [
