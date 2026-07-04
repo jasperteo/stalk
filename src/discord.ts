@@ -42,40 +42,28 @@ const EVOLUTION_PREFIX = {
 	2: "Hero ",
 } as const satisfies Record<NonNullable<Card["evolutionLevel"]>, string>;
 
-/** Both tags arrive schema-normalized to canonical "#UPPERCASE" form, so plain equality works. */
-function findTrackedPlayer(team: Player[], playerTag: string) {
-	return team.find((player) => player.tag === playerTag) ?? team[0];
-}
-
-function totalCrowns(players: Player[]) {
-	let total = 0;
-
-	for (const player of players) {
-		total += player.crowns;
+/**
+ * Lowest HP among a player's _surviving_ towers (HP > 0) — the one the opponent was closest to
+ * taking next. Destroyed towers (backfilled to 0) are skipped: they've already fallen and are no
+ * longer the "next crown". Returns 0 if no towers survive (all destroyed, or no player).
+ */
+function weakestSurvivingTowerHp(player: Player | undefined) {
+	if (player === undefined) {
+		return 0;
 	}
 
-	return total;
-}
-
-/**
- * Lowest HP among a side's _surviving_ towers (HP > 0) — the one the opponent was closest to taking
- * next. Destroyed towers (backfilled to 0) are skipped: they've already fallen and are no longer
- * the "next crown". Returns 0 if no towers survive (all destroyed, or empty side).
- */
-function weakestSurvivingTowerHp(players: Player[]) {
 	let min = Infinity;
 
-	for (const player of players) {
-		if (player.kingTowerHitPoints > 0) {
-			min = Math.min(min, player.kingTowerHitPoints);
-		}
+	if (player.kingTowerHitPoints > 0) {
+		min = Math.min(min, player.kingTowerHitPoints);
+	}
 
-		for (const hp of player.princessTowersHitPoints) {
-			if (hp > 0) {
-				min = Math.min(min, hp);
-			}
+	for (const hp of player.princessTowersHitPoints) {
+		if (hp > 0) {
+			min = Math.min(min, hp);
 		}
 	}
+
 	return min === Infinity ? 0 : min;
 }
 
@@ -121,13 +109,12 @@ function buildSupportField(player: Player | undefined, label: string) {
 }
 
 function buildMessage(battle: Battle, me: Player) {
-	const myCrowns = totalCrowns(battle.team);
-	const opponentCrowns = totalCrowns(battle.opponent);
+	const opponent = battle.opponent[0];
+	const myCrowns = me.crowns;
+	const opponentCrowns = opponent?.crowns ?? 0;
 	const diff = Math.sign(myCrowns - opponentCrowns);
 
 	const { result, verb, color, thumbnail } = OUTCOMES[diff as 1 | -1 | 0];
-
-	const opponent = battle.opponent[0];
 
 	// Trophy rows only exist in trophy modes; the spacer below them is dropped too when they're
 	// absent, so non-trophy matches don't open with a dangling empty row.
@@ -148,11 +135,12 @@ function buildMessage(battle: Battle, me: Player) {
 
 	// Weakest-tower HP margin on decisive games, shown as the embed description under the score. A
 	// draw has no verb, so it gets no description (undefined drops the key) and never computes HP.
-	// The margin is the weakest surviving tower on the winning side — the tower the loser was closest
-	// to taking next. Using the winning side avoids "0hp" when both sides felled a tower (e.g. 2-1).
-	const winningSide = diff === 1 ? battle.team : battle.opponent;
+	// The margin is the weakest surviving tower on the winner's side — the tower the loser was
+	// closest to taking next. Using the winner avoids "0hp" when both sides felled a tower (e.g.
+	// 2-1).
+	const winner = diff === 1 ? me : opponent;
 	const description = verb
-		? `${verb} by ${weakestSurvivingTowerHp(winningSide).toLocaleString()}hp`
+		? `${verb} by ${weakestSurvivingTowerHp(winner).toLocaleString()}hp`
 		: undefined;
 
 	const embed = {
@@ -178,9 +166,13 @@ function buildMessage(battle: Battle, me: Player) {
 	return { content, embeds: [embed] };
 }
 
-/** Posts a single battle to the webhook: result in the content, matchup details in the embed. */
-async function notifyBattle(webhookUrl: string, playerTag: string, battle: Battle) {
-	const me = findTrackedPlayer(battle.team, playerTag);
+/**
+ * Posts a single battle to the webhook: result in the content, matchup details in the embed.
+ * `battle.team` is the queried player's side, so its sole entry (2v2 is filtered out upstream) is
+ * always the tracked player.
+ */
+async function notifyBattle(webhookUrl: string, battle: Battle) {
+	const me = battle.team[0];
 
 	if (me === undefined) {
 		return;

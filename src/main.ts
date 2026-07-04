@@ -60,7 +60,7 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		const isFirstRun = lastSeen === null;
 
 		if (!isFirstRun) {
-			await notifyBattle(webhook, tag, latest);
+			await notifyBattle(webhook, latest);
 		}
 
 		// Advance the cursor only after a successful post: at-least-once delivery. If the webhook

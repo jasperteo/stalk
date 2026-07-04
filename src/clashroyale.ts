@@ -33,30 +33,36 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
 }
 
 /**
- * Reuses BattleSchema's own battleTime rule (defined once there) and drops every other key, so we
- * can order entries without paying for full battle validation. battleTime normalizes to standard
- * ISO 8601, which is fixed-width and zero-padded, so string order matches chronological order.
- * Entries that fail the schema fall back to "", which never wins the newest-comparison.
+ * Cheap ordering-and-eligibility pass: reuses BattleSchema's own battleTime rule (defined once
+ * there) and checks the battle is 1v1 (a single `team` entry) without paying for full battle
+ * validation. battleTime normalizes to standard ISO 8601, which is fixed-width and zero-padded, so
+ * string order matches chronological order. Entries that fail — malformed or team battles (2v2) —
+ * fall back to "", which never wins the newest-comparison; ignoring 2v2s here (rather than after
+ * selection) means one can't mask an older eligible battle behind it.
  */
-const BattleTimeSchema = v.fallback(
+const EligibleBattleTimeSchema = v.fallback(
 	v.pipe(
-		v.pick(BattleSchema, ["battleTime"]),
+		v.object({
+			battleTime: BattleSchema.entries.battleTime,
+			team: v.pipe(v.array(v.unknown()), v.length(1)),
+		}),
 		v.transform((battle) => battle.battleTime)
 	),
 	""
 );
 
 /**
- * Returns the newest battle entry, fully validated (or undefined if the log is empty or that entry
- * fails the schema). Picks the newest by cheap timestamp comparison and runs `BattleSchema` on just
- * that one, so full validation runs once per log instead of once per entry.
+ * Returns the newest eligible (1v1) battle entry, fully validated (or undefined if no entry is
+ * eligible or the newest one fails the schema). Picks the newest by cheap timestamp comparison and
+ * runs `BattleSchema` on just that one, so full validation runs once per log instead of once per
+ * entry.
  */
 function latestBattle(entries: unknown[]): Battle | undefined {
 	let newest: unknown;
 	let newestTime = "";
 
 	for (const entry of entries) {
-		const battleTime = v.parse(BattleTimeSchema, entry);
+		const battleTime = v.parse(EligibleBattleTimeSchema, entry);
 
 		if (battleTime > newestTime) {
 			newest = entry;

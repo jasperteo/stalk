@@ -40,7 +40,7 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 ### Source files
 
 - `src/main.ts` — Hono app entry point; `export default app` provides the `fetch` handler and `Deno.cron` drives polling. Internal imports use the `@/` import map with explicit `.ts` extensions.
-- `src/clashroyale.ts` — Fetches and parses the battle log via the RoyaleAPI proxy; skips entries that fail schema validation
+- `src/clashroyale.ts` — Fetches and parses the battle log via the RoyaleAPI proxy; selects the newest eligible battle (2v2s and entries that fail schema validation are ignored)
 - `src/discord.ts` — Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troop support cards)
 - `src/schema.ts` — Valibot schemas for `Battle` and `Player`; normalises the compact ISO 8601 timestamps the CR API sends
 
@@ -48,7 +48,7 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 
 1. `Deno.cron` fires every minute → `loadConfig()` supplies the token and `TARGETS` (read and validated once per isolate, memoized), then `poll(target)` runs for each player concurrently (`Promise.all` — `poll` catches its own errors, so it never rejects)
 2. Fetch battle log for the target's `tag` via `https://proxy.royaleapi.dev/v1`
-3. Compare the latest `battleTime` against the cursor stored in Deno KV under the tuple key `["lastBattle", tag]` — cursors are namespaced per tag, so all players share one KV without colliding
+3. Compare the latest eligible battle's `battleTime` against the cursor stored in Deno KV under the tuple key `["lastBattle", tag]` — cursors are namespaced per tag, so all players share one KV without colliding. 2v2 battles are ignored at selection time (`latestBattle`), so they never post and never advance the cursor past an unposted 1v1
 4. On first run: seed the cursor without posting (avoids a stale notification)
 5. On subsequent runs with a new battle: post the embed to the target's webhook, then update the cursor
 
