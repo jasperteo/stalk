@@ -4,7 +4,7 @@ A **Deno** application (deployed on **Deno Deploy**), built with **Hono**, that 
 
 ## How it works
 
-1. `Deno.cron` fires every minute → `loadConfig()` supplies the token and `TARGETS` (read and validated once per isolate, then memoized), then `poll(target)` runs for each player concurrently (`Promise.all` — `poll` catches its own errors and never rejects, so one player's failure can't sink the others).
+1. `Deno.cron` fires every minute → `config` (from `src/env.ts`, read and validated once at module load) supplies the token and targets; a missing token skips the tick with a heartbeat log. Otherwise `poll(target)` runs for each player concurrently (`Promise.all` — `poll` catches its own errors and never rejects, so one player's failure can't sink the others).
 2. The player's battle log is fetched for their `tag` via the [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy) (`https://proxy.royaleapi.dev/v1`), which gives a stable outbound IP to whitelist on the API token.
 3. The latest `battleTime` is compared against a cursor stored in Deno KV under the tuple key `["lastBattle", tag]`. Cursors are namespaced per tag, so every player shares one KV store without colliding.
 4. **First run:** the cursor is seeded without posting, to avoid a stale notification.
@@ -14,12 +14,13 @@ Battle log entries that fail schema validation are skipped. To stay cheap, the n
 
 ## Source files
 
-| File                 | Responsibility                                                                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/main.ts`        | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler |
-| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                     |
-| `src/discord.ts`     | Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troops)                                                |
-| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends                                     |
+| File                 | Responsibility                                                                                                                                           |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.ts`        | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler   |
+| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                       |
+| `src/discord.ts`     | Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troops)                                                  |
+| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends                                       |
+| `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing) and `thumbnails` |
 
 ## Dependencies
 
@@ -82,8 +83,9 @@ Deno KV and `Deno.cron` are provisioned automatically on Deno Deploy — no sepa
 | Deno KV        | KV store | Stores the `["lastBattle", tag]` cursor (opened via `Deno.openKv`) |
 | `CR_API_TOKEN` | Env var  | Bearer token for the CR API, whitelisted to the RoyaleAPI proxy IP |
 | `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player     |
+| `THUMBNAIL_*`  | Env var  | Optional `WIN`/`LOSS`/`DRAW` sticker URLs for embed thumbnails     |
 
-Env vars are read via `Deno.env.get` — locally from `.env`, in production from the Deno Deploy project settings.
+Env vars are read and validated once at module load in `src/env.ts` — locally from `.env`, in production from the Deno Deploy project settings. The three `THUMBNAIL_*` vars are optional: an unset one is silently omitted, an invalid URL logs once and is dropped.
 
 ## Commands
 

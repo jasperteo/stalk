@@ -1,9 +1,8 @@
 import { Hono } from "@hono/hono";
-import * as v from "@valibot/valibot";
 
 import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
 import { notifyBattle } from "@/discord.ts";
-import { TargetsEnvSchema } from "@/schema.ts";
+import { config } from "@/env.ts";
 import type { Target } from "@/schema.ts";
 
 const app = new Hono();
@@ -84,47 +83,16 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 	}
 }
 
-/**
- * Memoized: env vars are constant for the isolate's lifetime (changing one redeploys onto a fresh
- * isolate), so read and validate config once per isolate instead of once per cron tick. Both reads
- * fail soft — a missing token or malformed TARGETS logs once and polls nobody rather than throwing
- * every tick.
- */
-let cachedConfig: { token: string | undefined; targets: Target[] } | undefined;
-
-function loadConfig() {
-	if (cachedConfig !== undefined) {
-		return cachedConfig;
-	}
-
-	const token = Deno.env.get("CR_API_TOKEN");
-
-	if (token === undefined) {
-		console.error("CR_API_TOKEN is not set");
-	}
-
-	const parsed = v.safeParse(TargetsEnvSchema, Deno.env.get("TARGETS"));
-
-	if (!parsed.success) {
-		console.error("Invalid TARGETS env var:", v.flatten(parsed.issues));
-	}
-
-	const targets = parsed.success ? parsed.output : [];
-
-	cachedConfig = { token, targets };
-	return cachedConfig;
-}
-
 // Poll every minute. Deno.cron registers at module load and runs on Deno Deploy's scheduler.
 Deno.cron("poll-battlelogs", "*/1 * * * *", async () => {
-	const { token, targets } = loadConfig();
-
-	// Can't poll without a token; loadConfig already logged why, once. Still emit a heartbeat so a
+	// Can't poll without a token; env.ts already logged why, once. Still emit a heartbeat so a
 	// misconfigured deploy shows up as a loud skipped tick, not a silent dashboard.
-	if (token === undefined) {
+	if (config === undefined) {
 		console.log("poll-battlelogs: skipped tick — CR_API_TOKEN not set");
 		return;
 	}
+
+	const { token, targets } = config;
 
 	// poll() catches its own errors and resolves "failed", so one player's failure can't sink the
 	// others — no rejection path, hence Promise.all over allSettled.

@@ -15,7 +15,6 @@ const CardSchema = v.object({
 	 * fallback must match the wrapped schema's output type — `undefined` alone isn't assignable to
 	 * bare `1 | 2`).
 	 */
-	// oxlint-disable-next-line unicorn/no-useless-undefined -- the fallback value is intentional
 	evolutionLevel: v.fallback(v.optional(v.picklist([1, 2])), undefined),
 });
 
@@ -97,10 +96,18 @@ const EligibleBattleTimeSchema = v.fallback(
 	""
 );
 
+/**
+ * CR_API_TOKEN: rejects both an unset env var (`v.string()` fails on `undefined`) and an empty
+ * string.
+ */
+const TokenEnvSchema = v.pipe(v.string(), v.nonEmpty());
+
+const UrlSchema = v.pipe(v.string(), v.url());
+
 /** A single player to track and the Discord webhook to notify for them. */
 const TargetSchema = v.object({
 	tag: TagSchema,
-	webhook: v.pipe(v.string(), v.url()),
+	webhook: UrlSchema,
 });
 
 /**
@@ -114,5 +121,5 @@ type Battle = v.InferOutput<typeof BattleSchema>;
 type Target = v.InferOutput<typeof TargetSchema>;
 type Card = v.InferOutput<typeof CardSchema>;
 
-export { BattleSchema, EligibleBattleTimeSchema, TargetsEnvSchema };
+export { BattleSchema, EligibleBattleTimeSchema, TargetsEnvSchema, TokenEnvSchema, UrlSchema };
 export type { Battle, Card, Player, Target };
