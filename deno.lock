@@ -1,22 +1,12 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@hono/hono@^4.12.27": "4.12.27",
-    "jsr:@valibot/valibot@^1.4.2": "1.4.2",
     "npm:@jsr/hono__hono@^4.12.27": "4.12.27",
     "npm:@jsr/matmen__imagescript@^1.3.1": "1.3.1",
     "npm:@jsr/valibot__valibot@^1.4.2": "1.4.2",
     "npm:oxfmt@0.57": "0.57.0",
     "npm:oxlint-tsgolint@0.24": "0.24.0",
     "npm:oxlint@^1.72.0": "1.72.0_oxlint-tsgolint@0.24.0"
-  },
-  "jsr": {
-    "@hono/hono@4.12.27": {
-      "integrity": "3acc640592008e43f7048e8e53275203e0da84fbcd50201121195da7560583dc"
-    },
-    "@valibot/valibot@1.4.2": {
-      "integrity": "14f7fbb7474a8ade216224062d1e8b23cd17ecbb5176fc23595e846778c4725d"
-    }
   },
   "npm": {
     "@jsr/hono__hono@4.12.27": {
