@@ -1,3 +1,4 @@
+import { thumbnails } from "@/env.ts";
 import type { Battle, Card, Player } from "@/schema.ts";
 
 /** Green */
@@ -7,22 +8,21 @@ const COLOR_LOSS = 0xe7_00_0b;
 /** Yellow */
 const COLOR_DRAW = 0xff_df_20;
 
-const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
-
-const SPACER_FIELD = { name: "\u200B", value: "\u200B" } as const;
+/** Embed-ready thumbnail, resolved once at module load; undefined (unconfigured) drops the key. */
+const toThumbnail = (url: string | undefined) => (url === undefined ? undefined : { url });
 
 const OUTCOMES = {
 	[1]: {
 		result: "Victory",
 		verb: "Won",
 		color: COLOR_WIN,
-		thumbnail: "https://cdn.discordapp.com/stickers/1521984131737583717.png?size=512",
+		thumbnail: toThumbnail(thumbnails.win),
 	},
 	[-1]: {
 		result: "Defeat",
 		verb: "Lost",
 		color: COLOR_LOSS,
-		thumbnail: "https://cdn.discordapp.com/stickers/1522517572539514940.png?size=512",
+		thumbnail: toThumbnail(thumbnails.loss),
 	},
 	[0]: {
 		result: "Draw",
@@ -32,9 +32,13 @@ const OUTCOMES = {
 		 */
 		verb: undefined,
 		color: COLOR_DRAW,
-		thumbnail: "https://cdn.discordapp.com/stickers/1521984288466407554.png?size=512",
+		thumbnail: toThumbnail(thumbnails.draw),
 	},
 } as const;
+
+const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
+
+const SPACER_FIELD = { name: "\u200B", value: "\u200B" } as const;
 
 /** Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. */
 const EVOLUTION_PREFIX = {
@@ -153,7 +157,7 @@ function buildMessage(battle: Battle, me: Player) {
 		title: `${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
 		description,
 		color,
-		thumbnail: { url: thumbnail },
+		thumbnail,
 		fields,
 		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
 		timestamp: battle.battleTime,
