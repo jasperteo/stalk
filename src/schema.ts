@@ -5,6 +5,8 @@ import * as v from "@valibot/valibot";
  * Royale API adding fields will never break parsing.
  */
 
+const UrlSchema = v.pipe(v.string(), v.url());
+
 const CardSchema = v.object({
 	name: v.string(),
 	/**
@@ -16,6 +18,16 @@ const CardSchema = v.object({
 	 * bare `1 | 2`).
 	 */
 	evolutionLevel: v.fallback(v.optional(v.picklist([1, 2])), undefined),
+	/**
+	 * CDN card art. `medium` is always present; `evolutionMedium`/`heroMedium` exist only on
+	 * Evolution/Hero cards (matching `evolutionLevel` 1/2), so the deck renderer picks the variant
+	 * and falls back to `medium`.
+	 */
+	iconUrls: v.object({
+		medium: UrlSchema,
+		evolutionMedium: v.optional(UrlSchema),
+		heroMedium: v.optional(UrlSchema),
+	}),
 });
 
 /**
@@ -101,8 +113,6 @@ const EligibleBattleTimeSchema = v.fallback(
  * string.
  */
 const TokenEnvSchema = v.pipe(v.string(), v.nonEmpty());
-
-const UrlSchema = v.pipe(v.string(), v.url());
 
 /** A single player to track and the Discord webhook to notify for them. */
 const TargetSchema = v.object({
