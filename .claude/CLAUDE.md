@@ -27,7 +27,7 @@ The project deliberately keeps **two** TypeScript configs because oxlint and Den
 
 ### Dependencies (JSR + node_modules)
 
-Runtime deps (`@hono/hono`, `@valibot/valibot`) come from **JSR**, declared in `deno.json`'s `imports` map as `jsr:` specifiers and imported by their **full scoped names** (not bare `hono`/`valibot`).
+Runtime deps (`@hono/hono`, `@valibot/valibot`, `@matmen/imagescript`) come from **JSR**, declared in `deno.json`'s `imports` map as `jsr:` specifiers and imported by their **full scoped names** (not bare `hono`/`valibot`). `@matmen/imagescript` is pulled in via a dynamic `import()` in `src/deck-image.ts`, so its ~1.8 MB of codec WASM is compiled only on the first deck render instead of every isolate cold boot.
 
 The non-obvious part is `"jsrDepsInNodeModules": true` in `deno.json`. It materializes those JSR packages into `node_modules` via JSR's npm-compat registry (`@jsr/<scope>__<name>`, symlinked as `@hono/hono` etc.) and makes `deno install` write `.npmrc` (`@jsr:registry=https://npm.jsr.io`). This is what lets oxlint/tsgolint — vanilla TypeScript, which resolves through `node_modules`, not Deno's import map — type-check the deps. **Commit `.npmrc`.** Without this flag, JSR deps live only in Deno's global cache and oxlint reports every hono/valibot member as an `error`-typed value.
 
@@ -41,9 +41,10 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 
 - `src/main.ts` — Hono app entry point; `export default app` provides the `fetch` handler and `Deno.cron` drives polling. Internal imports use the `@/` import map with explicit `.ts` extensions.
 - `src/clashroyale.ts` — Fetches and parses the battle log via the RoyaleAPI proxy; selects the newest eligible battle (2v2s and entries that fail schema validation are ignored)
-- `src/discord.ts` — Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troop support cards)
-- `src/schema.ts` — Valibot schemas for `Battle` and `Player`; normalises the compact ISO 8601 timestamps the CR API sends
-- `src/env.ts` — Reads and validates all env vars once at module load (`parseEnv` logs invalid values and falls back); exports `config` (`{ token, targets }`, or `undefined` when the token is missing) and `thumbnails`
+- `src/discord.ts` — Builds and posts the Discord message for a single battle: two embeds (one per side), each with a composited 2×4 deck-grid image (`attachment://` + multipart upload) and the player's tower troop as thumbnail; falls back to a text-only embed if rendering fails
+- `src/deck-image.ts` — Composites a deck's 8 card icons (CR CDN; picks the Evo/Hero art variant per `evolutionLevel`) into a bottom-aligned 4-column PNG grid via ImageScript (dynamically imported). Trims each icon's transparent margin but keeps its native bottom edge as a shared baseline, composites at native resolution (ImageScript only resizes nearest-neighbour, which blurs), and caches decoded tiles as promises in a module-level Map; `COLUMN_GAP`/`ROW_GAP` tune spacing (row gap is a small negative overlap into the kept bottom padding)
+- `src/schema.ts` — Valibot schemas for `Battle` and `Player`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `iconUrls`
+- `src/env.ts` — Reads and validates all env vars once at module load (`parseEnv` logs invalid values and falls back); exports `config` (`{ token, targets }`, or `undefined` when the token is missing)
 
 ### Flow
 
@@ -60,7 +61,6 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 | Deno KV        | KV store | Stores the `["lastBattle", tag]` cursor (opened via `Deno.openKv`) |
 | `CR_API_TOKEN` | Env var  | Bearer token for the CR API, whitelisted to the RoyaleAPI proxy IP |
 | `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player     |
-| `THUMBNAIL_*`  | Env var  | Optional `WIN`/`LOSS`/`DRAW` sticker URLs for embed thumbnails     |
 
 `TARGETS` is parsed and validated by `TargetsEnvSchema` (src/schema.ts), which takes the raw env string through `v.parseJson()` — malformed or unset values surface as validation issues, not thrown `SyntaxError`s. Player tags are normalized at parse time to canonical `#UPPERCASE` form (`TagSchema`), which the KV cursor keys and player lookup rely on. Env vars are read via `Deno.env.get`. Locally they live in `.env` (gitignored; see `.env.example`); in production they're set in the Deno Deploy dashboard (or `deployctl`). Deno KV and `Deno.cron` require the `kv`/`cron` unstable flags, declared in `deno.json`.
 

@@ -1,6 +1,6 @@
 import * as v from "@valibot/valibot";
 
-import { TargetsEnvSchema, TokenEnvSchema, UrlSchema } from "@/schema.ts";
+import { TargetsEnvSchema, TokenEnvSchema } from "@/schema.ts";
 
 /** Reads and validates a single env var, logging once and falling back on a missing/invalid value. */
 function parseEnv<TOutput>(
@@ -28,16 +28,4 @@ const targets = parseEnv("TARGETS", TargetsEnvSchema, []);
  */
 const config = token === undefined ? undefined : { token, targets };
 
-/**
- * Sticker thumbnails are cosmetic: an unset var stays silent, an invalid URL logs; either way the
- * thumbnail is just omitted.
- */
-const thumbnailEnv = (name: string) => parseEnv(name, v.optional(UrlSchema), undefined);
-
-const thumbnails = {
-	win: thumbnailEnv("THUMBNAIL_WIN"),
-	loss: thumbnailEnv("THUMBNAIL_LOSS"),
-	draw: thumbnailEnv("THUMBNAIL_DRAW"),
-};
-
-export { config, thumbnails };
+export { config };

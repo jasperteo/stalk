@@ -8,23 +8,24 @@ A **Deno** application (deployed on **Deno Deploy**), built with **Hono**, that 
 2. The player's battle log is fetched for their `tag` via the [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy) (`https://proxy.royaleapi.dev/v1`), which gives a stable outbound IP to whitelist on the API token.
 3. The latest `battleTime` is compared against a cursor stored in Deno KV under the tuple key `["lastBattle", tag]`. Cursors are namespaced per tag, so every player shares one KV store without colliding.
 4. **First run:** the cursor is seeded without posting, to avoid a stale notification.
-5. **Subsequent runs with a new battle:** a Discord embed is posted to that player's webhook, then the cursor is updated.
+5. **Subsequent runs with a new battle:** a Discord message is posted to that player's webhook — one embed per player, each showing that side's deck as a composited card-image grid — then the cursor is updated.
 
 Battle log entries that fail schema validation are skipped. To stay cheap, the newest entry is picked by a fast timestamp comparison and only that one entry is fully validated against the schema — so full validation runs once per log instead of once per entry.
 
 ## Source files
 
-| File                 | Responsibility                                                                                                                                           |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/main.ts`        | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler   |
-| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                       |
-| `src/discord.ts`     | Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troops)                                                  |
-| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends                                       |
-| `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing) and `thumbnails` |
+| File                 | Responsibility                                                                                                                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.ts`        | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler                                                                            |
+| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                                                                                                |
+| `src/discord.ts`     | Builds and posts the Discord message for a single battle: two embeds (one per player), each with a composited deck-grid image and the player's tower troop as thumbnail; falls back to a text-only embed if image rendering fails |
+| `src/deck-image.ts`  | Composites a deck's 8 card icons into a bottom-aligned 4-column PNG grid via ImageScript; trims transparent margins, renders at native resolution, and caches decoded tiles                                                       |
+| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `iconUrls`                                                                               |
+| `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing)                                                                                           |
 
 ## Dependencies
 
-Runtime dependencies come from [JSR](https://jsr.io) — `@hono/hono` and `@valibot/valibot` — declared in `deno.json`'s `imports` map and imported by their full scoped names. `deno install` reads that map, materializes them into `node_modules` (`jsrDepsInNodeModules: true`), and writes `.npmrc` (`@jsr:registry`); this is what lets oxlint's type-aware pass resolve them, so `.npmrc` is committed. `package.json` carries only dev tooling (oxlint, oxfmt). Run `deno install` after cloning.
+Runtime dependencies come from [JSR](https://jsr.io) — `@hono/hono`, `@valibot/valibot`, and `@matmen/imagescript` (deck-image compositing) — declared in `deno.json`'s `imports` map and imported by their full scoped names. `deno install` reads that map, materializes them into `node_modules` (`jsrDepsInNodeModules: true`), and writes `.npmrc` (`@jsr:registry`); this is what lets oxlint's type-aware pass resolve them, so `.npmrc` is committed. `package.json` carries only dev tooling (oxlint, oxfmt). Run `deno install` after cloning.
 
 ## Setup
 
@@ -44,10 +45,10 @@ cp .env.example .env
 
 ```sh
 CR_API_TOKEN=...
-TARGETS=[{ "tag": "#A9AA008R", "webhook": "https://discord.com/api/webhooks/aaa/bbb" }]
+TARGETS='[{ "tag": "#A9AA008R", "webhook": "https://discord.com/api/webhooks/aaa/bbb" }]'
 ```
 
-`TARGETS` is a JSON array pairing each player tag (keep the leading `#`) with the Discord webhook to notify. It is validated by `TargetsEnvSchema` (`src/schema.ts`). Add as many entries as you want to track:
+`TARGETS` is a JSON array pairing each player tag (keep the leading `#`) with the Discord webhook to notify. **Wrap the value in single quotes** — the leading `#` in a tag would otherwise start a comment and truncate the value in the env file. It is validated by `TargetsEnvSchema` (`src/schema.ts`). Add as many entries as you want to track:
 
 ```json
 [
@@ -83,9 +84,8 @@ Deno KV and `Deno.cron` are provisioned automatically on Deno Deploy — no sepa
 | Deno KV        | KV store | Stores the `["lastBattle", tag]` cursor (opened via `Deno.openKv`) |
 | `CR_API_TOKEN` | Env var  | Bearer token for the CR API, whitelisted to the RoyaleAPI proxy IP |
 | `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player     |
-| `THUMBNAIL_*`  | Env var  | Optional `WIN`/`LOSS`/`DRAW` sticker URLs for embed thumbnails     |
 
-Env vars are read and validated once at module load in `src/env.ts` — locally from `.env`, in production from the Deno Deploy project settings. The three `THUMBNAIL_*` vars are optional: an unset one is silently omitted, an invalid URL logs once and is dropped.
+Env vars are read and validated once at module load in `src/env.ts` — locally from `.env`, in production from the Deno Deploy project settings.
 
 ## Commands
 
