@@ -78,6 +78,25 @@ const BattleSchema = v.object({
 	opponent: v.array(PlayerSchema),
 });
 
+/**
+ * Cheap ordering-and-eligibility pass: reuses BattleSchema's own battleTime rule (defined once
+ * there) and checks the battle is 1v1 (a single `team` entry) without paying for full battle
+ * validation. battleTime normalizes to standard ISO 8601, which is fixed-width and zero-padded, so
+ * string order matches chronological order. Entries that fail — malformed or team battles (2v2) —
+ * fall back to "", which never wins the newest-comparison; ignoring 2v2s here (rather than after
+ * selection) means one can't mask an older eligible battle behind it.
+ */
+const EligibleBattleTimeSchema = v.fallback(
+	v.pipe(
+		v.object({
+			battleTime: BattleSchema.entries.battleTime,
+			team: v.pipe(v.array(v.unknown()), v.length(1)),
+		}),
+		v.transform((battle) => battle.battleTime)
+	),
+	""
+);
+
 /** A single player to track and the Discord webhook to notify for them. */
 const TargetSchema = v.object({
 	tag: TagSchema,
@@ -95,5 +114,5 @@ type Battle = v.InferOutput<typeof BattleSchema>;
 type Target = v.InferOutput<typeof TargetSchema>;
 type Card = v.InferOutput<typeof CardSchema>;
 
-export { BattleSchema, TargetsEnvSchema };
+export { BattleSchema, EligibleBattleTimeSchema, TargetsEnvSchema };
 export type { Battle, Card, Player, Target };

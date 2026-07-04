@@ -1,6 +1,6 @@
 import * as v from "@valibot/valibot";
 
-import { BattleSchema } from "@/schema.ts";
+import { BattleSchema, EligibleBattleTimeSchema } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
 
 /**
@@ -31,25 +31,6 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
 
 	return v.parse(v.array(v.unknown()), await response.json());
 }
-
-/**
- * Cheap ordering-and-eligibility pass: reuses BattleSchema's own battleTime rule (defined once
- * there) and checks the battle is 1v1 (a single `team` entry) without paying for full battle
- * validation. battleTime normalizes to standard ISO 8601, which is fixed-width and zero-padded, so
- * string order matches chronological order. Entries that fail — malformed or team battles (2v2) —
- * fall back to "", which never wins the newest-comparison; ignoring 2v2s here (rather than after
- * selection) means one can't mask an older eligible battle behind it.
- */
-const EligibleBattleTimeSchema = v.fallback(
-	v.pipe(
-		v.object({
-			battleTime: BattleSchema.entries.battleTime,
-			team: v.pipe(v.array(v.unknown()), v.length(1)),
-		}),
-		v.transform((battle) => battle.battleTime)
-	),
-	""
-);
 
 /**
  * Returns the newest eligible (1v1) battle entry, fully validated (or undefined if no entry is

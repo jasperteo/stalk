@@ -1,11 +1,11 @@
 import type { Battle, Card, Player } from "@/schema.ts";
 
 /** Green */
-const COLOR_WIN = 0x46_a7_58;
+const COLOR_WIN = 0x00_c9_50;
 /** Red */
-const COLOR_LOSS = 0xe5_48_4d;
+const COLOR_LOSS = 0xe7_00_0b;
 /** Yellow */
-const COLOR_DRAW = 0xff_e6_29;
+const COLOR_DRAW = 0xff_df_20;
 
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
 
