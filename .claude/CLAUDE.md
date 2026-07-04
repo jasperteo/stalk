@@ -41,9 +41,10 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 
 - `src/main.ts` — Hono app entry point; `export default app` provides the `fetch` handler and `Deno.cron` drives polling. Internal imports use the `@/` import map with explicit `.ts` extensions.
 - `src/clashroyale.ts` — Fetches and parses the battle log via the RoyaleAPI proxy; selects the newest eligible battle (2v2s and entries that fail schema validation are ignored)
-- `src/discord.ts` — Builds and posts a Discord embed for a single battle (win/loss/draw colours, deck fields, tower troop support cards)
-- `src/schema.ts` — Valibot schemas for `Battle` and `Player`; normalises the compact ISO 8601 timestamps the CR API sends
-- `src/env.ts` — Reads and validates all env vars once at module load (`parseEnv` logs invalid values and falls back); exports `config` (`{ token, targets }`, or `undefined` when the token is missing) and `thumbnails`
+- `src/discord.ts` — Builds and posts the Discord message for a single battle: two embeds (one per side), each with a composited 2×4 deck-grid image (`attachment://` + multipart upload) and the player's tower troop as thumbnail; falls back to a text-only embed if rendering fails
+- `src/deck-image.ts` — Composites a deck's 8 card icons (CR CDN, Evo/Hero art variants) into a 4-column PNG grid via ImageScript; caches decoded tiles in a module-level Map and logs render timings
+- `src/schema.ts` — Valibot schemas for `Battle` and `Player`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `iconUrls`
+- `src/env.ts` — Reads and validates all env vars once at module load (`parseEnv` logs invalid values and falls back); exports `config` (`{ token, targets }`, or `undefined` when the token is missing)
 
 ### Flow
 
@@ -60,7 +61,6 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 | Deno KV        | KV store | Stores the `["lastBattle", tag]` cursor (opened via `Deno.openKv`) |
 | `CR_API_TOKEN` | Env var  | Bearer token for the CR API, whitelisted to the RoyaleAPI proxy IP |
 | `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player     |
-| `THUMBNAIL_*`  | Env var  | Optional `WIN`/`LOSS`/`DRAW` sticker URLs for embed thumbnails     |
 
 `TARGETS` is parsed and validated by `TargetsEnvSchema` (src/schema.ts), which takes the raw env string through `v.parseJson()` — malformed or unset values surface as validation issues, not thrown `SyntaxError`s. Player tags are normalized at parse time to canonical `#UPPERCASE` form (`TagSchema`), which the KV cursor keys and player lookup rely on. Env vars are read via `Deno.env.get`. Locally they live in `.env` (gitignored; see `.env.example`); in production they're set in the Deno Deploy dashboard (or `deployctl`). Deno KV and `Deno.cron` require the `kv`/`cron` unstable flags, declared in `deno.json`.
 
