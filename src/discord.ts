@@ -124,7 +124,8 @@ function towerThumbnail(player: Player | undefined) {
 
 /**
  * Everything both message shapes (image embeds and text fallback) derive from the battle: outcome
- * (colour/verb/sticker), score title, HP-margin description, trophy fields, and footer.
+ * (colour/verb), the content block (result header + crown score + HP margin), trophy fields, and
+ * footer. The per-side embed titles are the players' names, taken straight from `me`/`opponent`.
  */
 function battleContext(battle: Battle, me: Player) {
 	const opponent = battle.opponent[0];
@@ -134,13 +135,13 @@ function battleContext(battle: Battle, me: Player) {
 
 	const outcome = OUTCOMES[diff as 1 | -1 | 0];
 
-	// Weakest-tower HP margin on decisive games, shown as the embed description under the score. A
-	// draw has no verb, so it gets no description (undefined drops the key) and never computes HP.
-	// The margin is the weakest surviving tower on the winner's side — the tower the loser was
+	// Weakest-tower HP margin on decisive games, shown as normal text under the crown score. A draw
+	// has no verb, so it gets no margin line (undefined drops out of the content) and never computes
+	// HP. The margin is the weakest surviving tower on the winner's side — the tower the loser was
 	// closest to taking next. Using the winner avoids "0hp" when both sides felled a tower (e.g.
 	// 2-1).
 	const winner = diff === 1 ? me : opponent;
-	const description = outcome.verb
+	const margin = outcome.verb
 		? `${outcome.verb} by ${weakestSurvivingTowerHp(winner).toLocaleString()}hp`
 		: undefined;
 
@@ -150,16 +151,18 @@ function battleContext(battle: Battle, me: Player) {
 		buildTrophyField(opponent, "Opponent Trophies"),
 	].filter(Boolean);
 
+	// Content (above the embeds) doubles as the push-notification text, which bare embeds wouldn't
+	// provide: the result as an H1, the crown score as an H2 subheader, then the HP margin as plain
+	// text. A draw's absent margin simply drops its line.
+	const scoreLine = `${me.name}  ${String(myCrowns)} — ${String(opponentCrowns)}  ${opponent?.name ?? "Unknown"}`;
+	const content = [`# ${outcome.result}`, `## ${scoreLine}`, margin].filter(Boolean).join("\n");
+
 	return {
 		opponent,
 		outcome,
-		title: `${me.name} ${String(myCrowns)}-${String(opponentCrowns)} ${opponent?.name ?? "Unknown"}`,
-		description,
 		trophyFields,
 		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
-		// Content (above the embeds) is just the result header — it doubles as the
-		// push-notification text, which bare embeds wouldn't provide.
-		content: `# ${outcome.result}`,
+		content,
 	};
 }
 
@@ -180,11 +183,12 @@ async function renderDeckAttachment(cards: Card[], filename: string) {
 type DeckAttachment = Awaited<ReturnType<typeof renderDeckAttachment>>;
 
 /**
- * The image-rich message: one embed per side. Embed 1 carries the match info (score, HP margin,
- * trophies) plus the tracked player's deck grid and tower-troop thumbnail; embed 2 mirrors the
- * branding for the opponent's deck. Footer and timestamp sit on whichever embed renders last. Each
- * embed's image reference comes from the same `DeckAttachment` whose file `buildForm` uploads
- * alongside this payload.
+ * The image-rich message: one embed per side, each titled with the player's name and stamped with
+ * the same footer + timestamp. Embed 1 carries the tracked player's trophies, deck grid, and
+ * tower-troop thumbnail; embed 2 mirrors the branding for the opponent, with the trophy fields
+ * reversed so the opponent's own trophies lead. The result, crown score, and HP margin live in the
+ * message content. Each embed's image reference comes from the same `DeckAttachment` whose file
+ * `buildForm` uploads alongside this payload.
  */
 function buildMessage(
 	battle: Battle,
@@ -192,39 +196,31 @@ function buildMessage(
 	myDeck: DeckAttachment,
 	opponentDeck: DeckAttachment | undefined
 ) {
-	const { opponent, outcome, title, description, trophyFields, footer, content } = battleContext(
-		battle,
-		me
-	);
+	const { opponent, outcome, trophyFields, footer, content } = battleContext(battle, me);
 
-	const myEmbed = {
-		author: buildAuthor(me.tag),
-		title,
-		description,
+	// Both sides share one embed shape; only the player, their deck, and the trophy-field order
+	// differ.
+	const sideEmbed = (player: Player, deck: DeckAttachment, fields: typeof trophyFields) => ({
+		author: buildAuthor(player.tag),
+		title: player.name,
 		color: outcome.color,
-		thumbnail: towerThumbnail(me),
-		fields: trophyFields,
-		image: myDeck.image,
-	};
+		thumbnail: towerThumbnail(player),
+		fields,
+		image: deck.image,
+		footer,
+		timestamp: battle.battleTime,
+	});
+
+	const myEmbed = sideEmbed(me, myDeck, trophyFields);
 
 	// The second embed exists exactly when the opponent's deck rendered; its image reference and
 	// the uploaded file are two halves of the same attachment, so they can't drift apart.
 	const opponentEmbed =
 		opponent === undefined || opponentDeck === undefined
 			? undefined
-			: {
-					author: buildAuthor(opponent.tag),
-					title: opponent.name,
-					color: outcome.color,
-					thumbnail: towerThumbnail(opponent),
-					image: opponentDeck.image,
-				};
+			: sideEmbed(opponent, opponentDeck, trophyFields.toReversed());
 
-	const trailer = { footer, timestamp: battle.battleTime };
-	const embeds =
-		opponentEmbed === undefined
-			? [{ ...myEmbed, ...trailer }]
-			: [myEmbed, { ...opponentEmbed, ...trailer }];
+	const embeds = opponentEmbed === undefined ? [myEmbed] : [myEmbed, opponentEmbed];
 
 	return { content, embeds };
 }
@@ -235,10 +231,7 @@ function buildMessage(
  * as text fields.
  */
 function buildFallbackMessage(battle: Battle, me: Player) {
-	const { opponent, outcome, title, description, trophyFields, footer, content } = battleContext(
-		battle,
-		me
-	);
+	const { opponent, outcome, trophyFields, footer, content } = battleContext(battle, me);
 
 	const fields = [
 		...trophyFields,
@@ -252,8 +245,7 @@ function buildFallbackMessage(battle: Battle, me: Player) {
 
 	const embed = {
 		author: buildAuthor(me.tag),
-		title,
-		description,
+		title: me.name,
 		color: outcome.color,
 		fields,
 		footer,
