@@ -14,7 +14,7 @@ deno task fmt     # Format (oxfmt)
 deno task lint    # oxlint && deno lint && deno check --unstable-tsgo src/main.ts
 ```
 
-`deno task lint` is the single command that covers everything — do **not** run a separate `tsc --noEmit` or a standalone `deno check`. It chains three passes: oxlint (type-aware via oxlint-tsgolint, resolving `Deno.*` through the ambient stub in `deno.d.ts`), `deno lint` (Deno-idiom rules, no type info), and `deno check --unstable-tsgo` (Deno's own types — real `deno.ns`/unstable surface — via the native TypeScript-Go checker).
+`deno task lint` is the single command that covers everything — do **not** run a separate `tsc --noEmit` or a standalone `deno check`. It chains three passes: oxlint (type-aware via oxlint-tsgolint, resolving `Deno.*` through the vendored `deno.d.ts`), `deno lint` (Deno-idiom rules, no type info), and `deno check --unstable-tsgo` (Deno's own types — real `deno.ns`/unstable surface — via the native TypeScript-Go checker).
 
 ### Two type-checkers, two configs
 
@@ -23,11 +23,11 @@ The project deliberately keeps **two** TypeScript configs because oxlint and Den
 - `tsconfig.json` — read by oxlint/tsgolint (vanilla TypeScript). Uses `lib: ["ESNext", "DOM"]` for web globals (`fetch`, `console`, `Response`) and picks up `deno.d.ts` for the `Deno.*` surface.
 - `deno.json` `compilerOptions` — read by `deno check`/`deno serve`. Uses `lib: ["deno.window", "deno.unstable"]` so the real `Deno` namespace (incl. unstable `Deno.cron`/`Deno.openKv`) resolves. Without this, Deno falls back to reading `tsconfig.json`, whose DOM-only lib drops `deno.ns`.
 
-`deno.d.ts` is a **minimal ambient declaration** of only the `Deno` APIs this project uses, so oxlint's type-aware pass can resolve them. It is excluded from `deno check`/`deno lint` (via `deno.json`) so it never clashes with Deno's built-in lib.
+`deno.d.ts` is a **vendored copy of Deno's own `lib.deno.d.ts`** (the full ambient `Deno` surface), so oxlint's type-aware pass can resolve `Deno.*`; it must be re-synced by hand when the Deno version changes. It is excluded from `deno check`/`deno lint` (via `deno.json`) and from oxlint's own file walk (`oxlint.config.ts` `ignorePatterns`) so it is only ever consumed as ambient types, never linted or double-declared.
 
 ### Dependencies (package.json + node_modules)
 
-Runtime deps (`@hono/hono`, `@valibot/valibot`, `@matmen/imagescript`, `@std/fmt`) come from **JSR**, but are declared directly in `package.json`'s `dependencies` as `npm:@jsr/<scope>__<name>` aliases (e.g. `"@hono/hono": "npm:@jsr/hono__hono@^4.12.27"`), not as `jsr:` specifiers in `deno.json`'s `imports` map — that map only holds the internal `@/` path alias. The aliases resolve from JSR's npm-compat registry via `.npmrc` (`@jsr:registry=https://npm.jsr.io`, **committed**).
+Runtime deps (`@hono/hono`, `@valibot/valibot`, `@matmen/imagescript`, `@std/fmt`) come from **JSR**, but are declared directly in `package.json`'s `dependencies` as `npm:@jsr/<scope>__<name>` aliases (e.g. `"@hono/hono": "npm:@jsr/hono__hono@^4.12.27"`), not as `jsr:` specifiers in `deno.json`'s `imports` map — that map only holds the internal `@/` path alias. Deno resolves the `@jsr` scope natively (no `.npmrc` needed), and `deno.json`'s `preferPackageJson` makes `package.json` the dependency source of truth; `deno.lock` pins the resolved `npm.jsr.io` tarballs.
 
 Putting the JSR deps in `package.json` instead of `deno.json` makes `package.json` the single source of truth: Deno resolves bare specifiers from `node_modules` (`nodeModulesDir: "auto"`) the same way it resolves any node-compat dependency, and so does oxlint/tsgolint (vanilla TypeScript, which only understands `node_modules`, not Deno's import map) — no separate JSR-to-node_modules materialization step to keep in sync. Run `deno install` after cloning to populate `node_modules`.
 

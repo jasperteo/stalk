@@ -25,7 +25,7 @@ Battle log entries that fail schema validation are skipped. To stay cheap, the n
 
 ## Dependencies
 
-Runtime dependencies come from [JSR](https://jsr.io) — `@hono/hono`, `@valibot/valibot`, `@matmen/imagescript` (deck-image compositing), and `@std/fmt` (log formatting) — declared directly in `package.json`'s `dependencies` as `npm:@jsr/<scope>__<name>` aliases, resolved from JSR's npm-compat registry via `.npmrc` (`@jsr:registry`, committed). This lets both Deno and oxlint's type-aware pass resolve them straight out of `node_modules`, with no separate materialization step. `package.json`'s `devDependencies` carries dev tooling (oxlint, oxfmt). Run `deno install` after cloning.
+Runtime dependencies come from [JSR](https://jsr.io) — `@hono/hono`, `@valibot/valibot`, `@matmen/imagescript` (deck-image compositing), and `@std/fmt` (log formatting) — declared directly in `package.json`'s `dependencies` as `npm:@jsr/<scope>__<name>` aliases; Deno resolves the `@jsr` scope natively, and `preferPackageJson` in `deno.json` makes `package.json` the dependency source of truth (no `.npmrc` needed). This lets both Deno and oxlint's type-aware pass resolve them straight out of `node_modules`, with no separate materialization step. `package.json`'s `devDependencies` carries dev tooling (oxlint, oxfmt). Run `deno install` after cloning.
 
 ## Setup
 
