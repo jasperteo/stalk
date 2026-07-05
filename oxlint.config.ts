@@ -18,6 +18,7 @@ const oxlintConfig = defineConfig({
 		"**/*.log",
 		"**/npm-debug.log*",
 		"**/.DS_Store",
+		"deno.d.ts",
 	],
 	rules: {
 		"constructor-super": "error",
