@@ -95,6 +95,20 @@ function buildTrophyField(player: Player | undefined, label: string) {
 	};
 }
 
+/**
+ * The pair of inline trophy rows for an embed from `subject`'s point of view: their own progression
+ * labelled "Trophies" and the other player's as "Opponent Trophies". Each side is passed as
+ * `(subject, other)`, so the opponent's embed leads with — and correctly labels — the opponent's
+ * own trophies rather than reusing the tracked player's labelling. Rows drop out in modes without
+ * trophies (`buildTrophyField` returns undefined).
+ */
+function buildTrophyFields(subject: Player | undefined, other: Player | undefined) {
+	return [
+		buildTrophyField(subject, "Trophies"),
+		buildTrophyField(other, "Opponent Trophies"),
+	].filter(Boolean);
+}
+
 function buildSupportField(player: Player | undefined, label: string) {
 	if (!player?.supportCards.length) {
 		return;
@@ -123,9 +137,10 @@ function towerThumbnail(player: Player | undefined) {
 }
 
 /**
- * Everything both message shapes (image embeds and text fallback) derive from the battle: outcome
- * (colour/verb), the content block (result header + crown score + HP margin), trophy fields, and
- * footer. The per-side embed titles are the players' names, taken straight from `me`/`opponent`.
+ * The battle-wide bits both message shapes (image embeds and text fallback) share: the opponent,
+ * the outcome (colour/verb), the content block (result header + crown score + HP margin), and the
+ * footer. Trophy rows are built per embed by `buildTrophyFields` (they're perspective-dependent),
+ * and the per-side embed titles are the players' names, taken straight from `me`/`opponent`.
  */
 function battleContext(battle: Battle, me: Player) {
 	const opponent = battle.opponent[0];
@@ -145,12 +160,6 @@ function battleContext(battle: Battle, me: Player) {
 		? `${outcome.verb} by ${weakestSurvivingTowerHp(winner).toLocaleString()}hp`
 		: undefined;
 
-	// Trophy rows only exist in trophy modes; consumers drop their spacing too when absent.
-	const trophyFields = [
-		buildTrophyField(me, "Trophies"),
-		buildTrophyField(opponent, "Opponent Trophies"),
-	].filter(Boolean);
-
 	// Content (above the embeds) doubles as the push-notification text, which bare embeds wouldn't
 	// provide: the result as an H1, the crown score as an H2 subheader, then the HP margin as plain
 	// text. A draw's absent margin simply drops its line.
@@ -160,7 +169,6 @@ function battleContext(battle: Battle, me: Player) {
 	return {
 		opponent,
 		outcome,
-		trophyFields,
 		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
 		content,
 	};
@@ -185,10 +193,10 @@ type DeckAttachment = Awaited<ReturnType<typeof renderDeckAttachment>>;
 /**
  * The image-rich message: one embed per side, each titled with the player's name and stamped with
  * the same footer + timestamp. Embed 1 carries the tracked player's trophies, deck grid, and
- * tower-troop thumbnail; embed 2 mirrors the branding for the opponent, with the trophy fields
- * reversed so the opponent's own trophies lead. The result, crown score, and HP margin live in the
- * message content. Each embed's image reference comes from the same `DeckAttachment` whose file
- * `buildForm` uploads alongside this payload.
+ * tower-troop thumbnail; embed 2 mirrors the branding for the opponent, with the trophy rows built
+ * from the opponent's perspective so their own trophies lead and are labelled correctly. The
+ * result, crown score, and HP margin live in the message content. Each embed's image reference
+ * comes from the same `DeckAttachment` whose file `buildForm` uploads alongside this payload.
  */
 function buildMessage(
 	battle: Battle,
@@ -196,29 +204,29 @@ function buildMessage(
 	myDeck: DeckAttachment,
 	opponentDeck: DeckAttachment | undefined
 ) {
-	const { opponent, outcome, trophyFields, footer, content } = battleContext(battle, me);
+	const { opponent, outcome, footer, content } = battleContext(battle, me);
 
-	// Both sides share one embed shape; only the player, their deck, and the trophy-field order
-	// differ.
-	const sideEmbed = (player: Player, deck: DeckAttachment, fields: typeof trophyFields) => ({
+	// Both sides share one embed shape; each is built from its own player's perspective, so the
+	// trophy rows lead with — and label — that player's own trophies.
+	const sideEmbed = (player: Player, deck: DeckAttachment, other: Player | undefined) => ({
 		author: buildAuthor(player.tag),
 		title: player.name,
 		color: outcome.color,
 		thumbnail: towerThumbnail(player),
-		fields,
+		fields: buildTrophyFields(player, other),
 		image: deck.image,
 		footer,
 		timestamp: battle.battleTime,
 	});
 
-	const myEmbed = sideEmbed(me, myDeck, trophyFields);
+	const myEmbed = sideEmbed(me, myDeck, opponent);
 
 	// The second embed exists exactly when the opponent's deck rendered; its image reference and
 	// the uploaded file are two halves of the same attachment, so they can't drift apart.
 	const opponentEmbed =
 		opponent === undefined || opponentDeck === undefined
 			? undefined
-			: sideEmbed(opponent, opponentDeck, trophyFields.toReversed());
+			: sideEmbed(opponent, opponentDeck, me);
 
 	const embeds = opponentEmbed === undefined ? [myEmbed] : [myEmbed, opponentEmbed];
 
@@ -231,8 +239,9 @@ function buildMessage(
  * as text fields.
  */
 function buildFallbackMessage(battle: Battle, me: Player) {
-	const { opponent, outcome, trophyFields, footer, content } = battleContext(battle, me);
+	const { opponent, outcome, footer, content } = battleContext(battle, me);
 
+	const trophyFields = buildTrophyFields(me, opponent);
 	const fields = [
 		...trophyFields,
 		...(trophyFields.length > 0 ? [SPACER_FIELD] : []),
