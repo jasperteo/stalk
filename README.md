@@ -8,7 +8,7 @@ A **Deno** application (deployed on **Deno Deploy**), built with **Hono**, that 
 2. The player's battle log is fetched for their `tag` via the [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy) (`https://proxy.royaleapi.dev/v1`), which gives a stable outbound IP to whitelist on the API token.
 3. The latest `battleTime` is compared against a cursor stored in Deno KV under the tuple key `["lastBattle", tag]`. Cursors are namespaced per tag, so every player shares one KV store without colliding.
 4. **First run:** the cursor is seeded without posting, to avoid a stale notification.
-5. **Subsequent runs with a new battle:** a Discord message is posted to that player's webhook — one embed per player, each showing that side's deck as a composited card-image grid — then the cursor is updated.
+5. **Subsequent runs with a new battle:** a Discord message is posted to that player's webhook — the result and crown score in the message content, then one embed per player, each titled with that player's name and showing that side's deck as a composited card-image grid — then the cursor is updated.
 
 Battle log entries that fail schema validation are skipped. To stay cheap, the newest entry is picked by a fast timestamp comparison and only that one entry is fully validated against the schema — so full validation runs once per log instead of once per entry.
 
@@ -18,7 +18,7 @@ Battle log entries that fail schema validation are skipped. To stay cheap, the n
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/main.ts`        | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler                                                                                 |
 | `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                                                                                                     |
-| `src/discord.ts`     | Builds and posts the Discord message for a single battle: two embeds (one per player), each with a composited deck-grid image and the player's tower troop as thumbnail; falls back to a text-only embed if image rendering fails      |
+| `src/discord.ts`     | Builds and posts the battle message: result and crown score in the content; two embeds (one per player), each titled with the player's name, with a deck-grid image and tower-troop thumbnail; text-only fallback if rendering fails   |
 | `src/deck-image.ts`  | Composites a deck's 8 card icons into a bottom-aligned 4-column PNG grid via ImageScript; trims transparent margins, renders at native resolution, and caches both trimmed tiles (by icon URL) and finished grids (by deck, small LRU) |
 | `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `iconUrls`                                                                                    |
 | `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing)                                                                                                |
