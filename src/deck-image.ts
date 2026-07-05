@@ -18,14 +18,14 @@ const COLUMNS = 4;
  * Gutter between columns, in native pixels. Tiles are trimmed on the sides, so this is the true
  * gap.
  */
-const COLUMN_GAP = 16;
+const COLUMN_GAP = 12;
 /**
  * Gutter between rows. Negative: the upper row keeps its native bottom padding (`trimToArt`), which
  * is transparent, so a small overlap tightens the rows without clipping any card art. Don't go
  * below roughly -20 — a top row of hexagon/champion frames has less bottom padding to overlap
  * into.
  */
-const ROW_GAP = -16;
+const ROW_GAP = -18;
 /** Alpha at or below this counts as transparent when trimming the card's margin. */
 const ALPHA_THRESHOLD = 8;
 /**

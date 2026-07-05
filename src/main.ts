@@ -115,4 +115,4 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 	console.log(`poll-battlelogs: ${String(targets.length)} targets — ${counts}`);
 });
 
-export default app;
+export default app satisfies Deno.ServeDefaultExport;
