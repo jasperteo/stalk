@@ -84,7 +84,10 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 }
 
 // Poll every minute. Deno.cron registers at module load and runs on Deno Deploy's scheduler.
-Deno.cron("poll-battlelogs", "*/1 * * * *", async () => {
+// The returned promise only surfaces registration errors and must not be awaited (the job runs
+// for the isolate's lifetime), so we void it to satisfy no-floating-promises; a failed
+// registration still shows up as the absence of heartbeat lines on the dashboard.
+void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 	// Can't poll without a token; env.ts already logged why, once. Still emit a heartbeat so a
 	// misconfigured deploy shows up as a loud skipped tick, not a silent dashboard.
 	if (config === undefined) {

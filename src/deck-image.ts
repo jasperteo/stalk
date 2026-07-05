@@ -274,7 +274,7 @@ async function composeDeckGrid(urls: string[]): Promise<Uint8Array<ArrayBuffer>>
  * failure — the caller falls back to the text-only message — and failures evict themselves so a bad
  * render isn't cached.
  */
-function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
+async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	const urls = cards.map((card) => iconUrl(card));
 	const key = urls.join("|");
 	const cached = deckCache.get(key);
@@ -294,12 +294,16 @@ function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 		}
 	}
 
+	// Cached before the first await, so concurrent renders of the same deck dedupe on this promise.
 	const pending = composeDeckGrid(urls);
-
 	deckCache.set(key, pending);
-	pending.catch(() => deckCache.delete(key));
 
-	return pending;
+	try {
+		return await pending;
+	} catch (error) {
+		deckCache.delete(key);
+		throw error;
+	}
 }
 
 export { renderDeckGrid };
