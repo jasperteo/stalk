@@ -1,4 +1,6 @@
 import type { Image } from "@matmen/imagescript";
+import { format as formatBytes } from "@std/fmt/bytes";
+import { format as formatDuration } from "@std/fmt/duration";
 
 import type { Card } from "@/schema.ts";
 
@@ -184,8 +186,10 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 
 	// Size is worth logging: tiles composite at whatever resolution the CDN serves (no resize), so a
 	// CDN art upgrade would silently grow every upload toward Discord's attachment limit.
+	const elapsed = formatDuration(Math.round(end - start), { ignoreZero: true });
+	const composeElapsed = formatDuration(Math.round(end - composeStart), { ignoreZero: true });
 	console.log(
-		`deck grid: ${String(tiles.length)} tiles (${String(fetched)} fetched), ${String(Math.round(png.length / 1024))}KB, in ${(end - start).toFixed(0)}ms (compose+encode ${(end - composeStart).toFixed(0)}ms)`
+		`deck grid: ${String(tiles.length)} tiles (${String(fetched)} fetched), ${formatBytes(png.length)}, in ${elapsed} (compose+encode ${composeElapsed})`
 	);
 
 	return png;
