@@ -130,10 +130,25 @@ function buildAuthor(tag: string) {
 	};
 }
 
+/**
+ * Curated Supercell art for the tower troops we have art for, overriding the API's own
+ * `iconUrls.medium`. Keyed by lowercased troop name; anything else (Royal Chef, or a newer troop)
+ * falls through to the API icon.
+ */
+const TOWER_TROOP_ART: Record<string, string> = {
+	"tower princess": "https://media.ffycdn.net/eu/supercell/T13rp76EnM5QtMNHoBWe.png",
+	"dagger duchess": "https://media.ffycdn.net/eu/supercell/CEaj16S9aPSXgggqNkod.png",
+	cannoneer: "https://media.ffycdn.net/eu/supercell/97bGG5HWqqLcuJ282WEK.png",
+};
+
 /** The player's tower troop art as the embed thumbnail; undefined if the mode has none. */
 function towerThumbnail(player: Player | undefined) {
-	const url = player?.supportCards[0]?.iconUrls.medium;
-	return url === undefined ? undefined : { url };
+	const troop = player?.supportCards[0];
+	if (troop === undefined) {
+		return undefined;
+	}
+
+	return { url: TOWER_TROOP_ART[troop.name.toLowerCase()] ?? troop.iconUrls.medium };
 }
 
 /**
