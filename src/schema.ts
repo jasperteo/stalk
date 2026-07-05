@@ -131,5 +131,5 @@ type Battle = v.InferOutput<typeof BattleSchema>;
 type Target = v.InferOutput<typeof TargetSchema>;
 type Card = v.InferOutput<typeof CardSchema>;
 
-export { BattleSchema, EligibleBattleTimeSchema, TargetsEnvSchema, TokenEnvSchema, UrlSchema };
+export { BattleSchema, EligibleBattleTimeSchema, TargetsEnvSchema, TokenEnvSchema };
 export type { Battle, Card, Player, Target };

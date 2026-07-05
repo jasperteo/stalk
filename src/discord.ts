@@ -32,13 +32,6 @@ const OUTCOMES = {
 
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
 
-/**
- * Deck-grid attachment filenames, shared between the embeds' `attachment://` refs and the uploaded
- * `File` names — Discord matches them by string, so a mismatch silently drops the image.
- */
-const MY_DECK_FILENAME = "my-deck.png";
-const OPPONENT_DECK_FILENAME = "opp-deck.png";
-
 const SPACER_FIELD = { name: "\u200B", value: "\u200B" } as const;
 
 /** Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. */
@@ -171,12 +164,34 @@ function battleContext(battle: Battle, me: Player) {
 }
 
 /**
+ * A rendered deck grid bundled with the `File` to upload and the `attachment://` image reference
+ * the embed uses. Discord pairs the two by filename string and silently drops the image on a
+ * mismatch — deriving both from one filename here makes that mismatch unrepresentable.
+ */
+async function renderDeckAttachment(cards: Card[], filename: string) {
+	const png = await renderDeckGrid(cards);
+
+	return {
+		file: new File([png], filename, { type: "image/png" }),
+		image: { url: `attachment://${filename}` },
+	};
+}
+
+type DeckAttachment = Awaited<ReturnType<typeof renderDeckAttachment>>;
+
+/**
  * The image-rich message: one embed per side. Embed 1 carries the match info (score, HP margin,
  * trophies) plus the tracked player's deck grid and tower-troop thumbnail; embed 2 mirrors the
- * branding for the opponent's deck. Footer and timestamp sit on whichever embed renders last.
- * `attachment://` URLs refer to the files `buildForm` uploads alongside this payload.
+ * branding for the opponent's deck. Footer and timestamp sit on whichever embed renders last. Each
+ * embed's image reference comes from the same `DeckAttachment` whose file `buildForm` uploads
+ * alongside this payload.
  */
-function buildMessage(battle: Battle, me: Player) {
+function buildMessage(
+	battle: Battle,
+	me: Player,
+	myDeck: DeckAttachment,
+	opponentDeck: DeckAttachment | undefined
+) {
 	const { opponent, outcome, title, description, trophyFields, footer, content } = battleContext(
 		battle,
 		me
@@ -189,20 +204,20 @@ function buildMessage(battle: Battle, me: Player) {
 		color: outcome.color,
 		thumbnail: towerThumbnail(me),
 		fields: trophyFields,
-		image: { url: `attachment://${MY_DECK_FILENAME}` },
+		image: myDeck.image,
 	};
 
-	// buildForm renders a deck grid exactly when the opponent exists (any render failure falls back
-	// to the text message instead), so opponent presence alone decides the second embed.
+	// The second embed exists exactly when the opponent's deck rendered; its image reference and
+	// the uploaded file are two halves of the same attachment, so they can't drift apart.
 	const opponentEmbed =
-		opponent === undefined
+		opponent === undefined || opponentDeck === undefined
 			? undefined
 			: {
 					author: buildAuthor(opponent.tag),
 					title: opponent.name,
 					color: outcome.color,
 					thumbnail: towerThumbnail(opponent),
-					image: { url: `attachment://${OPPONENT_DECK_FILENAME}` },
+					image: opponentDeck.image,
 				};
 
 	const trailer = { footer, timestamp: battle.battleTime };
@@ -255,20 +270,17 @@ function buildFallbackMessage(battle: Battle, me: Player) {
 async function buildForm(battle: Battle, me: Player) {
 	const opponent = battle.opponent[0];
 	const [myDeck, opponentDeck] = await Promise.all([
-		renderDeckGrid(me.cards),
-		opponent === undefined ? undefined : renderDeckGrid(opponent.cards),
+		renderDeckAttachment(me.cards, "my-deck.png"),
+		opponent === undefined ? undefined : renderDeckAttachment(opponent.cards, "opp-deck.png"),
 	]);
 
 	const form = new FormData();
 
-	form.append("payload_json", JSON.stringify(buildMessage(battle, me)));
-	form.append("files[0]", new File([myDeck], MY_DECK_FILENAME, { type: "image/png" }));
+	form.append("payload_json", JSON.stringify(buildMessage(battle, me, myDeck, opponentDeck)));
+	form.append("files[0]", myDeck.file);
 
 	if (opponentDeck !== undefined) {
-		form.append(
-			"files[1]",
-			new File([opponentDeck], OPPONENT_DECK_FILENAME, { type: "image/png" })
-		);
+		form.append("files[1]", opponentDeck.file);
 	}
 
 	return form;

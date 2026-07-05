@@ -14,14 +14,14 @@ Battle log entries that fail schema validation are skipped. To stay cheap, the n
 
 ## Source files
 
-| File                 | Responsibility                                                                                                                                                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/main.ts`        | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler                                                                            |
-| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                                                                                                |
-| `src/discord.ts`     | Builds and posts the Discord message for a single battle: two embeds (one per player), each with a composited deck-grid image and the player's tower troop as thumbnail; falls back to a text-only embed if image rendering fails |
-| `src/deck-image.ts`  | Composites a deck's 8 card icons into a bottom-aligned 4-column PNG grid via ImageScript; trims transparent margins, renders at native resolution, and caches decoded tiles                                                       |
-| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `iconUrls`                                                                               |
-| `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing)                                                                                           |
+| File                 | Responsibility                                                                                                                                                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.ts`        | Hono app entry point; `export default app` (the `fetch` handler — `GET /` health check, `GET /kv/last-battle` cursor view) and the `Deno.cron` handler                                                                                 |
+| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                                                                                                     |
+| `src/discord.ts`     | Builds and posts the Discord message for a single battle: two embeds (one per player), each with a composited deck-grid image and the player's tower troop as thumbnail; falls back to a text-only embed if image rendering fails      |
+| `src/deck-image.ts`  | Composites a deck's 8 card icons into a bottom-aligned 4-column PNG grid via ImageScript; trims transparent margins, renders at native resolution, and caches both trimmed tiles (by icon URL) and finished grids (by deck, small LRU) |
+| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `iconUrls`                                                                                    |
+| `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing)                                                                                                |
 
 ## Dependencies
 
