@@ -25,13 +25,15 @@ The project deliberately keeps **two** TypeScript configs because oxlint and Den
 
 `deno.d.ts` is a **minimal ambient declaration** of only the `Deno` APIs this project uses, so oxlint's type-aware pass can resolve them. It is excluded from `deno check`/`deno lint` (via `deno.json`) so it never clashes with Deno's built-in lib.
 
-### Dependencies (JSR + node_modules)
+### Dependencies (package.json + node_modules)
 
-Runtime deps (`@hono/hono`, `@valibot/valibot`, `@matmen/imagescript`) come from **JSR**, declared in `deno.json`'s `imports` map as `jsr:` specifiers and imported by their **full scoped names** (not bare `hono`/`valibot`). `@matmen/imagescript` is pulled in via a dynamic `import()` in `src/deck-image.ts`, so its ~1.8 MB of codec WASM is compiled only on the first deck render instead of every isolate cold boot.
+Runtime deps (`@hono/hono`, `@valibot/valibot`, `@matmen/imagescript`, `@std/fmt`) come from **JSR**, but are declared directly in `package.json`'s `dependencies` as `npm:@jsr/<scope>__<name>` aliases (e.g. `"@hono/hono": "npm:@jsr/hono__hono@^4.12.27"`), not as `jsr:` specifiers in `deno.json`'s `imports` map — that map only holds the internal `@/` path alias. The aliases resolve from JSR's npm-compat registry via `.npmrc` (`@jsr:registry=https://npm.jsr.io`, **committed**).
 
-The non-obvious part is `"jsrDepsInNodeModules": true` in `deno.json`. It materializes those JSR packages into `node_modules` via JSR's npm-compat registry (`@jsr/<scope>__<name>`, symlinked as `@hono/hono` etc.) and makes `deno install` write `.npmrc` (`@jsr:registry=https://npm.jsr.io`). This is what lets oxlint/tsgolint — vanilla TypeScript, which resolves through `node_modules`, not Deno's import map — type-check the deps. **Commit `.npmrc`.** Without this flag, JSR deps live only in Deno's global cache and oxlint reports every hono/valibot member as an `error`-typed value.
+Putting the JSR deps in `package.json` instead of `deno.json` makes `package.json` the single source of truth: Deno resolves bare specifiers from `node_modules` (`nodeModulesDir: "auto"`) the same way it resolves any node-compat dependency, and so does oxlint/tsgolint (vanilla TypeScript, which only understands `node_modules`, not Deno's import map) — no separate JSR-to-node_modules materialization step to keep in sync. Run `deno install` after cloning to populate `node_modules`.
 
-`package.json` carries **only** dev tooling (`oxlint`, `oxfmt`, `oxlint-tsgolint`); `deno install` installs it into the same `node_modules`. Run `deno install` after cloning.
+`@matmen/imagescript` is pulled in via a dynamic `import()` in `src/deck-image.ts`, so its ~1.8 MB of codec WASM is compiled only on the first deck render instead of every isolate cold boot. `@std/fmt` (`@std/fmt/bytes`, `@std/fmt/duration`) formats the deck-render log line.
+
+`package.json`'s `devDependencies` carries dev tooling (`oxlint`, `oxfmt`, `oxlint-tsgolint`), installed into the same `node_modules`.
 
 ## Architecture
 
