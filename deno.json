@@ -1,6 +1,6 @@
 {
 	"nodeModulesDir": "auto",
-	"jsrDepsInNodeModules": true,
+	"preferPackageJson": true,
 	"tasks": {
 		"dev": "deno serve --watch --env-file=.env src/main.ts",
 		"deploy": "deno run -A jsr:@deno/deployctl deploy",
