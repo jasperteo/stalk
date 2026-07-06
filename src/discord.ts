@@ -1,4 +1,5 @@
 import { renderDeckGrid } from "@/deck-image.ts";
+import { log } from "@/log.ts";
 import type { Battle, Card, Player } from "@/schema.ts";
 
 /** Green */
@@ -320,7 +321,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 	try {
 		request = { method: "POST", body: await buildForm(battle, me) };
 	} catch (error) {
-		console.error("Deck image render failed, posting text-only fallback:", error);
+		log.error("Deck image render failed, posting text-only fallback:", error);
 
 		request = {
 			method: "POST",
