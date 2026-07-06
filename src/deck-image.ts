@@ -3,6 +3,7 @@ import { format as formatBytes } from "@std/fmt/bytes";
 import { format as formatDuration } from "@std/fmt/duration";
 
 import { config } from "@/env.ts";
+import { log } from "@/log.ts";
 import type { Card } from "@/schema.ts";
 
 /**
@@ -233,7 +234,7 @@ async function composeDeckGrid(urls: string[]): Promise<Uint8Array<ArrayBuffer>>
 		// art leaves less padding than the overlap (e.g. a future frame style), it would clip — say
 		// so. Bottom-row tiles have no row below them, so they can't clip.
 		if (row < rows - 1 && bottomPadding < -ROW_GAP) {
-			console.warn(
+			log.warn(
 				`card art bottom padding ${String(bottomPadding)}px < row overlap ${String(-ROW_GAP)}px; grid rows may clip`
 			);
 		}
@@ -258,7 +259,7 @@ async function composeDeckGrid(urls: string[]): Promise<Uint8Array<ArrayBuffer>>
 	// CDN art upgrade would silently grow every upload toward Discord's attachment limit.
 	const elapsed = formatDuration(Math.round(end - start), { ignoreZero: true });
 	const composeElapsed = formatDuration(Math.round(end - composeStart), { ignoreZero: true });
-	console.log(
+	log.debug(
 		`deck grid: ${String(tiles.length)} tiles (${String(fetched)} fetched), ${formatBytes(png.length)}, in ${elapsed} (compose+encode ${composeElapsed})`
 	);
 
