@@ -3,7 +3,7 @@ import { Hono } from "@hono/hono";
 import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
 import { notifyBattle } from "@/discord.ts";
 import { config } from "@/env.ts";
-import { log } from "@/log.ts";
+import { hl, levelColor, log } from "@/log.ts";
 import type { Target } from "@/schema.ts";
 
 const app = new Hono();
@@ -34,8 +34,19 @@ app.get("/kv/last-battle", async (ctx) => {
 	return ctx.json(cursors);
 });
 
-/** Per-target result of a poll, tallied into the cron tick's summary log line. */
-type PollOutcome = "posted" | "seeded" | "skipped" | "failed";
+/** Per-target results of a poll, tallied into the cron tick's summary log line, in display order. */
+const POLL_OUTCOMES = ["posted", "seeded", "skipped", "failed"] as const;
+type PollOutcome = (typeof POLL_OUTCOMES)[number];
+
+// Each outcome borrows the badge color of the level it corresponds to (posted~ok, seeded~info,
+// failed~error; skipped gets debug's gray since a skip isn't actionable), so the heartbeat tally
+// reads like a mini heat-map that stays in sync with the badges by construction.
+const outcomeColor: Record<PollOutcome, (str: string) => string> = {
+	posted: levelColor.ok,
+	seeded: levelColor.info,
+	skipped: levelColor.debug,
+	failed: levelColor.error,
+};
 
 async function poll(target: Target, token: string): Promise<PollOutcome> {
 	const { tag, webhook } = target;
@@ -71,15 +82,15 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		// Log only after the effects landed, so the dashboard never claims an action that didn't
 		// happen.
 		if (isFirstRun) {
-			log.info(`Seeded cursor for ${tag} (first run, no notification sent)`);
+			log.info(`Seeded cursor for ${hl.entity(tag)} (first run, no notification sent)`);
 			return "seeded";
 		}
 
-		log.success(`Posted battle for ${tag} at ${latest.battleTime}`);
+		log.success(`Posted battle for ${hl.entity(tag)} at ${latest.battleTime}`);
 		return "posted";
 	} catch (error) {
 		// Log and move on; the next cron run retries without overwriting the cursor.
-		log.error(`Poll failed for ${tag}:`, error);
+		log.error(`Poll failed for ${hl.entity(tag)}:`, error);
 		return "failed";
 	}
 }
@@ -108,10 +119,11 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 	}
 
 	// Heartbeat: one line per tick so a quiet minute still shows up on the Deno Deploy dashboard.
-	// Counts are derived from the tally record, so a new PollOutcome can't go missing here.
-	const counts = Object.entries(tally)
-		.map(([outcome, count]) => `${outcome} ${String(count)}`)
-		.join(", ");
+	// Counts iterate POLL_OUTCOMES, which PollOutcome derives from — so a new outcome can't go
+	// missing here, and the summary order is fixed by declaration rather than insertion.
+	const counts = POLL_OUTCOMES.map((outcome) =>
+		outcomeColor[outcome](`${outcome} ${String(tally[outcome])}`)
+	).join(", ");
 
 	log.info(`poll-battlelogs: ${String(targets.length)} targets — ${counts}`);
 });
@@ -125,6 +137,6 @@ export default {
 		// The HTTP server always binds a TCP socket; narrow away the Unix/VSOCK variants of Deno.Addr.
 		const where =
 			addr.transport === "tcp" ? `http://${addr.hostname}:${String(addr.port)}` : addr.transport;
-		log.info(`stalk listening on ${where} — ${status}`);
+		log.info(`stalk listening on ${hl.value(where)} — ${status}`);
 	},
 } satisfies Deno.ServeDefaultExport;
