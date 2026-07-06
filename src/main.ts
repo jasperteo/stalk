@@ -3,6 +3,7 @@ import { Hono } from "@hono/hono";
 import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
 import { notifyBattle } from "@/discord.ts";
 import { config } from "@/env.ts";
+import { log } from "@/log.ts";
 import type { Target } from "@/schema.ts";
 
 const app = new Hono();
@@ -70,15 +71,15 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		// Log only after the effects landed, so the dashboard never claims an action that didn't
 		// happen.
 		if (isFirstRun) {
-			console.log(`Seeded cursor for ${tag} (first run, no notification sent)`);
+			log.info(`Seeded cursor for ${tag} (first run, no notification sent)`);
 			return "seeded";
 		}
 
-		console.log(`Posted battle for ${tag} at ${latest.battleTime}`);
+		log.success(`Posted battle for ${tag} at ${latest.battleTime}`);
 		return "posted";
 	} catch (error) {
 		// Log and move on; the next cron run retries without overwriting the cursor.
-		console.error(`Poll failed for ${tag}:`, error);
+		log.error(`Poll failed for ${tag}:`, error);
 		return "failed";
 	}
 }
@@ -91,7 +92,7 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 	// Can't poll without a token; env.ts already logged why, once. Still emit a heartbeat so a
 	// misconfigured deploy shows up as a loud skipped tick, not a silent dashboard.
 	if (config === undefined) {
-		console.log("poll-battlelogs: skipped tick — CR_API_TOKEN not set");
+		log.warn("poll-battlelogs: skipped tick — CR_API_TOKEN not set");
 		return;
 	}
 
@@ -112,7 +113,18 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 		.map(([outcome, count]) => `${outcome} ${String(count)}`)
 		.join(", ");
 
-	console.log(`poll-battlelogs: ${String(targets.length)} targets — ${counts}`);
+	log.info(`poll-battlelogs: ${String(targets.length)} targets — ${counts}`);
 });
 
-export default app satisfies Deno.ServeDefaultExport;
+export default {
+	fetch: app.fetch,
+	onListen: (addr) => {
+		const status = config
+			? `tracking ${String(config.targets.length)} target(s)`
+			: "idle (CR_API_TOKEN not set)";
+		// The HTTP server always binds a TCP socket; narrow away the Unix/VSOCK variants of Deno.Addr.
+		const where =
+			addr.transport === "tcp" ? `http://${addr.hostname}:${String(addr.port)}` : addr.transport;
+		log.info(`stalk listening on ${where} — ${status}`);
+	},
+} satisfies Deno.ServeDefaultExport;

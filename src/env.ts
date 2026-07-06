@@ -1,5 +1,6 @@
 import * as v from "@valibot/valibot";
 
+import { log } from "@/log.ts";
 import { TargetsEnvSchema, TokenEnvSchema } from "@/schema.ts";
 
 /** Reads and validates a single env var, logging once and falling back on a missing/invalid value. */
@@ -11,7 +12,7 @@ function parseEnv<TOutput>(
 	const parsed = v.safeParse(schema, Deno.env.get(name));
 
 	if (!parsed.success) {
-		console.error(`Invalid ${name} env var:`, v.flatten(parsed.issues));
+		log.error(`Invalid ${name} env var:`, v.flatten(parsed.issues));
 		return fallback;
 	}
 
