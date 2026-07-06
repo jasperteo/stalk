@@ -3,7 +3,7 @@ import { format as formatBytes } from "@std/fmt/bytes";
 import { format as formatDuration } from "@std/fmt/duration";
 
 import { config } from "@/env.ts";
-import { log } from "@/log.ts";
+import { hl, log } from "@/log.ts";
 import type { Card } from "@/schema.ts";
 
 /**
@@ -235,7 +235,7 @@ async function composeDeckGrid(urls: string[]): Promise<Uint8Array<ArrayBuffer>>
 		// so. Bottom-row tiles have no row below them, so they can't clip.
 		if (row < rows - 1 && bottomPadding < -ROW_GAP) {
 			log.warn(
-				`card art bottom padding ${String(bottomPadding)}px < row overlap ${String(-ROW_GAP)}px; grid rows may clip`
+				`card art bottom padding ${hl.strong(String(bottomPadding))}px < row overlap ${hl.strong(String(-ROW_GAP))}px; grid rows may clip`
 			);
 		}
 
@@ -260,7 +260,7 @@ async function composeDeckGrid(urls: string[]): Promise<Uint8Array<ArrayBuffer>>
 	const elapsed = formatDuration(Math.round(end - start), { ignoreZero: true });
 	const composeElapsed = formatDuration(Math.round(end - composeStart), { ignoreZero: true });
 	log.debug(
-		`deck grid: ${String(tiles.length)} tiles (${String(fetched)} fetched), ${formatBytes(png.length)}, in ${elapsed} (compose+encode ${composeElapsed})`
+		`deck grid: ${String(tiles.length)} tiles (${String(fetched)} fetched), ${hl.value(formatBytes(png.length))}, in ${elapsed} (compose+encode ${composeElapsed})`
 	);
 
 	return png;
