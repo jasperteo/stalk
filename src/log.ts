@@ -1,6 +1,6 @@
 import {
-	blue,
 	bold,
+	brightBlue,
 	cyan,
 	dim,
 	gray,
@@ -37,7 +37,7 @@ export const levelColor = {
  * outer color re-opens after the inner reset), but don't use `strong` inside a debug message: bold
  * and dim share close code 22, so the dim wouldn't survive past the highlight.
  */
-export const hl = { entity: magenta, value: blue, strong: bold };
+export const hl = { entity: magenta, value: brightBlue, strong: bold };
 
 /** Bold, colored, fixed-width level tag ("info" → "info ", "ok" → "ok ") so lines align. */
 const badge = (text: string, paint: (str: string) => string) => paint(bold(text.padEnd(5)));
