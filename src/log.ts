@@ -56,20 +56,21 @@ const DEBUG = badge("debug", levelColor.debug);
  * `log.error("…", err)` keeps the Error object's native console inspection (stack trace, etc.),
  * which stringifying it through a color function would flatten.
  */
+/**
+ * Builds one leveled logger from its console method, badge, and optional message tint — every
+ * handler shares this single shape, so badge/tint/method stay in agreement per level by
+ * construction (the old hand-written handlers let debug's paint drift to a bespoke `dim`).
+ */
+const leveled =
+	(write: (...data: unknown[]) => void, badge: string, tint = (message: string) => message) =>
+	(message: string, ...rest: unknown[]) => {
+		write(badge, tint(message), ...rest);
+	};
+
 export const log = {
-	info: (message: string, ...rest: unknown[]) => {
-		console.info(INFO, message, ...rest);
-	},
-	success: (message: string, ...rest: unknown[]) => {
-		console.info(OK, message, ...rest);
-	},
-	warn: (message: string, ...rest: unknown[]) => {
-		console.warn(WARN, levelColor.warn(message), ...rest);
-	},
-	error: (message: string, ...rest: unknown[]) => {
-		console.error(ERROR, levelColor.error(message), ...rest);
-	},
-	debug: (message: string, ...rest: unknown[]) => {
-		console.debug(DEBUG, levelColor.debug(message), ...rest);
-	},
+	info: leveled(console.info, INFO),
+	success: leveled(console.info, OK),
+	warn: leveled(console.warn, WARN, levelColor.warn),
+	error: leveled(console.error, ERROR, levelColor.error),
+	debug: leveled(console.debug, DEBUG, levelColor.debug),
 };
