@@ -132,14 +132,16 @@ function buildAuthor(tag: string) {
 }
 
 /**
- * Curated Supercell art for the tower troops we have art for, overriding the API's own
- * `iconUrls.medium`. Keyed by lowercased troop name; anything else (Royal Chef, or a newer troop)
- * falls through to the API icon.
+ * Curated art for the tower troops we have art for, overriding the API's own `iconUrls.medium`.
+ * Keyed by lowercased troop name; anything else (a newer troop) falls through to the API icon.
  */
 const TOWER_TROOP_ART: Record<string, string> = {
-	"tower princess": "https://media.ffycdn.net/eu/supercell/T13rp76EnM5QtMNHoBWe.png",
-	"dagger duchess": "https://media.ffycdn.net/eu/supercell/CEaj16S9aPSXgggqNkod.png",
-	cannoneer: "https://media.ffycdn.net/eu/supercell/97bGG5HWqqLcuJ282WEK.png",
+	"tower princess":
+		"https://liquipedia.net/commons/images/5/54/Clash_Royale_Card_Tower_Princess.png",
+	cannoneer: "https://liquipedia.net/commons/images/0/06/Clash_Royale_Card_Cannoneer.png",
+	"dagger duchess":
+		"https://liquipedia.net/commons/images/f/fb/Clash_Royale_Card_Dagger_Duchess.png",
+	"royal chef": "https://liquipedia.net/commons/images/5/50/Clash_Royale_Card_Royal_Chef.png",
 };
 
 /** The player's tower troop art as the embed thumbnail; undefined if the mode has none. */
