@@ -1,9 +1,11 @@
 import { Hono } from "@hono/hono";
+import * as v from "@valibot/valibot";
 
 import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
 import { notifyBattle } from "@/discord.ts";
 import { config } from "@/env.ts";
 import { hl, levelColor, log } from "@/log.ts";
+import { CursorSchema } from "@/schema.ts";
 import type { Target } from "@/schema.ts";
 
 const app = new Hono();
@@ -24,9 +26,11 @@ app.get("/", (ctx) => ctx.json({ status: "ok" }));
 
 /** Read-only view of the lastBattle cursors; no secrets live in KV, so this is safe to expose. */
 app.get("/kv/last-battle", async (ctx) => {
-	const cursors: Record<string, string> = {};
+	// Values pass through raw on purpose: this debug view's job is to show exactly what's stored;
+	// interpreting cursors (validation, first-run vs. corrupt) is poll()'s.
+	const cursors: Record<string, unknown> = {};
 
-	for await (const entry of kv.list<string>({ prefix: [LAST_BATTLE_PREFIX] })) {
+	for await (const entry of kv.list({ prefix: [LAST_BATTLE_PREFIX] })) {
 		const [, tag] = entry.key;
 		cursors[String(tag)] = entry.value;
 	}
@@ -60,15 +64,24 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		}
 
 		const key = lastBattleKey(tag);
-		const { value: lastSeen } = await kv.get<string>(key);
+		const { value: stored } = await kv.get(key);
+
+		// null (first run) fails the parse too; only a non-null failure is corrupt — warn and
+		// re-seed like a first run rather than re-posting every tick against a cursor that can
+		// never match.
+		const cursor = v.safeParse(CursorSchema, stored);
+		if (stored !== null && !cursor.success) {
+			log.warn(`Corrupt lastBattle cursor for ${hl.entity(tag)}; re-seeding without posting`);
+		}
+		const lastSeen = cursor.success ? cursor.output : undefined;
 
 		// No new battles since the last run; nothing to do.
 		if (latest.battleTime === lastSeen) {
 			return "skipped";
 		}
 
-		// First run: seed the cursor without posting a possibly-stale battle.
-		const isFirstRun = lastSeen === null;
+		// First run (or corrupt cursor): seed without posting a possibly-stale battle.
+		const isFirstRun = lastSeen === undefined;
 
 		if (!isFirstRun) {
 			await notifyBattle(webhook, latest);

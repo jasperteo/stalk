@@ -109,6 +109,15 @@ const EligibleBattleTimeSchema = v.fallback(
 );
 
 /**
+ * A stored lastBattle KV cursor. Reuses BattleSchema's own battleTime rule (defined once there), so
+ * "passes the schema" and "can match a battleTime" are the same claim by construction: the pipe is
+ * idempotent on its own canonical output, re-normalizes an equivalent-but-differently- shaped
+ * timestamp into the fixed-width form the `===` comparison needs, and rejects garbage — instead of
+ * trusting a `kv.get<string>` cast.
+ */
+const CursorSchema = BattleSchema.entries.battleTime;
+
+/**
  * CR_API_TOKEN: rejects both an unset env var (`v.string()` fails on `undefined`) and an empty
  * string.
  */
@@ -131,5 +140,5 @@ type Battle = v.InferOutput<typeof BattleSchema>;
 type Target = v.InferOutput<typeof TargetSchema>;
 type Card = v.InferOutput<typeof CardSchema>;
 
-export { BattleSchema, EligibleBattleTimeSchema, TargetsEnvSchema, TokenEnvSchema };
+export { BattleSchema, CursorSchema, EligibleBattleTimeSchema, TargetsEnvSchema, TokenEnvSchema };
 export type { Battle, Card, Player, Target };
