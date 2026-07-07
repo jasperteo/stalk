@@ -3,7 +3,6 @@ import {
 	brightBlue,
 	brightMagenta,
 	cyan,
-	dim,
 	gray,
 	green,
 	red,
@@ -34,8 +33,7 @@ export const levelColor = {
  * bare emphasis. Exported from here — the module that owns the setColorEnabled gate above — so no
  * other file imports `@std/fmt/colors` and paints before the gate has run. The colors deliberately
  * avoid the level meanings in `levelColor`. Nesting inside a tinted warn/error message is safe (the
- * outer color re-opens after the inner reset), but don't use `strong` inside a debug message: bold
- * and dim share close code 22, so the dim wouldn't survive past the highlight.
+ * outer color re-opens after each inner reset), including inside a greyed debug message.
  */
 export const hl = { entity: brightMagenta, value: brightBlue, strong: bold };
 
@@ -53,7 +51,7 @@ const DEBUG = badge("debug", levelColor.debug);
 /**
  * Console wrapper: every line gets a colored level badge so local dev and Deno Deploy logs read as
  * one consistent stream instead of an undifferentiated wall. warn/error also tint the message text
- * so a problem line is scannable as a whole, and debug dims its message since it's verbose
+ * so a problem line is scannable as a whole, and debug greys its message since it's verbose
  * diagnostic detail rather than something to act on. Extra args are left unpainted —
  * `log.error("…", err)` keeps the Error object's native console inspection (stack trace, etc.),
  * which stringifying it through a color function would flatten.
@@ -72,6 +70,6 @@ export const log = {
 		console.error(ERROR, levelColor.error(message), ...rest);
 	},
 	debug: (message: string, ...rest: unknown[]) => {
-		console.debug(DEBUG, dim(message), ...rest);
+		console.debug(DEBUG, levelColor.debug(message), ...rest);
 	},
 };
