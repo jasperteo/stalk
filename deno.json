@@ -7,7 +7,7 @@
 		"test": "vitest",
 		"preview": "deno run -A --env-file=.env scripts/preview.ts",
 		"fmt": "oxfmt",
-		"lint": "oxlint && deno lint && deno check --unstable-tsgo src/main.ts scripts/preview.ts"
+		"lint": "oxlint && deno lint && deno check --unstable-tsgo ."
 	},
 	"imports": {
 		"@/": "./src/"
