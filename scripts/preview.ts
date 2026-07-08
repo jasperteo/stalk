@@ -32,7 +32,6 @@ const DECK: Card[] = [
 	},
 	{
 		name: "Boss Bandit",
-		evolutionLevel: undefined,
 		iconUrls: {
 			medium:
 				"https://api-assets.clashroyale.com/cards/300/nuceG9o7rAyvyc7D3sp2QSiRYtSOEgraq0NJkDf729s.png",
@@ -40,7 +39,6 @@ const DECK: Card[] = [
 	},
 	{
 		name: "Ronin",
-		evolutionLevel: undefined,
 		iconUrls: {
 			medium:
 				"https://cdns3.royaleapi.com/cdn-cgi/image/w=302,format=png/static/img/cards/v10-9f6caa5e/ronin.png",
@@ -48,7 +46,6 @@ const DECK: Card[] = [
 	},
 	{
 		name: "The Log",
-		evolutionLevel: undefined,
 		iconUrls: {
 			medium:
 				"https://api-assets.clashroyale.com/cards/300/_iDwuDLexHPFZ_x4_a0eP-rxCS6vwWgTs6DLauwwoaY.png",
@@ -56,7 +53,6 @@ const DECK: Card[] = [
 	},
 	{
 		name: "Princess",
-		evolutionLevel: undefined,
 		iconUrls: {
 			medium:
 				"https://api-assets.clashroyale.com/cards/300/bAwMcqp9EKVIKH3ZLm_m0MqZFSG72zG-vKxpx8aKoVs.png",
@@ -66,7 +62,6 @@ const DECK: Card[] = [
 	},
 	{
 		name: "Lumberjack",
-		evolutionLevel: undefined,
 		iconUrls: {
 			medium:
 				"https://api-assets.clashroyale.com/cards/300/E6RWrnCuk13xMX5OE1EQtLEKTZQV6B78d00y8PlXt6Q.png",
@@ -76,7 +71,6 @@ const DECK: Card[] = [
 	},
 	{
 		name: "Cannon",
-		evolutionLevel: undefined,
 		iconUrls: {
 			medium:
 				"https://api-assets.clashroyale.com/cards/300/nZK1y-beLxO5vnlyUhK6-2zH2NzXJwqykcosqQ1cmZ8.png",
