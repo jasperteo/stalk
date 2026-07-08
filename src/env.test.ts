@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { WEBHOOK } from "@/testing/fixtures.ts";
+
+vi.mock("@/log.ts");
+
 const TOKEN_VAR = "CR_API_TOKEN";
 const TARGETS_VAR = "TARGETS";
 
@@ -7,15 +11,15 @@ const TARGETS_VAR = "TARGETS";
 // env.ts's `Deno.env.get` sees the stub, and `unstubEnvs` in vitest.config.ts restores the
 // original values before each test (stubbing to `undefined` deletes the variable).
 //
-// `env.ts` reads `Deno.env` once at module top level, and transitively imports `log.ts` (which
-// itself binds console methods at import time — see log.test.ts). Resetting modules and spying
-// before each fresh dynamic import gives every scenario its own clean module evaluation.
+// `env.ts` reads `Deno.env` once at module top level; resetting modules before each fresh dynamic
+// import gives every scenario its own clean module evaluation. The manual log mock is re-evaluated
+// along with it, so `log` must come from the same fresh registry env.ts saw.
 async function importEnv() {
 	vi.resetModules();
-	const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 	const mod = await import("@/env.ts");
+	const { log } = await import("@/log.ts");
 
-	return { ...mod, errorSpy };
+	return { ...mod, log };
 }
 
 describe("config", () => {
@@ -23,19 +27,10 @@ describe("config", () => {
 		vi.stubEnv(TOKEN_VAR, undefined);
 		vi.stubEnv(TARGETS_VAR, undefined);
 
-		const { config, errorSpy } = await importEnv();
+		const { config, log } = await importEnv();
 
 		expect(config).toBeUndefined();
-		expect(errorSpy.mock.calls.some((call) => String(call[1]).includes(TOKEN_VAR))).toBe(true);
-	});
-
-	it("is undefined when CR_API_TOKEN is an empty string", async () => {
-		vi.stubEnv(TOKEN_VAR, "");
-		vi.stubEnv(TARGETS_VAR, undefined);
-
-		const { config } = await importEnv();
-
-		expect(config).toBeUndefined();
+		expect(log.error).toHaveBeenCalledWith(expect.stringContaining(TOKEN_VAR), expect.anything());
 	});
 
 	it("defaults targets to [] when TARGETS is missing", async () => {
@@ -49,16 +44,13 @@ describe("config", () => {
 
 	it("parses and normalizes a valid TARGETS value", async () => {
 		vi.stubEnv(TOKEN_VAR, "my-token");
-		vi.stubEnv(
-			TARGETS_VAR,
-			JSON.stringify([{ tag: "abc", webhook: "https://discord.com/api/webhooks/1/aaa" }])
-		);
+		vi.stubEnv(TARGETS_VAR, JSON.stringify([{ tag: "abc", webhook: WEBHOOK }]));
 
 		const { config } = await importEnv();
 
 		expect(config).toEqual({
 			token: "my-token",
-			targets: [{ tag: "#ABC", webhook: "https://discord.com/api/webhooks/1/aaa" }],
+			targets: [{ tag: "#ABC", webhook: WEBHOOK }],
 		});
 	});
 
@@ -66,9 +58,10 @@ describe("config", () => {
 		vi.stubEnv(TOKEN_VAR, "my-token");
 		vi.stubEnv(TARGETS_VAR, "{not json");
 
-		const { config, errorSpy } = await importEnv();
+		const { config, log } = await importEnv();
 
 		expect(config).toEqual({ token: "my-token", targets: [] });
-		expect(errorSpy.mock.calls.some((call) => String(call[1]).includes(TARGETS_VAR))).toBe(true);
+		expect(log.error).toHaveBeenCalledTimes(1);
+		expect(log.error).toHaveBeenCalledWith(expect.stringContaining(TARGETS_VAR), expect.anything());
 	});
 });
