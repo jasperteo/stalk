@@ -96,11 +96,20 @@ deno task deploy  # Deploy to Deno Deploy (via deployctl)
 ```
 
 ```sh
+deno task test     # Run the Vitest suite
+deno task preview  # Render a hardcoded deck to scripts/preview.png (manual; hits the real CR CDN)
+```
+
+```sh
 deno task fmt     # Format (oxfmt)
-deno task lint    # oxlint && deno lint && deno check --unstable-tsgo src/main.ts
+deno task lint    # oxlint && deno lint && deno check --unstable-tsgo .
 ```
 
 `deno task lint` covers everything — do **not** run a separate `tsc --noEmit` or a standalone `deno check`. It chains oxlint (type-aware via oxlint-tsgolint), `deno lint` (Deno-idiom rules), and `deno check --unstable-tsgo` (Deno's own types via the native TypeScript-Go checker).
+
+## Testing
+
+Tests run under Vitest (`deno task test`), inside the same Deno process (`Deno.*` globals — KV, cron, env — stay real and get spied on directly). Shared test fixtures live in `src/testing/fixtures.ts`; `src/__mocks__/log.ts` is a manual mock for `@/log.ts`, auto-applied by `vi.mock("@/log.ts")`.
 
 ## Code style
 
