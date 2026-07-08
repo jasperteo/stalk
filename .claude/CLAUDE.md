@@ -10,8 +10,13 @@ deno task deploy  # Deploy to Deno Deploy (via deployctl)
 ```
 
 ```sh
+deno task test     # Run the Vitest suite
+deno task preview  # Render a hardcoded deck to scripts/preview.png (manual; hits the real CR CDN)
+```
+
+```sh
 deno task fmt     # Format (oxfmt)
-deno task lint    # oxlint && deno lint && deno check --unstable-tsgo src/main.ts
+deno task lint    # oxlint && deno lint && deno check --unstable-tsgo .
 ```
 
 `deno task lint` is the single command that covers everything — do **not** run a separate `tsc --noEmit` or a standalone `deno check`. It chains three passes: oxlint (type-aware via oxlint-tsgolint, resolving `Deno.*` through the vendored `deno.d.ts`), `deno lint` (Deno-idiom rules, no type info), and `deno check --unstable-tsgo` (Deno's own types — real `deno.ns`/unstable surface — via the native TypeScript-Go checker).
@@ -33,7 +38,7 @@ Putting the JSR deps in `package.json` instead of `deno.json` makes `package.jso
 
 `@matmen/imagescript` is pulled in via a dynamic `import()` in `src/deck-image.ts`, so its ~1.8 MB of codec WASM is compiled only on the first deck render instead of every isolate cold boot. `@std/fmt` formats logs: `@std/fmt/bytes` and `@std/fmt/duration` build the deck-render log line, and `@std/fmt/colors` paints the leveled console badges and inline value highlights, imported only by `src/log.ts`.
 
-`package.json`'s `devDependencies` carries dev tooling (`oxlint`, `oxfmt`, `oxlint-tsgolint`), installed into the same `node_modules`.
+`package.json`'s `devDependencies` carries dev tooling (`oxlint`, `oxfmt`, `oxlint-tsgolint`, `vitest`), installed into the same `node_modules`.
 
 ## Architecture
 
@@ -66,6 +71,14 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 | `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player     |
 
 `TARGETS` is parsed and validated by `TargetsEnvSchema` (src/schema.ts), which takes the raw env string through `v.parseJson()` — malformed or unset values surface as validation issues, not thrown `SyntaxError`s. Player tags are normalized at parse time to canonical `#UPPERCASE` form (`TagSchema`), which the KV cursor keys and player lookup rely on. Env vars are read via `Deno.env.get`. Locally they live in `.env` (gitignored; see `.env.example`); in production they're set in the Deno Deploy dashboard (or `deployctl`). Deno KV and `Deno.cron` require the `kv`/`cron` unstable flags, declared in `deno.json`.
+
+## Testing
+
+`deno task test` runs `vitest` (from `node_modules/.bin`, via `deno task`'s shell), which stays inside the Deno process — so `Deno.*` (KV, cron, env) is still the real ambient global, and tests spy on it directly (e.g. `src/main.test.ts` spies `Deno.openKv`/`Deno.cron` rather than mocking a wrapper). `vitest.config.ts`'s `environment: "node"` only selects vitest's non-DOM global set; it's unrelated to the underlying runtime. Its `restoreMocks`/`unstubGlobals`/`unstubEnvs`/`clearMocks` are all on globally (no test uses `.concurrent` — several mutate real shared `globalThis` state: `Deno.openKv`/`Deno.cron` spies, stubbed `fetch`, stubbed env — which concurrent tests in a file would race on regardless).
+
+- `src/__mocks__/log.ts` — manual mock for `@/log.ts`, auto-applied by a bare `vi.mock("@/log.ts")` (no factory). One canonical copy of the module's export surface, so a new export means one edit here instead of one per test file; `hl`/`levelColor` are identity functions, matching the real module's behavior with color disabled.
+- `src/testing/fixtures.ts` — shared raw (pre-validation) Clash Royale API shapes: `rawCard`/`rawPlayer`/`rawBattle` factories tests build on by spreading in overrides, plus shared constants (`WEBHOOK`, `BOB`, `rawBattle`'s default opponent) so tests overriding one field don't restate the rest.
+- `scripts/preview.ts` — dev-only tool that renders a hardcoded deck via `renderDeckGrid` and writes it next to itself for visual inspection. Not wired into `deno task test`: it fetches real card icons from the CR CDN (not hermetic) and writes a file (`scripts/*.png` is gitignored); run manually via `deno task preview`.
 
 ## Code style
 
