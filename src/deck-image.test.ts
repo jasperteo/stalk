@@ -25,22 +25,21 @@ const TILE_HEIGHT = 30;
 
 /**
  * A small, fully-opaque solid-color PNG, encoded once for the whole file — the bytes are read-only
- * (each `fetchServing` response wraps its own copy), so every test can serve the same buffer.
+ * (each `fetchServingFixture` response wraps its own copy), so every test can serve the same
+ * buffer.
  */
-const FIXTURE = await (async () => {
-	const image = new Image(TILE_WIDTH, TILE_HEIGHT);
-	image.fill(Image.rgbaToColor(200, 30, 30, 255));
-	return new Uint8Array(await image.encode());
-})();
+const fixtureImage = new Image(TILE_WIDTH, TILE_HEIGHT);
+fixtureImage.fill(Image.rgbaToColor(200, 30, 30, 255));
+const FIXTURE = new Uint8Array(await fixtureImage.encode());
 
-function fetchServing(png: Uint8Array) {
-	return vi.fn((_url: string) => Promise.resolve(new Response(new Uint8Array(png))));
+function fetchServingFixture() {
+	return vi.fn((_url: string) => Promise.resolve(new Response(new Uint8Array(FIXTURE))));
 }
 
-let fetchMock: ReturnType<typeof fetchServing>;
+let fetchMock: ReturnType<typeof fetchServingFixture>;
 
 beforeEach(() => {
-	fetchMock = fetchServing(FIXTURE);
+	fetchMock = fetchServingFixture();
 	vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -50,8 +49,12 @@ describe("renderDeckGrid", () => {
 			card({ name: `card-${String(index)}` })
 		);
 
-		const grid = await Image.decode(await renderDeckGrid(eightCards));
-		const singleRow = await Image.decode(await renderDeckGrid([card({ name: "solo-card" })]));
+		// The two renders share no cache entries (distinct card names → distinct URLs), so they can
+		// overlap — this is the suite's most expensive test (9 tile encode/decode round-trips).
+		const [grid, singleRow] = await Promise.all([
+			renderDeckGrid(eightCards).then((png) => Image.decode(png)),
+			renderDeckGrid([card({ name: "solo-card" })]).then((png) => Image.decode(png)),
+		]);
 
 		// Native resolution: one row is exactly one tile high (the fixture has no transparent margin
 		// to trim), and a lone card still reserves the full 4-column width with trailing cells empty.

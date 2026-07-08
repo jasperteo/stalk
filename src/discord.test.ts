@@ -6,7 +6,7 @@ import { notifyBattle } from "@/discord.ts";
 import { log } from "@/log.ts";
 import { BattleSchema } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
-import { rawBattle, rawPlayer } from "@/testing/fixtures.ts";
+import { BOB, rawBattle, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
 
 vi.mock("@/deck-image.ts", () => ({ renderDeckGrid: vi.fn() }));
 vi.mock("@/log.ts");
@@ -26,13 +26,11 @@ function makeBattle(overrides: Record<string, unknown> = {}): Battle {
 		rawBattle({
 			gameMode: { name: "Ladder" },
 			team: [player()],
-			opponent: [player({ tag: "def456", name: "Bob", crowns: 1 })],
+			opponent: [player(BOB)],
 			...overrides,
 		})
 	);
 }
-
-const WEBHOOK = "https://discord.com/api/webhooks/1/aaa";
 
 /**
  * `form.get(...)`/`init.body` are broad union types (`string | File | …`); narrow to string before
@@ -88,7 +86,7 @@ describe("notifyBattle", () => {
 			WEBHOOK,
 			makeBattle({
 				team: [player({ crowns: 1 })],
-				opponent: [player({ tag: "def456", name: "Bob", crowns: 2, kingTowerHitPoints: 1000 })],
+				opponent: [player({ ...BOB, crowns: 2, kingTowerHitPoints: 1000 })],
 			})
 		);
 
@@ -100,7 +98,7 @@ describe("notifyBattle", () => {
 			WEBHOOK,
 			makeBattle({
 				team: [player({ crowns: 1 })],
-				opponent: [player({ tag: "def456", name: "Bob", crowns: 1 })],
+				opponent: [player(BOB)],
 			})
 		);
 

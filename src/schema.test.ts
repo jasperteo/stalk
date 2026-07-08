@@ -8,7 +8,7 @@ import {
 	TargetsEnvSchema,
 	TokenEnvSchema,
 } from "@/schema.ts";
-import { rawBattle, rawCard, rawPlayer } from "@/testing/fixtures.ts";
+import { rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
 
 describe("BattleSchema", () => {
 	it("normalizes a valid battle", () => {
@@ -117,11 +117,11 @@ describe("TokenEnvSchema", () => {
 
 describe("TargetsEnvSchema", () => {
 	it("parses and normalizes a valid TARGETS JSON array", () => {
-		const raw = JSON.stringify([{ tag: "abc", webhook: "https://discord.com/api/webhooks/1/aaa" }]);
+		const raw = JSON.stringify([{ tag: "abc", webhook: WEBHOOK }]);
 
 		const result = v.parse(TargetsEnvSchema, raw);
 
-		expect(result).toEqual([{ tag: "#ABC", webhook: "https://discord.com/api/webhooks/1/aaa" }]);
+		expect(result).toEqual([{ tag: "#ABC", webhook: WEBHOOK }]);
 	});
 
 	it("rejects malformed JSON", () => {
