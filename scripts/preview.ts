@@ -39,10 +39,9 @@ const DECK: Card[] = [
 	},
 	{
 		name: "Ronin",
-		iconUrls: {
-			medium:
-				"https://cdns3.royaleapi.com/cdn-cgi/image/w=302,format=png/static/img/cards/v10-9f6caa5e/ronin.png",
-		},
+		// The API's real icon 404s; CARD_ART_HACK in deck-image.ts substitutes RoyaleAPI's art, so
+		// this URL is never fetched. Left broken on purpose, to exercise the override.
+		iconUrls: { medium: "https://api-assets.clashroyale.com/cards/300/ronin-404.png" },
 	},
 	{
 		name: "The Log",
