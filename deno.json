@@ -4,8 +4,10 @@
 	"tasks": {
 		"dev": "deno serve --watch --env-file=.env src/main.ts",
 		"deploy": "deno run -A jsr:@deno/deployctl deploy",
+		"test": "vitest",
+		"preview": "deno run -A --env-file=.env scripts/preview.ts",
 		"fmt": "oxfmt",
-		"lint": "oxlint && deno lint && deno check --unstable-tsgo src/main.ts"
+		"lint": "oxlint && deno lint && deno check --unstable-tsgo src/main.ts scripts/preview.ts"
 	},
 	"imports": {
 		"@/": "./src/"
