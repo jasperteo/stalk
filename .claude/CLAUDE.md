@@ -40,6 +40,8 @@ Putting the JSR deps in `package.json` instead of `deno.json` makes `package.jso
 
 `package.json`'s `devDependencies` carries dev tooling (`oxlint`, `oxfmt`, `oxlint-tsgolint`, `vitest`), installed into the same `node_modules`.
 
+The `@/` alias is declared in **three places that must stay in sync**: `deno.json` `imports` (Deno runtime), `tsconfig.json` `paths` (oxlint/tsgolint), and vitest via `resolve: { tsconfigPaths: true }` in `vitest.config.ts` (which reads the tsconfig `paths`).
+
 ## Architecture
 
 This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono** that polls a Clash Royale player's battle log and posts results to a Discord channel via webhook.
