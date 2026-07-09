@@ -6,7 +6,7 @@ import { vi } from "vitest";
  * instead of one per test file. `hl`/`levelColor` are identity functions, matching the real
  * module's behavior when color is disabled (which log.test.ts asserts against the real module).
  */
-export const log = {
+const log = {
 	info: vi.fn(),
 	success: vi.fn(),
 	warn: vi.fn(),
@@ -14,16 +14,18 @@ export const log = {
 	debug: vi.fn(),
 };
 
-export const hl = {
+const hl = {
 	entity: (s: string) => s,
 	value: (s: string) => s,
 	strong: (s: string) => s,
 };
 
-export const levelColor = {
+const levelColor = {
 	info: (s: string) => s,
 	ok: (s: string) => s,
 	warn: (s: string) => s,
 	error: (s: string) => s,
 	debug: (s: string) => s,
 };
+
+export { hl, levelColor, log };

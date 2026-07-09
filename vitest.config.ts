@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-export default defineConfig({
+const vitestConfig = defineConfig({
 	test: {
 		environment: "node",
 		// No test in this suite uses `.concurrent`: several tests mutate real shared
@@ -18,3 +18,5 @@ export default defineConfig({
 	},
 	resolve: { tsconfigPaths: true },
 });
+
+export default vitestConfig;
