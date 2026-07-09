@@ -19,7 +19,7 @@ setColorEnabled(!Deno.noColor && Deno.stdout.isTerminal());
  * Level → color, the single source of the badge palette. Exported so callers that color per-level
  * data (e.g. the cron tally in main.ts) match the badges by construction instead of by convention.
  */
-export const levelColor = {
+const levelColor = {
 	info: cyan,
 	ok: green,
 	warn: yellow,
@@ -35,7 +35,7 @@ export const levelColor = {
  * avoid the level meanings in `levelColor`. Nesting inside a tinted warn/error message is safe (the
  * outer color re-opens after each inner reset), including inside a greyed debug message.
  */
-export const hl = { entity: brightMagenta, value: brightBlue, strong: bold };
+const hl = { entity: brightMagenta, value: brightBlue, strong: bold };
 
 /** Bold, colored, fixed-width level tag ("info" → "info ", "ok" → "ok ") so lines align. */
 const badge = (text: string, paint: (str: string) => string) => paint(bold(text.padEnd(5)));
@@ -67,10 +67,12 @@ const leveled =
 		write(badge, tint(message), ...rest);
 	};
 
-export const log = {
+const log = {
 	info: leveled(console.info, INFO),
 	success: leveled(console.info, OK),
 	warn: leveled(console.warn, WARN, levelColor.warn),
 	error: leveled(console.error, ERROR, levelColor.error),
 	debug: leveled(console.debug, DEBUG, levelColor.debug),
 };
+
+export { hl, levelColor, log };

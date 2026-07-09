@@ -5,12 +5,12 @@
  */
 
 /** A syntactically valid Discord webhook URL for tests that need one. */
-export const WEBHOOK = "https://discord.com/api/webhooks/1/aaa";
+const WEBHOOK = "https://discord.com/api/webhooks/1/aaa";
 
 /** `rawBattle`'s default opponent identity, exported so tests overriding the opponent keep it. */
-export const BOB = { tag: "def456", name: "Bob", crowns: 1 };
+const BOB = { tag: "def456", name: "Bob", crowns: 1 };
 
-export function rawCard(overrides: Record<string, unknown> = {}) {
+function rawCard(overrides: Record<string, unknown> = {}) {
 	return {
 		name: "Knight",
 		iconUrls: { medium: "https://api.clashroyale.com/knight.png" },
@@ -18,7 +18,7 @@ export function rawCard(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-export function rawPlayer(overrides: Record<string, unknown> = {}) {
+function rawPlayer(overrides: Record<string, unknown> = {}) {
 	return {
 		tag: "abc123",
 		name: "Alice",
@@ -29,7 +29,7 @@ export function rawPlayer(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-export function rawBattle(overrides: Record<string, unknown> = {}) {
+function rawBattle(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "PvP",
 		battleTime: "20240115T143022.000Z",
@@ -38,3 +38,5 @@ export function rawBattle(overrides: Record<string, unknown> = {}) {
 		...overrides,
 	};
 }
+
+export { BOB, rawBattle, rawCard, rawPlayer, WEBHOOK };

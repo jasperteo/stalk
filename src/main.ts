@@ -141,7 +141,7 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 	log.info(`poll-battlelogs: ${String(targets.length)} targets — ${counts}`);
 });
 
-export default {
+const server = {
 	fetch: app.fetch,
 	onListen: (addr) => {
 		const status = config
@@ -153,3 +153,5 @@ export default {
 		log.info(`stalk listening on ${hl.value(where)} — ${status}`);
 	},
 } satisfies Deno.ServeDefaultExport;
+
+export default server;
