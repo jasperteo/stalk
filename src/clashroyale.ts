@@ -1,5 +1,6 @@
 import * as v from "@valibot/valibot";
 
+import { log } from "@/log.ts";
 import { BattleSchema, EligibleBattleTimeSchema } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
 
@@ -61,7 +62,18 @@ function latestBattle(entries: unknown[]): Battle | undefined {
 
 	const result = v.safeParse(BattleSchema, newest);
 
-	return result.success ? result.output : undefined;
+	if (result.success) {
+		return result.output;
+	}
+
+	// `newest` is undefined when no entry was eligible — the normal quiet path. A defined entry
+	// failing here means the API's shape drifted; without this line that failure is
+	// indistinguishable from "no new battles" and notifications stop silently.
+	if (newest !== undefined) {
+		log.warn("Newest eligible battle failed schema validation:", v.flatten(result.issues));
+	}
+
+	return undefined;
 }
 
 export { fetchBattlelog, latestBattle };

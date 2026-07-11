@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
+import { log } from "@/log.ts";
 import { rawBattle, rawCard, rawPlayer } from "@/testing/fixtures.ts";
+
+vi.mock("@/log.ts");
 
 function battle(battleTime: string, teamSize = 1) {
 	return rawBattle({ battleTime, team: Array.from({ length: teamSize }, () => rawPlayer()) });
@@ -16,6 +19,7 @@ describe("latestBattle", () => {
 		const entries = [battle("20240101T000000.000Z", 2), "garbage", {}, 42];
 
 		expect(latestBattle(entries)).toBeUndefined();
+		expect(log.warn).not.toHaveBeenCalled();
 	});
 
 	it("picks the newest eligible (1v1) battle among mixed entries", () => {
@@ -42,6 +46,10 @@ describe("latestBattle", () => {
 		const older = battle("20240101T000000.000Z");
 
 		expect(latestBattle([older, newest])).toBeUndefined();
+		expect(log.warn).toHaveBeenCalledWith(
+			expect.stringContaining("failed schema validation"),
+			expect.anything()
+		);
 	});
 });
 
