@@ -54,7 +54,10 @@ describe("fetchBattlelog", () => {
 
 		expect(fetchMock).toHaveBeenCalledWith(
 			"https://proxy.royaleapi.dev/v1/players/%23ABC123/battlelog",
-			{ headers: { Authorization: "Bearer my-token", Accept: "application/json" } }
+			{
+				headers: { Authorization: "Bearer my-token", Accept: "application/json" },
+				signal: expect.any(AbortSignal) as AbortSignal,
+			}
 		);
 		expect(result).toEqual([{ any: "thing" }]);
 	});

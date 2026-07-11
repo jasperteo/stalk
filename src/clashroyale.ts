@@ -9,6 +9,13 @@ import type { Battle } from "@/schema.ts";
  */
 const PROXY_BASE = "https://proxy.royaleapi.dev/v1";
 
+/**
+ * Abort the battle-log request after this long. Without it a hung proxy connection never rejects,
+ * so the awaiting cron tick stalls forever with nothing logged — a timeout turns that into a normal
+ * caught error and the next tick retries.
+ */
+const FETCH_TIMEOUT_MS = 10_000;
+
 /** Fetches a player's raw battle log entries. Schema validation is deferred to `latestBattle`. */
 async function fetchBattlelog(playerTag: string, token: string): Promise<unknown[]> {
 	// `encodeURIComponent` turns the leading "#" into "%23".
@@ -19,6 +26,7 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
 			Authorization: `Bearer ${token}`,
 			Accept: "application/json",
 		},
+		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 	});
 
 	if (!response.ok) {

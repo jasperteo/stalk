@@ -33,6 +33,14 @@ const OUTCOMES = {
 
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
 
+/**
+ * Abort the webhook POST after this long. Generous relative to the other fetches: the multipart
+ * body carries a few hundred KB of deck PNGs. A timeout rejects, poll() logs the failure without
+ * advancing the cursor, and the next tick re-posts — the same at-least-once path as any other
+ * webhook error.
+ */
+const WEBHOOK_TIMEOUT_MS = 15_000;
+
 const SPACER_FIELD = { name: "\u200B", value: "\u200B" } as const;
 
 /** Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. */
@@ -332,7 +340,10 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		};
 	}
 
-	const response = await fetch(webhookUrl, request);
+	const response = await fetch(webhookUrl, {
+		...request,
+		signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+	});
 
 	if (!response.ok) {
 		const body = await response.text();

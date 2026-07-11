@@ -42,6 +42,12 @@ const GRID_COMPRESSION = 6;
  */
 const TILE_COMPRESSION = 6;
 /**
+ * Abort a card-icon CDN fetch after this long. Icons fetch in parallel per deck, so this bounds the
+ * whole tile-load phase; a timeout rejects the render and discord.ts falls back to the text-only
+ * message instead of the tick hanging.
+ */
+const ICON_TIMEOUT_MS = 10_000;
+/**
  * Finished grids kept per distinct deck, sized from the live target count: each tracked player
  * needs a warm entry per side they appear on, and the headroom absorbs one-shot opponent decks.
  * Deriving from `config` means growing TARGETS can't silently push warm decks into eviction churn.
@@ -199,7 +205,10 @@ function padBottom(ImageClass: typeof Image, tile: Tile, pixels: number): Tile {
 }
 
 async function fetchTile(url: string): Promise<Tile> {
-	const [{ Image }, response] = await Promise.all([loadImageScript(), fetch(url)]);
+	const [{ Image }, response] = await Promise.all([
+		loadImageScript(),
+		fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) }),
+	]);
 
 	if (!response.ok) {
 		throw new Error(`Card icon ${String(response.status)} for ${url}`);

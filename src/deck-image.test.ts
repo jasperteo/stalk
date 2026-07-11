@@ -33,7 +33,9 @@ fixtureImage.fill(Image.rgbaToColor(200, 30, 30, 255));
 const FIXTURE = new Uint8Array(await fixtureImage.encode());
 
 function fetchServingFixture() {
-	return vi.fn((_url: string) => Promise.resolve(new Response(new Uint8Array(FIXTURE))));
+	return vi.fn((_url: string, _init?: RequestInit) =>
+		Promise.resolve(new Response(new Uint8Array(FIXTURE)))
+	);
 }
 
 let fetchMock: ReturnType<typeof fetchServingFixture>;
@@ -85,6 +87,7 @@ describe("renderDeckGrid", () => {
 		await renderDeckGrid(cards);
 
 		expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
+		expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
 	});
 
 	it("re-fetches for a different deck", async () => {

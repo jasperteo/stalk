@@ -70,7 +70,7 @@ describe("notifyBattle", () => {
 	it("posts a win with the winner's HP margin and both decks attached", async () => {
 		await notifyBattle(WEBHOOK, makeBattle({ team: [player({ crowns: 2 })] }));
 
-		const [url] = vi.mocked(fetch).mock.calls[0] ?? [];
+		const [url, init] = vi.mocked(fetch).mock.calls[0] ?? [];
 		const form = sentForm();
 		const payload = sentPayload(form);
 
@@ -79,6 +79,7 @@ describe("notifyBattle", () => {
 		expect(payload.embeds).toHaveLength(2);
 		expect(form.get("files[0]")).toBeInstanceOf(File);
 		expect(form.get("files[1]")).toBeInstanceOf(File);
+		expect(init?.signal).toBeInstanceOf(AbortSignal);
 	});
 
 	it("posts a loss with the opponent's HP margin", async () => {
