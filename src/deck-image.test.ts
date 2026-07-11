@@ -79,6 +79,23 @@ describe("renderDeckGrid", () => {
 		);
 	});
 
+	it("recovers on the next render after a failed icon fetch (failure is not cached)", async () => {
+		const cards = [card({ name: "flaky-card" })];
+
+		// First fetch for this URL fails; every subsequent one serves the fixture.
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn(fetchServingFixture().getMockImplementation())
+				.mockImplementationOnce(() => Promise.resolve(new Response("nope", { status: 500 })))
+		);
+
+		await expect(renderDeckGrid(cards)).rejects.toThrow("Card icon 500 for");
+
+		// Both caches evict their failed entries, so the retry fetches and renders cleanly.
+		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Uint8Array);
+	});
+
 	it("does not re-fetch a deck it has already rendered", async () => {
 		const cards = [card({ name: "repeat-card" })];
 
@@ -148,5 +165,45 @@ describe("renderDeckGrid", () => {
 		expect(urls).not.toContain("https://api.clashroyale.com/ronin-icon.png");
 		// The fixture's bottom edge is flush, so the 12px pad is the whole added height.
 		expect(grid.height).toBe(TILE_HEIGHT + 12);
+	});
+});
+
+/**
+ * LRU tests need their own module instance: the static import's deckCache carries entries from the
+ * tests above, and DECK_CACHE_LIMIT is baked at module load from env (3 * targets + 10). Unsetting
+ * CR_API_TOKEN pins config to undefined, so the limit is exactly 10. Cache hits return the same
+ * resolved Uint8Array instance (the cached promise), so identity distinguishes hit from re-render —
+ * fetch counts can't, because the tile cache still serves the tiles after a deck eviction.
+ */
+async function freshRenderDeckGrid() {
+	vi.stubEnv("CR_API_TOKEN", undefined);
+	vi.resetModules();
+	const { renderDeckGrid: render } = await import("@/deck-image.ts");
+	return render;
+}
+
+describe("renderDeckGrid LRU", () => {
+	const DECK_CACHE_LIMIT = 10;
+
+	it("evicts the least-recently-used deck past the cap, keeping touched decks warm", async () => {
+		const render = await freshRenderDeckGrid();
+		const deck = (name: string) => [card({ name })];
+
+		// Fill the cache to its cap: lru-0 .. lru-9.
+		const first = await render(deck("lru-0"));
+		for (let index = 1; index < DECK_CACHE_LIMIT; index++) {
+			await render(deck(`lru-${String(index)}`));
+		}
+
+		// Touch lru-0 so lru-1 becomes the eviction candidate; a hit is the same instance.
+		expect(await render(deck("lru-0"))).toBe(first);
+
+		// One over the cap evicts exactly one deck: the untouched lru-1.
+		await render(deck("lru-overflow"));
+
+		const second = await render(deck("lru-1"));
+		expect(second).not.toBe(await render(deck("lru-0"))); // sanity: distinct decks, distinct pngs
+		expect(await render(deck("lru-1"))).toBe(second); // lru-1 re-rendered, now cached again
+		expect(await render(deck("lru-0"))).toBe(first); // lru-0 survived — recency was refreshed
 	});
 });

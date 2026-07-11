@@ -106,6 +106,47 @@ describe("main", () => {
 		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
 	});
 
+	it("leaves the cursor untouched when the post fails, then retries next tick", async () => {
+		const { app, tick } = await importMain();
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
+		await tick();
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
+		vi.mocked(notifyBattle).mockRejectedValueOnce(new Error("webhook down"));
+		await tick();
+
+		// The failed post must not advance the cursor — the battle is still owed.
+		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-01T00:00:00.000Z" });
+
+		await tick();
+
+		// The retry posts the same battle and only then advances the cursor.
+		expect(notifyBattle).toHaveBeenCalledTimes(2);
+		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
+	});
+
+	it("prefers a duplicate post over a lost battle when the cursor write fails", async () => {
+		const { app, tick, kv } = await importMain();
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
+		await tick();
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
+		vi.spyOn(kv, "set").mockRejectedValueOnce(new Error("kv write failed"));
+		await tick();
+
+		// The post happened, but the failed write leaves the old cursor — the battle is not marked done.
+		expect(notifyBattle).toHaveBeenCalledTimes(1);
+		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-01T00:00:00.000Z" });
+
+		await tick();
+
+		// At-least-once: the same battle posts again (a duplicate), then the cursor finally advances.
+		expect(notifyBattle).toHaveBeenCalledTimes(2);
+		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
+	});
+
 	it("skips a repeat tick reporting the same battleTime", async () => {
 		const { tick } = await importMain();
 
