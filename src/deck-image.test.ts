@@ -83,12 +83,7 @@ describe("renderDeckGrid", () => {
 		const cards = [card({ name: "flaky-card" })];
 
 		// First fetch for this URL fails; every subsequent one serves the fixture.
-		vi.stubGlobal(
-			"fetch",
-			vi
-				.fn(fetchServingFixture().getMockImplementation())
-				.mockImplementationOnce(() => Promise.resolve(new Response("nope", { status: 500 })))
-		);
+		fetchMock.mockImplementationOnce(() => Promise.resolve(new Response("nope", { status: 500 })));
 
 		await expect(renderDeckGrid(cards)).rejects.toThrow("Card icon 500 for");
 
