@@ -6,6 +6,7 @@
 		"deploy": "deno run -A jsr:@deno/deployctl deploy",
 		"test": "vitest",
 		"preview": "deno run -A --env-file=.env scripts/preview.ts",
+		"sync-types": "deno types > deno.d.ts && oxfmt deno.d.ts",
 		"fmt": "oxfmt",
 		"lint": "oxlint && deno lint && deno check --unstable-tsgo ."
 	},
