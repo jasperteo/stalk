@@ -28,7 +28,7 @@ The project deliberately keeps **two** TypeScript configs because oxlint and Den
 - `tsconfig.json` — read by oxlint/tsgolint (vanilla TypeScript). Uses `lib: ["ESNext", "DOM"]` for web globals (`fetch`, `console`, `Response`) and picks up `deno.d.ts` for the `Deno.*` surface.
 - `deno.json` `compilerOptions` — read by `deno check`/`deno serve`. Uses `lib: ["deno.window", "deno.unstable"]` so the real `Deno` namespace (incl. unstable `Deno.cron`/`Deno.openKv`) resolves. Without this, Deno falls back to reading `tsconfig.json`, whose DOM-only lib drops `deno.ns`.
 
-`deno.d.ts` is a **vendored copy of Deno's own `lib.deno.d.ts`** (the full ambient `Deno` surface), so oxlint's type-aware pass can resolve `Deno.*`; it must be re-synced by hand when the Deno version changes. It is excluded from `deno check`/`deno lint` (via `deno.json`) and from oxlint's own file walk (`oxlint.config.ts` `ignorePatterns`) so it is only ever consumed as ambient types, never linted or double-declared.
+`deno.d.ts` is a **vendored copy of Deno's own `lib.deno.d.ts`** (the full ambient `Deno` surface), so oxlint's type-aware pass can resolve `Deno.*`; re-sync it with `deno task sync-types` (which regenerates via `deno types` and re-formats with oxfmt) when the Deno version changes. It is excluded from `deno check`/`deno lint` (via `deno.json`) and from oxlint's own file walk (`oxlint.config.ts` `ignorePatterns`) so it is only ever consumed as ambient types, never linted or double-declared.
 
 ### Dependencies (package.json + node_modules)
 

@@ -49,9 +49,11 @@ interface ImportMeta {
 	 *
 	 * - Example:
 	 *
-	 *   // Unix console.log(import.meta.dirname); // /home/alice
+	 *     // Unix
+	 *     console.log(import.meta.dirname); // /home/alice
 	 *
-	 *   // Windows console.log(import.meta.dirname); // C:\alice
+	 *     // Windows
+	 *     console.log(import.meta.dirname); // C:\alice
 	 */
 	dirname?: string;
 
@@ -5720,7 +5722,16 @@ declare namespace Deno {
 	export interface ServeHandlerInfo<Addr extends Deno.Addr = Deno.Addr> {
 		/** The remote address of the connection. */
 		remoteAddr: Addr;
-		/** The completion promise */
+		/**
+		 * A promise that settles when the request has been fully handled and the response has been
+		 * sent.
+		 *
+		 * It resolves once the response (including its body) has been completely delivered to the
+		 * client. It **rejects** with a {@linkcode Deno.errors.Interrupted} error if the response could
+		 * not be sent successfully — for example when the client disconnects before the response body
+		 * has been fully written. Attach a `.catch()` (or wrap an `await` in `try`/`catch`) if you need
+		 * to observe these failures.
+		 */
 		completed: Promise<void>;
 	}
 
@@ -6884,7 +6895,7 @@ declare namespace Deno {
 	 * 	const caCert = await Deno.readTextFile("./ca.pem");
 	 * 	const client = Deno.createHttpClient({ caCerts: [caCert] });
 	 * 	const req = await fetch("https://myserver.com", { client });
-	 * 	```;
+	 * 	```
 	 */
 	export class HttpClient implements Disposable {
 		/** Close the HTTP client. */
@@ -7018,7 +7029,7 @@ declare namespace Deno {
 	 * 	const caCert = await Deno.readTextFile("./ca.pem");
 	 * 	const client = Deno.createHttpClient({ caCerts: [caCert] });
 	 * 	const response = await fetch("https://myserver.com", { client });
-	 * 	```;
+	 * 	```
 	 *
 	 * @example
 	 * 	```ts
@@ -7026,7 +7037,7 @@ declare namespace Deno {
 	 * 		proxy: { url: "http://myproxy.com:8080" },
 	 * 	});
 	 * 	const response = await fetch("https://myserver.com", { client });
-	 * 	```;
+	 * 	```
 	 *
 	 * @example
 	 * 	```ts
@@ -7034,7 +7045,7 @@ declare namespace Deno {
 	 * 	const cert = "----BEGIN CERTIFICATE----...";
 	 * 	const client = Deno.createHttpClient({ key, cert });
 	 * 	const response = await fetch("https://myserver.com", { client });
-	 * 	```;
+	 * 	```
 	 */
 	export function createHttpClient(
 		options: CreateHttpClientOptions | (CreateHttpClientOptions & TlsCertifiedKeyPem)
@@ -7143,7 +7154,7 @@ interface Console {
 	 * 	```ts
 	 * 	console.assert(1 === 1, "This won't show");
 	 * 	console.assert(1 === 2, "This will show an error");
-	 * 	```;
+	 * 	```
 	 *
 	 * @param condition The expression to test for truthiness
 	 * @param data Additional arguments to be printed if the assertion fails
@@ -7156,7 +7167,7 @@ interface Console {
 	 * @example
 	 * 	```ts
 	 * 	console.clear();
-	 * 	```;
+	 * 	```
 	 */
 	clear(): void;
 
@@ -7167,7 +7178,7 @@ interface Console {
 	 * 	```ts
 	 * 	console.count("myCounter");
 	 * 	console.count("myCounter"); // Will show: myCounter: 2
-	 * 	```;
+	 * 	```
 	 *
 	 * @param label The label to count. Defaults to 'default'
 	 */
@@ -7180,7 +7191,7 @@ interface Console {
 	 * 	```ts
 	 * 	console.count("myCounter");
 	 * 	console.countReset("myCounter"); // Resets to 0
-	 * 	```;
+	 * 	```
 	 *
 	 * @param label The label to reset. Defaults to 'default'
 	 */
@@ -7192,7 +7203,7 @@ interface Console {
 	 * @example
 	 * 	```ts
 	 * 	console.debug("Debug message", { detail: "some data" });
-	 * 	```;
+	 * 	```
 	 *
 	 * @param data Values to be printed to the console
 	 */
@@ -7204,7 +7215,7 @@ interface Console {
 	 * @example
 	 * 	```ts
 	 * 	console.dir({ name: "object", value: 42 }, { depth: 1 });
-	 * 	```;
+	 * 	```
 	 *
 	 * @param item Object to display
 	 * @param options Formatting options
@@ -7221,7 +7232,7 @@ interface Console {
 	 * @example
 	 * 	```ts
 	 * 	console.error("Error occurred:", new Error("Something went wrong"));
-	 * 	```;
+	 * 	```
 	 *
 	 * @param data Values to be printed to the console
 	 */
@@ -7235,7 +7246,7 @@ interface Console {
 	 * 	console.group("Group 1");
 	 * 	console.log("Inside group 1");
 	 * 	console.groupEnd();
-	 * 	```;
+	 * 	```
 	 *
 	 * @param data Labels for the group
 	 */
@@ -7249,7 +7260,7 @@ interface Console {
 	 * 	console.groupCollapsed("Details");
 	 * 	console.log("Hidden until expanded");
 	 * 	console.groupEnd();
-	 * 	```;
+	 * 	```
 	 *
 	 * @param data Labels for the group
 	 */
@@ -7263,7 +7274,7 @@ interface Console {
 	 * 	console.group("Group");
 	 * 	console.log("Grouped message");
 	 * 	console.groupEnd();
-	 * 	```;
+	 * 	```
 	 */
 	groupEnd(): void;
 
@@ -7273,7 +7284,7 @@ interface Console {
 	 * @example
 	 * 	```ts
 	 * 	console.info("Application started", { version: "1.0.0" });
-	 * 	```;
+	 * 	```
 	 *
 	 * @param data Values to be printed to the console
 	 */
@@ -7285,7 +7296,7 @@ interface Console {
 	 * @example
 	 * 	```ts
 	 * 	console.log("Hello", "World", 123);
-	 * 	```;
+	 * 	```
 	 *
 	 * @param data Values to be printed to the console
 	 */
@@ -7300,7 +7311,7 @@ interface Console {
 	 * 		{ name: "John", age: 30 },
 	 * 		{ name: "Jane", age: 25 },
 	 * 	]);
-	 * 	```;
+	 * 	```
 	 *
 	 * @param tabularData Data to be displayed in table format
 	 * @param properties Array of property names to be displayed
@@ -7315,7 +7326,7 @@ interface Console {
 	 * 	console.time("operation");
 	 * 	// ... some code
 	 * 	console.timeEnd("operation");
-	 * 	```;
+	 * 	```
 	 *
 	 * @param label Timer label. Defaults to 'default'
 	 */
@@ -7329,7 +7340,7 @@ interface Console {
 	 * 	console.time("operation");
 	 * 	// ... some code
 	 * 	console.timeEnd("operation"); // Prints: operation: 1234ms
-	 * 	```;
+	 * 	```
 	 *
 	 * @param label Timer label to stop. Defaults to 'default'
 	 */
@@ -7343,7 +7354,7 @@ interface Console {
 	 * 	console.time("process");
 	 * 	// ... some code
 	 * 	console.timeLog("process", "Checkpoint A");
-	 * 	```;
+	 * 	```
 	 *
 	 * @param label Timer label
 	 * @param data Additional data to log
@@ -7356,7 +7367,7 @@ interface Console {
 	 * @example
 	 * 	```ts
 	 * 	console.trace("Trace message");
-	 * 	```;
+	 * 	```
 	 *
 	 * @param data Values to be printed to the console
 	 */
@@ -7368,7 +7379,7 @@ interface Console {
 	 * @example
 	 * 	```ts
 	 * 	console.warn("Deprecated feature used");
-	 * 	```;
+	 * 	```
 	 *
 	 * @param data Values to be printed to the console
 	 */
@@ -7380,7 +7391,7 @@ interface Console {
 	 * @example
 	 * 	```ts
 	 * 	console.timeStamp("Navigation Start");
-	 * 	```;
+	 * 	```
 	 *
 	 * @param label Label for the timestamp
 	 */
@@ -7394,7 +7405,7 @@ interface Console {
 	 * 	console.profile("Performance Profile");
 	 * 	// ... code to profile
 	 * 	console.profileEnd("Performance Profile");
-	 * 	```;
+	 * 	```
 	 *
 	 * @param label Profile label
 	 */
@@ -7408,7 +7419,7 @@ interface Console {
 	 * 	console.profile("Performance Profile");
 	 * 	// ... code to profile
 	 * 	console.profileEnd("Performance Profile");
-	 * 	```;
+	 * 	```
 	 *
 	 * @param label Profile label to stop
 	 */
@@ -7435,7 +7446,7 @@ interface Console {
  * 	const iterator = params.entries();
  * 	console.log(iterator.next().value); // ['a', '1']
  * 	console.log(iterator.next().value); // ['b', '2']
- * 	```;
+ * 	```
  */
 interface URLSearchParamsIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
 	[Symbol.iterator](): URLSearchParamsIterator<T>;
@@ -7665,7 +7676,7 @@ declare var URLSearchParams: {
 	 * 	// From a record object
 	 * 	const params6 = new URLSearchParams({ foo: "1", bar: "2" });
 	 * 	console.log(params6.toString()); // Logs "foo=1&bar=2"
-	 * 	```;
+	 * 	```
 	 */
 	new (
 		init?: Iterable<string[]> | Record<string, string> | string | URLSearchParams
@@ -7696,7 +7707,7 @@ interface URL {
 	 *
 	 * 	const myOtherURL = new URL("https://example.org");
 	 * 	console.log(myOtherURL.hash); // Logs ""
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/hash
 	 */
@@ -7714,7 +7725,7 @@ interface URL {
 	 *
 	 * 	const myOtherURL = new URL("https://example.org:8080/foo");
 	 * 	console.log(myOtherURL.host); // Logs "example.org:8080"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/host
 	 */
@@ -7728,7 +7739,7 @@ interface URL {
 	 * 	```ts
 	 * 	const myURL = new URL("https://foo.example.org/bar");
 	 * 	console.log(myURL.hostname); // Logs "foo.example.org"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/hostname
 	 */
@@ -7741,7 +7752,7 @@ interface URL {
 	 * 	```ts
 	 * 	const myURL = new URL("https://foo.example.org/bar?baz=qux#quux");
 	 * 	console.log(myURL.href); // Logs "https://foo.example.org/bar?baz=qux#quux"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/href
 	 */
@@ -7754,7 +7765,7 @@ interface URL {
 	 * 	```ts
 	 * 	const myURL = new URL("https://foo.example.org/bar");
 	 * 	console.log(myURL.toString()); // Logs "https://foo.example.org/bar"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/toString
 	 */
@@ -7771,7 +7782,7 @@ interface URL {
 	 *
 	 * 	const myOtherURL = new URL("https://example.org:8080/foo");
 	 * 	console.log(myOtherURL.origin); // Logs "https://example.org:8080"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/origin
 	 */
@@ -7785,7 +7796,7 @@ interface URL {
 	 * 	```ts
 	 * 	const myURL = new URL("https://someone:somepassword@example.org/baz");
 	 * 	console.log(myURL.password); // Logs "somepassword"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/password
 	 */
@@ -7801,7 +7812,7 @@ interface URL {
 	 *
 	 * 	const myOtherURL = new URL("https://example.org");
 	 * 	console.log(myOtherURL.pathname); // Logs "/"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/pathname
 	 */
@@ -7818,7 +7829,7 @@ interface URL {
 	 *
 	 * 	const myOtherURL = new URL("https://example.org/foo");
 	 * 	console.log(myOtherURL.port); // Logs ""
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/port
 	 */
@@ -7832,7 +7843,7 @@ interface URL {
 	 * 	```ts
 	 * 	const myURL = new URL("https://example.org/foo");
 	 * 	console.log(myURL.protocol); // Logs "https:"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/protocol
 	 */
@@ -7851,7 +7862,7 @@ interface URL {
 	 *
 	 * 	const myOtherURL = new URL("https://example.org/foo?bar=baz#quux");
 	 * 	console.log(myOtherURL.search); // Logs "?bar=baz"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/search
 	 */
@@ -7887,7 +7898,7 @@ interface URL {
 	 *
 	 * 	// Iterate over all parameters
 	 * 	for (const [key, value] of params) {
-	 * 	console.log(`${key}: ${value}`);
+	 * 		console.log(`${key}: ${value}`);
 	 * 	}
 	 * 	```
 	 *
@@ -7903,7 +7914,7 @@ interface URL {
 	 * 	```ts
 	 * 	const myURL = new URL("https://someone:somepassword@example.org/baz");
 	 * 	console.log(myURL.username); // Logs "someone"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/username
 	 */
@@ -7916,7 +7927,7 @@ interface URL {
 	 * 	```ts
 	 * 	const myURL = new URL("https://example.org/foo");
 	 * 	console.log(myURL.toJSON()); // Logs "https://example.org/foo"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/toJSON
 	 */
@@ -7961,7 +7972,7 @@ declare var URL: {
 	 * 	const url3 = new URL("https://example.org/search");
 	 * 	url3.searchParams.set("q", search); // Automatically handles URL encoding
 	 * 	console.log(url3.href); // "https://example.org/search?q=query+with+spaces"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/URL
 	 */
@@ -7984,7 +7995,7 @@ declare var URL: {
 	 * 	console.log(myNewURL.hostname); // Logs "example.org"
 	 * 	console.log(myNewURL.pathname); // Logs "/foo"
 	 * 	console.log(myNewURL.protocol); // Logs "https:"
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/parse_static
 	 */
@@ -8002,7 +8013,7 @@ declare var URL: {
 	 * 	// Check if a relative URL string with a base is valid
 	 * 	console.log(URL.canParse("/foo", "https://example.org")); // Logs true
 	 * 	console.log(URL.canParse("/foo", "https:://example.org")); // Logs false
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/canParse_static
 	 */
@@ -8025,11 +8036,11 @@ declare var URL: {
 	 * 	console.log(url); // Logs something like "blob:null/1234-5678-9101-1121"
 	 *
 	 * 	// Dynamic web worker creation in Deno
-	 * 	const workerCode = `;
-	 * 	self.onmessage = (e) => {
-	 * 		self.postMessage(e.data.toUpperCase());
-	 * 	};
-	 * 	`;
+	 * 	const workerCode = `
+	 *   self.onmessage = (e) => {
+	 *     self.postMessage(e.data.toUpperCase());
+	 *   };
+	 * `;
 	 * 	const workerBlob = new Blob([workerCode], { type: "application/javascript" });
 	 * 	const workerUrl = URL.createObjectURL(workerBlob);
 	 * 	const worker = new Worker(workerUrl, { type: "module" });
@@ -8039,7 +8050,7 @@ declare var URL: {
 	 *
 	 * 	// Always revoke when done to prevent memory leaks
 	 * 	URL.revokeObjectURL(workerUrl);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/docs/Web/API/URL/createObjectURL_static
 	 */
@@ -8140,25 +8151,25 @@ interface URLPatternOptions {
  * 	```ts
  * 	// Basic routing with URLPattern (similar to Express.js)
  * 	const routes = [
- * 	new URLPattern({ pathname: "/users" }),
- * 	new URLPattern({ pathname: "/users/:id" }),
- * 	new URLPattern({ pathname: "/products/:category/:id?" }),
+ * 		new URLPattern({ pathname: "/users" }),
+ * 		new URLPattern({ pathname: "/users/:id" }),
+ * 		new URLPattern({ pathname: "/products/:category/:id?" }),
  * 	];
  *
  * 	// Check incoming request against routes
  * 	function handleRequest(req: Request) {
- * 	const url = new URL(req.url);
+ * 		const url = new URL(req.url);
  *
- * 	for (const route of routes) {
- * 	const match = route.exec(url);
- * 	if (match) {
- * 	// Extract parameters from the URL
- * 	const params = match.pathname.groups;
- * 	return new Response(`Matched: ${JSON.stringify(params)}`);
- * 	}
- * 	}
+ * 		for (const route of routes) {
+ * 			const match = route.exec(url);
+ * 			if (match) {
+ * 				// Extract parameters from the URL
+ * 				const params = match.pathname.groups;
+ * 				return new Response(`Matched: ${JSON.stringify(params)}`);
+ * 			}
+ * 		}
  *
- * 	return new Response("Not found", { status: 404 });
+ * 		return new Response("Not found", { status: 404 });
  * 	}
  * 	```
  *
@@ -8178,7 +8189,7 @@ interface URLPatternOptions {
  * 		console.log(match.pathname.groups.resource); // "users"
  * 		console.log(match.pathname.groups.id); // "123"
  * 	}
- * 	```;
+ * 	```
  */
 interface URLPattern {
 	/**
@@ -8567,13 +8578,13 @@ interface EventListener {
 	 * 	```ts
 	 * 	// Create an event listener function
 	 * 	const handleEvent = (event: Event) => {
-	 * 	console.log(`Event of type "${event.type}" occurred`);
-	 * 	console.log(`Event phase: ${event.eventPhase}`);
+	 * 		console.log(`Event of type "${event.type}" occurred`);
+	 * 		console.log(`Event phase: ${event.eventPhase}`);
 	 *
-	 * 	// Access event properties
-	 * 	if (event.cancelable) {
-	 * 	event.preventDefault();
-	 * 	}
+	 * 		// Access event properties
+	 * 		if (event.cancelable) {
+	 * 			event.preventDefault();
+	 * 		}
 	 * 	};
 	 *
 	 * 	// Attach the event listener to a target
@@ -8582,7 +8593,7 @@ interface EventListener {
 	 *
 	 * 	// Or create a listener inline
 	 * 	target.addEventListener("message", (event) => {
-	 * 	console.log("Message received:", event);
+	 * 		console.log("Message received:", event);
 	 * 	});
 	 * 	```
 	 */
@@ -8602,17 +8613,17 @@ interface EventListener {
  * 	```ts
  * 	// Creating an object that implements `EventListenerObject`
  * 	const myEventListener = {
- * 	handleEvent(event) {
- * 	console.log(`Event of type ${event.type} occurred`);
+ * 		handleEvent(event) {
+ * 			console.log(`Event of type ${event.type} occurred`);
  *
- * 	// You can use 'this' to access other methods or properties
- * 	this.additionalProcessing(event);
- * 	},
+ * 			// You can use 'this' to access other methods or properties
+ * 			this.additionalProcessing(event);
+ * 		},
  *
- * 	additionalProcessing(event) {
- * 	// Additional event handling logic
- * 	console.log("Additional processing for:", event);
- * 	},
+ * 		additionalProcessing(event) {
+ * 			// Additional event handling logic
+ * 			console.log("Additional processing for:", event);
+ * 		},
  * 	};
  *
  * 	// Using with any EventTarget (server or client contexts)
@@ -8644,7 +8655,7 @@ type EventListenerOrEventListenerObject = EventListener | EventListenerObject;
  * 		passive: true,
  * 		signal: controller.signal,
  * 	});
- * 	```;
+ * 	```
  */
 interface AddEventListenerOptions extends EventListenerOptions {
 	/** When set to true, the listener will automatically be removed after it has been invoked once. */
@@ -8667,7 +8678,7 @@ interface AddEventListenerOptions extends EventListenerOptions {
 	 *
 	 * 	// Later, to remove the listener:
 	 * 	controller.abort();
-	 * 	```;
+	 * 	```
 	 */
 	signal?: AbortSignal;
 }
@@ -8748,7 +8759,7 @@ interface TextDecodeOptions {
  * 	const buffer = new Uint8Array([72, 101, 108, 108, 111]);
  * 	const decodedString = decoder.decode(buffer);
  * 	console.log(decodedString); // Outputs: "Hello"
- * 	```;
+ * 	```
  */
 interface TextDecoder extends TextDecoderCommon {
 	/** Turns binary data, often in the form of a Uint8Array, into a string given the encoding. */
@@ -8792,7 +8803,7 @@ interface TextEncoderEncodeIntoResult {
  * 	const str = "Hello";
  * 	const encodedData = encoder.encode(str);
  * 	console.log(encodedData); // Outputs: Uint8Array(5) [72, 101, 108, 108, 111]
- * 	```;
+ * 	```
  */
 interface TextEncoder extends TextEncoderCommon {
 	/** Turns a string into binary data (in the form of a Uint8Array) using UTF-8 encoding. */
@@ -9776,7 +9787,7 @@ declare var MessagePort: {
  * 	shallowCopy.x = 1;
  * 	// shallowCopy.x is pointing to the same location in memory as object.x
  * 	console.log(shallowCopy.x, object.x); // 1 1
- * 	```;
+ * 	```
  */
 declare function structuredClone<T = any>(value: T, options?: StructuredSerializeOptions): T;
 
@@ -9789,7 +9800,7 @@ declare function structuredClone<T = any>(value: T, options?: StructuredSerializ
  * 	await Deno.stdin.readable
  * 		.pipeThrough(new CompressionStream("gzip"))
  * 		.pipeTo(Deno.stdout.writable);
- * 	```;
+ * 	```
  */
 interface CompressionStream extends GenericTransformStream {
 	readonly readable: ReadableStream<Uint8Array<ArrayBuffer>>;
@@ -9808,7 +9819,7 @@ type CompressionFormat = "deflate" | "deflate-raw" | "gzip" | "brotli";
  * 	await Deno.stdin.readable
  * 		.pipeThrough(new CompressionStream("gzip"))
  * 		.pipeTo(Deno.stdout.writable);
- * 	```;
+ * 	```
  */
 declare var CompressionStream: {
 	readonly prototype: CompressionStream;
@@ -9830,7 +9841,7 @@ declare var CompressionStream: {
  * 	const output = await Deno.create("./file.txt");
  *
  * 	await input.readable.pipeThrough(new DecompressionStream("gzip")).pipeTo(output.writable);
- * 	```;
+ * 	```
  */
 interface DecompressionStream extends GenericTransformStream {
 	readonly readable: ReadableStream<Uint8Array<ArrayBuffer>>;
@@ -9847,7 +9858,7 @@ interface DecompressionStream extends GenericTransformStream {
  * 	const output = await Deno.create("./file.txt");
  *
  * 	await input.readable.pipeThrough(new DecompressionStream("gzip")).pipeTo(output.writable);
- * 	```;
+ * 	```
  */
 declare var DecompressionStream: {
 	readonly prototype: DecompressionStream;
@@ -11799,15 +11810,15 @@ declare class GPUAdapterInfo {
  * 	// Basic WebGPU initialization in Deno
  * 	const gpu = navigator.gpu;
  * 	if (!gpu) {
- * 	console.error("WebGPU not supported in this Deno environment");
- * 	Deno.exit(1);
+ * 		console.error("WebGPU not supported in this Deno environment");
+ * 		Deno.exit(1);
  * 	}
  *
  * 	// Request an adapter (physical GPU device)
  * 	const adapter = await gpu.requestAdapter();
  * 	if (!adapter) {
- * 	console.error("Couldn't request WebGPU adapter");
- * 	Deno.exit(1);
+ * 		console.error("Couldn't request WebGPU adapter");
+ * 		Deno.exit(1);
  * 	}
  *
  * 	// Get the preferred format for canvas rendering
@@ -11842,17 +11853,17 @@ type GPUPowerPreference = "low-power" | "high-performance";
  * 	```ts
  * 	// Request an adapter with specific power preference
  * 	const adapter = await navigator.gpu.requestAdapter({
- * 	powerPreference: "high-performance",
+ * 		powerPreference: "high-performance",
  * 	});
  *
  * 	if (!adapter) {
- * 	console.error("WebGPU not supported or no appropriate adapter found");
- * 	Deno.exit(1);
+ * 		console.error("WebGPU not supported or no appropriate adapter found");
+ * 		Deno.exit(1);
  * 	}
  *
  * 	// Check adapter capabilities
  * 	if (adapter.features.has("shader-f16")) {
- * 	console.log("Adapter supports 16-bit shader operations");
+ * 		console.log("Adapter supports 16-bit shader operations");
  * 	}
  *
  * 	console.log(`Maximum buffer size: ${adapter.limits.maxBufferSize} bytes`);
@@ -11863,10 +11874,10 @@ type GPUPowerPreference = "low-power" | "high-performance";
  *
  * 	// Request a logical device with specific features and limits
  * 	const device = await adapter.requestDevice({
- * 	requiredFeatures: ["shader-f16"],
- * 	requiredLimits: {
- * 	maxStorageBufferBindingSize: 128 * 1024 * 1024, // 128MB
- * 	},
+ * 		requiredFeatures: ["shader-f16"],
+ * 		requiredLimits: {
+ * 			maxStorageBufferBindingSize: 128 * 1024 * 1024, // 128MB
+ * 		},
  * 	});
  * 	```
  */
@@ -11952,7 +11963,7 @@ type GPUFeatureName =
  *
  * 	// Use device.queue to submit commands
  * 	device.queue.writeBuffer(buffer, 0, new Uint8Array([1, 2, 3, 4]));
- * 	```;
+ * 	```
  */
 declare class GPUDevice extends EventTarget implements GPUObjectBase {
 	label: string;
@@ -12014,7 +12025,7 @@ declare class GPUDevice extends EventTarget implements GPUObjectBase {
  * 	// Copy data to the mapped buffer
  * 	new Uint8Array(stagingBuffer.getMappedRange()).set(data);
  * 	stagingBuffer.unmap();
- * 	```;
+ * 	```
  */
 declare class GPUBuffer implements GPUObjectBase {
 	label: string;
@@ -12095,7 +12106,7 @@ declare class GPUMapMode {
  * 		format: "depth24plus",
  * 		usage: GPUTextureUsage.RENDER_ATTACHMENT,
  * 	});
- * 	```;
+ * 	```
  */
 declare class GPUTexture implements GPUObjectBase {
 	label: string;
@@ -12460,24 +12471,24 @@ interface GPUPipelineErrorInit {
  * 	```ts
  * 	// Create a shader module using WGSL (WebGPU Shading Language)
  * 	const shaderModule = device.createShaderModule({
- * 	label: "My Shader",
- * 	code: `
- * 	@vertex
- * 	fn vertexMain(@location(0) pos: vec2f) -> @builtin(position) vec4f {
- * 	return vec4f(pos, 0.0, 1.0);
- * 	}
+ * 		label: "My Shader",
+ * 		code: `
+ *     @vertex
+ *     fn vertexMain(@location(0) pos: vec2f) -> @builtin(position) vec4f {
+ *       return vec4f(pos, 0.0, 1.0);
+ *     }
  *
- * 	@fragment
- * 	fn fragmentMain() -> @location(0) vec4f {
- * 	return vec4f(1.0, 0.0, 0.0, 1.0); // red color
- * 	}
- * 	`,
+ *     @fragment
+ *     fn fragmentMain() -> @location(0) vec4f {
+ *       return vec4f(1.0, 0.0, 0.0, 1.0); // red color
+ *     }
+ *   `,
  * 	});
  *
  * 	// Can optionally check for compilation errors/warnings
  * 	const compilationInfo = await shaderModule.getCompilationInfo();
  * 	for (const message of compilationInfo.messages) {
- * 	console.log(`${message.type}: ${message.message} at ${message.lineNum}:${message.linePos}`);
+ * 		console.log(`${message.type}: ${message.message} at ${message.lineNum}:${message.linePos}`);
  * 	}
  * 	```
  */
@@ -12793,7 +12804,7 @@ interface GPUCommandBufferDescriptor extends GPUObjectDescriptorBase {}
  * 	// Finish encoding and submit to GPU
  * 	const commandBuffer = commandEncoder.finish();
  * 	device.queue.submit([commandBuffer]);
- * 	```;
+ * 	```
  */
 declare class GPUCommandEncoder implements GPUObjectBase {
 	label: string;
@@ -13147,7 +13158,7 @@ interface GPURenderBundleEncoderDescriptor extends GPURenderPassLayout {
  * 	// Fill data with your texture content...
  *
  * 	queue.writeTexture({ texture }, data, { bytesPerRow: 256 * 4 }, { width: 256, height: 256 });
- * 	```;
+ * 	```
  */
 declare class GPUQueue implements GPUObjectBase {
 	label: string;
@@ -13318,7 +13329,7 @@ type GPUExtent3D = number[] | GPUExtent3DDict;
  * 		wasClean: true,
  * 	};
  * 	const event = new CloseEvent("close", closeEventInit);
- * 	```;
+ * 	```
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent/CloseEvent
  */
@@ -13340,13 +13351,13 @@ interface CloseEventInit extends EventInit {
  * 	```ts
  * 	// Handling a close event
  * 	ws.addEventListener("close", (event: CloseEvent) => {
- * 	console.log(`Connection closed with code ${event.code}`);
- * 	console.log(`Reason: ${event.reason}`);
- * 	console.log(`Clean close: ${event.wasClean}`);
+ * 		console.log(`Connection closed with code ${event.code}`);
+ * 		console.log(`Reason: ${event.reason}`);
+ * 		console.log(`Clean close: ${event.wasClean}`);
  *
- * 	if (event.code === 1006) {
- * 	console.log("Connection closed abnormally");
- * 	}
+ * 		if (event.code === 1006) {
+ * 			console.log("Connection closed abnormally");
+ * 		}
  * 	});
  * 	```
  *
@@ -13376,7 +13387,7 @@ interface CloseEvent extends Event {
  *
  * 	// Dispatching the event
  * 	myWebSocket.dispatchEvent(event);
- * 	```;
+ * 	```
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent/CloseEvent
  */
@@ -13396,11 +13407,11 @@ declare var CloseEvent: {
  * 	const ws = new WebSocket("ws://localhost:8080");
  *
  * 	ws.addEventListener("open", (event) => {
- * 	console.log("Connection established");
+ * 		console.log("Connection established");
  * 	});
  *
  * 	ws.addEventListener("message", (event: MessageEvent) => {
- * 	console.log(`Received: ${event.data}`);
+ * 		console.log(`Received: ${event.data}`);
  * 	});
  * 	```
  */
@@ -13425,20 +13436,20 @@ interface WebSocketEventMap {
  *
  * 	// Setting up event handlers
  * 	ws.onopen = (event) => {
- * 	console.log("Connected to the server");
- * 	ws.send("Hello Server!");
+ * 		console.log("Connected to the server");
+ * 		ws.send("Hello Server!");
  * 	};
  *
  * 	ws.onmessage = (event) => {
- * 	console.log(`Received: ${event.data}`);
+ * 		console.log(`Received: ${event.data}`);
  * 	};
  *
  * 	ws.onerror = (event) => {
- * 	console.error("WebSocket error observed:", event);
+ * 		console.error("WebSocket error observed:", event);
  * 	};
  *
  * 	ws.onclose = (event) => {
- * 	console.log(`WebSocket closed: Code=${event.code}, Reason=${event.reason}`);
+ * 		console.log(`WebSocket closed: Code=${event.code}, Reason=${event.reason}`);
  * 	};
  * 	```
  *
@@ -13573,7 +13584,7 @@ interface WebSocket extends EventTarget {
  * 			Authorization: "Bearer foo",
  * 		},
  * 	});
- * 	```;
+ * 	```
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/WebSocket
  */
@@ -13633,14 +13644,14 @@ interface WebSocketOptions {
  * 	ws.binaryType = "arraybuffer";
  *
  * 	ws.onmessage = (event) => {
- * 	if (event.data instanceof ArrayBuffer) {
- * 	// Process binary data
- * 	const view = new Uint8Array(event.data);
- * 	console.log(`Received binary data of ${view.length} bytes`);
- * 	} else {
- * 	// Process text data
- * 	console.log(`Received text: ${event.data}`);
- * 	}
+ * 		if (event.data instanceof ArrayBuffer) {
+ * 			// Process binary data
+ * 			const view = new Uint8Array(event.data);
+ * 			console.log(`Received binary data of ${view.length} bytes`);
+ * 		} else {
+ * 			// Process text data
+ * 			console.log(`Received text: ${event.data}`);
+ * 		}
  * 	};
  *
  * 	// Sending binary data
@@ -13813,7 +13824,7 @@ interface ImageBitmapOptions {
  * 	} catch (error) {
  * 		console.error("Failed to create ImageBitmap:", error);
  * 	}
- * 	```;
+ * 	```
  *
  * @param image The image to create an {@linkcode ImageBitmap} from.
  * @param options The options for creating the {@linkcode ImageBitmap}.
@@ -13849,7 +13860,7 @@ declare function createImageBitmap(
  * 	} catch (error) {
  * 		console.error("Failed to create ImageBitmap:", error);
  * 	}
- * 	```;
+ * 	```
  *
  * @param image The image to create an {@linkcode ImageBitmap} from.
  * @param sx The x coordinate of the top-left corner of the sub-rectangle from which the
@@ -14310,7 +14321,7 @@ interface SubtleCrypto {
 	 * 		true,
 	 * 		["encrypt", "decrypt"]
 	 * 	);
-	 * 	```;
+	 * 	```
 	 *
 	 * @example
 	 * 	```ts
@@ -14323,7 +14334,7 @@ interface SubtleCrypto {
 	 * 		true,
 	 * 		["sign", "verify"]
 	 * 	);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/generateKey
 	 */
@@ -14347,7 +14358,7 @@ interface SubtleCrypto {
 	 * 		true,
 	 * 		["encrypt", "decrypt"]
 	 * 	);
-	 * 	```;
+	 * 	```
 	 *
 	 * @example
 	 * 	```ts
@@ -14360,7 +14371,7 @@ interface SubtleCrypto {
 	 * 		true,
 	 * 		["sign", "verify"]
 	 * 	);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/generateKey
 	 */
@@ -14393,14 +14404,14 @@ interface SubtleCrypto {
 	 * 	```ts
 	 * 	// Import an ECDSA private signing key where `jwk` is an object describing a private key
 	 * 	crypto.subtle.importKey(
-	 * 	"jwk",
-	 * 	jwk,
-	 * 	{
-	 * 	name: "ECDSA",
-	 * 	namedCurve: "P-384",
-	 * 	},
-	 * 	true,
-	 * 	["sign"]
+	 * 		"jwk",
+	 * 		jwk,
+	 * 		{
+	 * 			name: "ECDSA",
+	 * 			namedCurve: "P-384",
+	 * 		},
+	 * 		true,
+	 * 		["sign"]
 	 * 	);
 	 * 	```
 	 *
@@ -14443,7 +14454,7 @@ interface SubtleCrypto {
 	 * @example
 	 * 	```ts
 	 * 	await crypto.subtle.exportKey("jwk", key);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/exportKey
 	 */
@@ -14457,7 +14468,7 @@ interface SubtleCrypto {
 	 * @example
 	 * 	```ts
 	 * 	await crypto.subtle.exportKey("raw", key);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/exportKey
 	 */
@@ -14470,7 +14481,7 @@ interface SubtleCrypto {
 	 * @example
 	 * 	```ts
 	 * 	await crypto.subtle.sign("ECDSA", key, data);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/sign
 	 */
@@ -14487,7 +14498,7 @@ interface SubtleCrypto {
 	 * @example
 	 * 	```ts
 	 * 	await crypto.subtle.verify("ECDSA", key, signature, data);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/verify
 	 */
@@ -14506,7 +14517,7 @@ interface SubtleCrypto {
 	 * 	```ts
 	 * 	// Compute the digest of given data using a cryptographic algorithm
 	 * 	await crypto.subtle.digest("SHA-256", data);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest
 	 */
@@ -14519,7 +14530,7 @@ interface SubtleCrypto {
 	 * @example
 	 * 	```ts
 	 * 	await crypto.subtle.encrypt("RSA-OAEP", key, data);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/encrypt
 	 */
@@ -14534,7 +14545,7 @@ interface SubtleCrypto {
 	 * @example
 	 * 	```ts
 	 * 	await crypto.subtle.decrypt("RSA-OAEP", key, data);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/decrypt
 	 */
@@ -14549,7 +14560,7 @@ interface SubtleCrypto {
 	 * @example
 	 * 	```ts
 	 * 	await crypto.subtle.deriveBits("HKDF", baseKey, length);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveBits
 	 */
@@ -14566,7 +14577,7 @@ interface SubtleCrypto {
 	 * 	```ts
 	 * 	// Derive a key using an HKDF algorithm
 	 * 	await crypto.subtle.deriveKey("HKDF", baseKey, derivedKeyType, extractable, keyUsages);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveKey
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveKey
@@ -14589,7 +14600,7 @@ interface SubtleCrypto {
 	 * @example
 	 * 	```ts
 	 * 	await crypto.subtle.wrapKey("jwk", key, wrappingKey, "RSA-OAEP");
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/wrapKey
 	 */
@@ -14614,7 +14625,7 @@ interface SubtleCrypto {
 	 * 		true, // Whether the unwrapped key is extractable
 	 * 		["encrypt", "decrypt"] // Allowed key usages
 	 * 	);
-	 * 	```;
+	 * 	```
 	 *
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/unwrapKey
 	 */
@@ -14700,7 +14711,7 @@ interface Crypto {
 	 * 	crypto.getRandomValues(array);
 	 * 	console.log(array);
 	 * 	// output: Uint32Array(4) [ 3629234207, 1947236412, 3171234560, 4294901234 ]
-	 * 	```;
+	 * 	```
 	 *
 	 * @returns The same typed array, now populated with random values.
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues
@@ -14718,10 +14729,10 @@ interface Crypto {
 	 * 	// Example output: '36b8f84d-df4e-4d49-b662-bcde71a8764f'
 	 * 	```
 	 *
-	 * 	The `randomUUID` method generates a version 4 UUID, which is purely
-	 * 	random. If you require other versions of UUIDs, such as time-based (v1) or
-	 * 	name-based (v3 and v5), consider using the `@std/uuid` package available
-	 * 	at {@link https://jsr.io/@std/uuid}.
+	 * The `randomUUID` method generates a version 4 UUID, which is purely
+	 * random. If you require other versions of UUIDs, such as time-based (v1) or
+	 * name-based (v3 and v5), consider using the `@std/uuid` package available
+	 * at {@link https://jsr.io/@std/uuid}.
 	 *
 	 * @example
 	 * 	```ts
@@ -14731,7 +14742,7 @@ interface Crypto {
 	 * 	const uuidV1 = v1.generate();
 	 * 	console.log(uuidV1);
 	 * 	// output: 'a0c74f7e-82f1-11eb-8dcd-0242ac130003'
-	 * 	```;
+	 * 	```
 	 *
 	 * @returns A randomly generated, 36-character long v4 UUID.
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/Crypto/randomUUID
@@ -16431,7 +16442,7 @@ declare function dispatchEvent(event: Event): boolean;
  * 	console.error("An error occurred");
  * 	console.warn("Warning message");
  * 	console.debug("Debug information");
- * 	```;
+ * 	```
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/console
  */
@@ -16628,7 +16639,7 @@ interface WorkerOptions {
  * 	worker.onerror = (e) => {
  * 		console.error("Worker error:", e.message);
  * 	};
- * 	```;
+ * 	```
  *
  * @example
  * 	```ts
@@ -16642,7 +16653,7 @@ interface WorkerOptions {
  * 			self.postMessage(result);
  * 		}
  * 	};
- * 	```;
+ * 	```
  */
 interface Worker extends EventTarget {
 	/** Event handler for error events. Fired when an error occurs in the worker's execution context. */
@@ -16663,7 +16674,7 @@ interface Worker extends EventTarget {
 	 * 	const buffer = new ArrayBuffer(1024);
 	 * 	worker.postMessage({ data: buffer }, [buffer]);
 	 * 	// After transfer, buffer is no longer usable in the main thread
-	 * 	```;
+	 * 	```
 	 */
 	postMessage(message: any, transfer: Transferable[]): void;
 
@@ -16678,7 +16689,7 @@ interface Worker extends EventTarget {
 	 * 		data: [1, 2, 3, 4],
 	 * 		settings: { optimize: true },
 	 * 	});
-	 * 	```;
+	 * 	```
 	 */
 	postMessage(message: any, options?: StructuredSerializeOptions): void;
 
@@ -16724,7 +16735,7 @@ interface Worker extends EventTarget {
 	 * 	// Some time later, when you're done with the worker
 	 * 	worker.terminate();
 	 * 	// The worker is now terminated and its resources are freed
-	 * 	```;
+	 * 	```
 	 */
 	terminate(): void;
 }
@@ -17171,24 +17182,32 @@ interface Cache {
 	/**
 	 * Put the provided request/response into the cache.
 	 *
-	 * How is the API different from browsers? 1. You cannot match cache objects using by relative
-	 * paths. 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
+	 * How is the API different from browsers? 1. You cannot match cache objects using relative paths.
+	 * 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
 	 */
 	put(request: RequestInfo | URL, response: Response): Promise<void>;
 	/**
 	 * Return cache object matching the provided request.
 	 *
-	 * How is the API different from browsers? 1. You cannot match cache objects using by relative
-	 * paths. 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
+	 * How is the API different from browsers? 1. You cannot match cache objects using relative paths.
+	 * 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
 	 */
 	match(request: RequestInfo | URL, options?: CacheQueryOptions): Promise<Response | undefined>;
 	/**
 	 * Delete cache object matching the provided request.
 	 *
-	 * How is the API different from browsers? 1. You cannot delete cache objects using by relative
+	 * How is the API different from browsers? 1. You cannot delete cache objects using relative
 	 * paths. 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
 	 */
 	delete(request: RequestInfo | URL, options?: CacheQueryOptions): Promise<boolean>;
+	/**
+	 * Return the {@linkcode Request} keys stored in the cache, in insertion order. When a `request` is
+	 * provided, only the matching keys are returned.
+	 *
+	 * How is the API different from browsers? 1. You cannot match cache objects using relative paths.
+	 * 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
+	 */
+	keys(request?: RequestInfo | URL, options?: CacheQueryOptions): Promise<ReadonlyArray<Request>>;
 }
 
 /**
@@ -17854,7 +17873,7 @@ interface WindowEventMap {
  * 		console.log("Unhandled promise rejection:", event.reason);
  * 		d;
  * 	});
- * 	```;
+ * 	```
  */
 interface Window extends EventTarget {
 	readonly window: Window & typeof globalThis;
@@ -17956,7 +17975,7 @@ declare var closed: boolean;
  * 	console.log("About to close the Deno process.");
  * 	close(); // The process will terminate here.
  * 	console.log("This will not be logged."); // This line will never execute.
- * 	```;
+ * 	```
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Window/close
  */
@@ -17969,8 +17988,8 @@ declare function close(): void;
  * @example
  * 	```ts
  * 	onerror = (event) => {
- * 	console.log(`Error occurred: ${event.message}`);
- * 	return true; // Prevents the default error handling
+ * 		console.log(`Error occurred: ${event.message}`);
+ * 		return true; // Prevents the default error handling
  * 	};
  * 	```
  */
@@ -18014,7 +18033,7 @@ declare var onunload: ((this: Window, ev: Event) => any) | null;
  *
  * 	// This will trigger the event handler
  * 	Promise.reject(new Error("Example error"));
- * 	```;
+ * 	```
  */
 declare var onunhandledrejection: ((this: Window, ev: PromiseRejectionEvent) => any) | null;
 
@@ -18055,7 +18074,7 @@ declare var onunhandledrejection: ((this: Window, ev: PromiseRejectionEvent) => 
  *
  * 	// Clear all values from localStorage
  * 	localStorage.clear();
- * 	```;
+ * 	```
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage
  */
@@ -18092,7 +18111,7 @@ declare var localStorage: Storage;
  *
  * 	// Clear all the values from sessionStorage
  * 	sessionStorage.clear();
- * 	```;
+ * 	```
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage
  */
@@ -18129,7 +18148,7 @@ declare var sessionStorage: Storage;
  * 		await cache.put(request, response.clone());
  * 		return response;
  * 	}
- * 	```;
+ * 	```
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Window/caches
  */
@@ -18199,7 +18218,7 @@ declare var navigator: Navigator;
  * 	```ts
  * 	// Displays the message "Acknowledge me! [Enter]" and waits for the enter key to be pressed before continuing.
  * 	alert("Acknowledge me!");
- * 	```;
+ * 	```
  *
  * @param message
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Window/alert
@@ -18221,7 +18240,7 @@ declare function alert(message?: string): void;
  * 	// If the user presses 'y' or 'Y', the result will be true
  * 	// If the user presses 'n' or 'N', the result will be false
  * 	console.log("Should proceed?", shouldProceed);
- * 	```;
+ * 	```
  *
  * @param message
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Window/confirm
@@ -18246,7 +18265,7 @@ declare function confirm(message?: string): boolean;
  *
  * 	// Displays the user's input or the default value of "It's fine to love both!"
  * 	console.log("Best pet:", pet);
- * 	```;
+ * 	```
  *
  * @param message
  * @param defaultValue
@@ -19744,8 +19763,10 @@ declare namespace Deno {
 		 * Display function for Jupyter Deno Kernel. Mimics the behavior of IPython's `display(obj,
 		 * raw=True)` function to allow asynchronous displaying of objects in Jupyter.
 		 *
-		 * @category Jupyter @param obj - The object to be displayed @param options - Display options
-		 * with a default { raw: true } @experimental
+		 * @category Jupyter
+		 * @param obj - The object to be displayed
+		 * @param options - Display options with a default { raw: true }
+		 * @experimental
 		 */
 		export function display(obj: unknown, options?: DisplayOptions): Promise<void>;
 
@@ -23134,7 +23155,7 @@ declare namespace Intl {
 	 * 	// Using with Temporal types (when available)
 	 * 	const instant = Temporal.Now.instant();
 	 * 	console.log(formatter.format(instant));
-	 * 	```;
+	 * 	```
 	 *
 	 * @experimental
 	 */
@@ -23173,7 +23194,7 @@ declare namespace Intl {
 	 * 	// { type: 'literal', value: ' - ', source: 'shared' }
 	 * 	// { type: 'day', value: '3', source: 'endRange' }
 	 * 	// ...
-	 * 	```;
+	 * 	```
 	 *
 	 * @experimental
 	 */
@@ -23210,7 +23231,7 @@ declare namespace Intl {
 		 * 	const formatter = new Intl.DateTimeFormat("en-US", { dateStyle: "full" });
 		 * 	const date = new Date(2023, 0, 1);
 		 * 	console.log(formatter.format(date)); // Output: "Sunday, January 1, 2023"
-		 * 	```;
+		 * 	```
 		 */
 		format(date?: Formattable | number): string;
 
@@ -23222,7 +23243,7 @@ declare namespace Intl {
 		 * 	const formatter = new Intl.DateTimeFormat("en-US", { dateStyle: "full" });
 		 * 	const date = new Date(2023, 0, 1);
 		 * 	console.log(formatter.format(date)); // Output: "Sunday, January 1, 2023"
-		 * 	```;
+		 * 	```
 		 */
 		formatToParts(date?: Formattable | number): globalThis.Intl.DateTimeFormatPart[];
 
@@ -23237,7 +23258,7 @@ declare namespace Intl {
 		 * 	const endDate = new Date(2023, 0, 5);
 		 * 	console.log(formatter.formatRange(startDate, endDate));
 		 * 	// Output: "January 1 – 5, 2023"
-		 * 	```;
+		 * 	```
 		 *
 		 * @param startDate The start date of the range to format.
 		 * @param endDate The start date of the range to format. Must be the same type as `startRange`.
@@ -23266,7 +23287,7 @@ declare namespace Intl {
 		 * 	//   { type: 'literal', value: ', ', source: 'shared' },
 		 * 	//   { type: 'year', value: '2023', source: 'shared' }
 		 * 	// ]
-		 * 	```;
+		 * 	```
 		 *
 		 * @param startDate The start date of the range to format.
 		 * @param endDate The start date of the range to format. Must be the same type as `startRange`.
