@@ -22,3 +22,6 @@ npm-debug.log*
 
 # generated preview output
 scripts/*.png
+
+# superpowers workflow scratch
+.superpowers/
