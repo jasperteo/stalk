@@ -25,3 +25,6 @@ scripts/*.png
 
 # superpowers workflow scratch
 .superpowers/
+
+# local card catalog dump (id -> name reference; not read by any code)
+cr-cards.json
