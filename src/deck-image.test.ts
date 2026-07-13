@@ -128,6 +128,16 @@ describe("renderDeckGrid", () => {
 		expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
 	});
 
+	it("rejects without a CDN fallback when the local read fails for any reason but NotFound", async () => {
+		const permissionError = new Deno.errors.PermissionDenied("EACCES");
+		readFileMock.mockRejectedValue(permissionError);
+
+		// Only Deno.errors.NotFound means "not mirrored yet, try the CDN" — any other read failure
+		// (permissions, a corrupt mount, ...) must surface as-is, with no fallback fetch attempted.
+		await expect(renderDeckGrid([card()])).rejects.toBe(permissionError);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	it("fetches the evolutionMedium/heroMedium icon variant when falling back for Evo/Hero cards", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
 
