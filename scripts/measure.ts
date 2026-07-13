@@ -1,18 +1,18 @@
 import { Image } from "@matmen/imagescript";
 
-import { scanArtBounds } from "@/deck-image.ts";
+import { IMAGES_DIR, scanArtBounds } from "@/deck-image.ts";
 import { hl, log } from "@/log.ts";
 
 /**
  * Dev-only measuring tool: reports the transparent margins baked into a card icon, the numbers
- * deck-image.ts's `trimToArt`/`composeDeckGrid` are tuned against. Reads the local `images/` dump
- * (not the CDN), so it stays offline and hermetic enough to run on a whim.
+ * deck-image.ts's `trimToArt`/`composeDeckGrid` are tuned against. Reads the renderer's own
+ * `IMAGES_DIR` (not the CDN), so it measures exactly the directory the renderer reads and stays
+ * offline and hermetic enough to run on a whim.
  *
  * Usage: `deno task measure 26000032 26000032-evo` — bare card ids resolve to `images/<id>.png`; a
  * `-evo`/`-hero` suffix picks that variant. With no args it measures every icon in `images/` and
  * prints the aggregate row, which is what ROW_GAP's floor and the grid's cell width come from.
  */
-const IMAGES_DIR = new URL("../images/", import.meta.url);
 
 type Measurement = {
 	name: string;
