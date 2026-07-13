@@ -14,6 +14,13 @@ import type { Card } from "@/schema.ts";
  */
 const loadImageScript = () => import("@matmen/imagescript");
 
+/**
+ * The local card-art mirror (`<id>.png`, `<id>-evo.png`, `<id>-hero.png`), resolved relative to
+ * this module rather than the cwd so it survives Deno Deploy, where the process cwd is not the repo
+ * root. Every playable card ships here, so reads are the hot path and never touch the network.
+ */
+const IMAGES_DIR = new URL("../images/", import.meta.url);
+
 const COLUMNS = 4;
 /**
  * Gutter between columns, in native pixels. Tiles are trimmed on the sides, so this is the true
@@ -27,7 +34,7 @@ const COLUMN_GAP = 12;
  * into.
  */
 const ROW_GAP = -16;
-/** Alpha at or below this counts as transparent when trimming the card's margin. */
+/** Alpha at or below this counts as transparent when scanning for a card's art bounds. */
 const ALPHA_THRESHOLD = 8;
 /**
  * PNG deflate level, 0–9, for the shipped grid. Lossless, so it trades encode CPU for upload size.
@@ -36,13 +43,8 @@ const ALPHA_THRESHOLD = 8;
  */
 const GRID_COMPRESSION = 6;
 /**
- * PNG deflate level for cached tile bytes. These are memory-resident only — egress never applies —
- * so only deflate's knee is worth paying: the top levels cost disproportionate CPU for a further
- * ~1–3%.
- */
-const TILE_COMPRESSION = 6;
-/**
- * Abort a card-icon CDN fetch after this long. Icons fetch in parallel per deck, so this bounds the
+ * Abort a fallback card-icon CDN fetch after this long. The fallback only runs for a card absent
+ * from the local mirror (a fresh release), and those fetch in parallel per deck, so this bounds the
  * whole tile-load phase; a timeout rejects the render and discord.ts falls back to the text-only
  * message instead of the tick hanging.
  */
@@ -66,51 +68,82 @@ type Tile = {
 };
 
 /**
- * A `Tile` in cache form: the bitmap deflated back to PNG bytes. Compressed, a tile costs a
- * fraction of its decoded RGBA bitmap, which is what keeps a warm isolate holding every distinct
- * card art bounded.
- */
-type CachedTile = {
-	png: Uint8Array;
-	bottomPadding: number;
-};
-
-/**
- * Trimmed tiles keyed by icon URL. Only ~120 distinct card arts exist, and warm isolates keep the
- * map across cron ticks, so after warmup renders skip the CDN fetch, decode, and trim scan. Caching
- * the _promise_ (not the value) also dedupes concurrent fetches — both decks of a battle, and all
- * targets on a cron tick, render in parallel.
- */
-const tileCache = new Map<string, Promise<CachedTile>>();
-
-/**
- * Finished grids keyed by the deck's ordered icon URLs. Players run one deck for many battles in a
- * row, so the expensive part (tile load, compose, encode) runs once per deck instead of once per
- * battle. Small LRU: hits re-insert at the back, inserts evict from the front, so tracked players'
- * decks stay warm while one-shot opponent decks churn through. Sharing the cached bytes across
- * posts is safe — callers only wrap them in a `File`, never mutate them.
+ * Finished grids keyed by the deck's ordered `id:evolutionLevel` tokens. Players run one deck for
+ * many battles in a row, so the expensive part (tile load, compose, encode) runs once per deck
+ * instead of once per battle. Small LRU: hits re-insert at the back, inserts evict from the front,
+ * so tracked players' decks stay warm while one-shot opponent decks churn through. Sharing the
+ * cached bytes across posts is safe — callers only wrap them in a `File`, never mutate them.
  */
 const deckCache = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
 
 /**
- * Which `iconUrls` variant each `evolutionLevel` uses (1 = Evolution, 2 = Hero). The `satisfies`
- * clause keeps this table — like `EVOLUTION_PREFIX` in discord.ts — in lockstep with the schema's
- * picklist: a new level fails to compile here instead of silently falling through.
+ * Which local-art filename suffix each `evolutionLevel` uses (1 = Evolution, 2 = Hero); ordinary
+ * cards use the bare `<id>.png`. The `satisfies` clause keeps this table — like `EVOLUTION_PREFIX`
+ * in discord.ts — in lockstep with the schema's picklist: a new level fails to compile here instead
+ * of silently falling through to the base art.
  */
-const EVOLUTION_ICON = {
-	1: "evolutionMedium",
-	2: "heroMedium",
-} as const satisfies Record<NonNullable<Card["evolutionLevel"]>, keyof Card["iconUrls"]>;
+const EVOLUTION_SUFFIX = {
+	1: "-evo",
+	2: "-hero",
+} as const satisfies Record<NonNullable<Card["evolutionLevel"]>, string>;
+
+/** The local mirror filename for the card as it was played: `<id>`, `<id>-evo`, or `<id>-hero`. */
+function tileName(card: Card): string {
+	const suffix = card.evolutionLevel ? EVOLUTION_SUFFIX[card.evolutionLevel] : "";
+	return `${String(card.id)}${suffix}.png`;
+}
 
 /**
- * CDN art for the card as it was played; a card without its variant field — or without an
- * `evolutionLevel` at all — falls back to the always-present `medium`, so it never renders blank.
+ * CDN art URL for the card as it was played — the fallback source when the local mirror has no file
+ * for the card yet. Prefers the played evo/hero variant and falls back to the always-present
+ * `medium`, so it never resolves blank.
  */
-function iconUrl(card: Card) {
-	const variant = card.evolutionLevel
-		? card.iconUrls[EVOLUTION_ICON[card.evolutionLevel]]
-		: undefined;
-	return variant ?? card.iconUrls.medium;
+function iconUrl(card: Card): string {
+	if (card.evolutionLevel === 1 && card.iconUrls.evolutionMedium) {
+		return card.iconUrls.evolutionMedium;
+	}
+	if (card.evolutionLevel === 2 && card.iconUrls.heroMedium) {
+		return card.iconUrls.heroMedium;
+	}
+	return card.iconUrls.medium;
+}
+
+/**
+ * Scans a decoded RGBA bitmap for the bounding box of its opaque pixels: the min/max x and y where
+ * alpha exceeds `ALPHA_THRESHOLD`. A fully transparent bitmap yields `maxX === -1` (with `minX`/
+ * `minY` left at width/height), the sentinel callers must handle. Structural over `{ bitmap, width,
+ * height }` rather than ImageScript's `Image` so importers (e.g. scripts/measure.ts) need no
+ * ImageScript types. Walks the raw byte array with a running offset (alpha is byte 3 of each RGBA
+ * quad) — this scans every pixel, and per-pixel `getPixelAt` would pay a bounds-check call plus a
+ * big-endian u32 read each time.
+ */
+function scanArtBounds({
+	bitmap,
+	width,
+	height,
+}: {
+	bitmap: Uint8Array | Uint8ClampedArray;
+	width: number;
+	height: number;
+}) {
+	let minX = width;
+	let minY = height;
+	let maxX = -1;
+	let maxY = -1;
+
+	let offset = 3;
+	for (let y = 0; y < height; y++) {
+		for (let x = 0; x < width; x++, offset += 4) {
+			if ((bitmap[offset] ?? 0) > ALPHA_THRESHOLD) {
+				if (x < minX) minX = x;
+				if (x > maxX) maxX = x;
+				if (y < minY) minY = y;
+				if (y > maxY) maxY = y;
+			}
+		}
+	}
+
+	return { minX, minY, maxX, maxY };
 }
 
 /**
@@ -124,26 +157,8 @@ function iconUrl(card: Card) {
  * art.
  */
 function trimToArt(image: Image): Tile {
-	const { bitmap, width, height } = image;
-	let minX = width;
-	let minY = height;
-	let maxX = -1;
-	let maxY = -1;
-
-	// Walk the raw RGBA bitmap with a running offset (alpha is byte 3 of each quad) — this scans
-	// every pixel, and per-pixel getPixelAt would pay a bounds-check call plus a big-endian u32 read
-	// each time.
-	let offset = 3;
-	for (let y = 0; y < height; y++) {
-		for (let x = 0; x < width; x++, offset += 4) {
-			if ((bitmap[offset] ?? 0) > ALPHA_THRESHOLD) {
-				if (x < minX) minX = x;
-				if (x > maxX) maxX = x;
-				if (y < minY) minY = y;
-				if (y > maxY) maxY = y;
-			}
-		}
-	}
+	const { height } = image;
+	const { minX, minY, maxX, maxY } = scanArtBounds(image);
 
 	// Fully transparent (shouldn't happen for card art): leave it rather than crop to nothing. All
 	// padding, so no overlap can clip art.
@@ -170,61 +185,50 @@ async function fetchTile(url: string): Promise<Tile> {
 	return trimToArt(await Image.decode(new Uint8Array(await response.arrayBuffer())));
 }
 
-/** Inflates a cached tile back into a working bitmap for compositing. */
-async function inflateTile(cached: Promise<CachedTile>): Promise<Tile> {
-	const [{ Image }, { png, bottomPadding }] = await Promise.all([loadImageScript(), cached]);
-
-	return { image: await Image.decode(png), bottomPadding };
-}
-
 /**
- * Loads a tile ready to composite. A hit inflates a fresh bitmap from the cached PNG bytes; a miss
- * hands the render the live decoded image directly and fills the cache with deflated bytes as a
- * derived promise — so a cold render never pays an encode→decode round trip of its own making, and
- * the cache-fill deflate stays off the render's critical path. Each tile resolves independently, so
- * warm inflates overlap in-flight cold fetches instead of waiting for the slowest one.
+ * Loads a card's tile ready to composite. The local mirror covers every playable card, so the file
+ * read is the normal path — decode + trim of a few tiles per deck-cache miss is tens of ms, and the
+ * OS page cache absorbs repeats, so no per-tile cache is kept. A `NotFound` means the card released
+ * after the last mirror sync: `log.warn` (the signal to add its art) and fall back to the card's
+ * CDN icon. `cdnFallback` reports whether that fallback ran, so `composeDeckGrid` can log it. Any
+ * fetch/decode error propagates — the render rejects and discord.ts posts its text-only message.
  */
-function loadTile(url: string): Promise<Tile> {
-	const cached = tileCache.get(url);
+async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean }> {
+	const { Image } = await loadImageScript();
 
-	if (cached !== undefined) {
-		return inflateTile(cached);
+	try {
+		const bytes = await Deno.readFile(new URL(tileName(card), IMAGES_DIR));
+		return { tile: trimToArt(await Image.decode(bytes)), cdnFallback: false };
+	} catch (error) {
+		if (!(error instanceof Deno.errors.NotFound)) {
+			throw error;
+		}
+
+		log.warn(
+			`no local art for card ${hl.entity(String(card.id))} (${card.name}); falling back to the CDN`
+		);
+		return { tile: await fetchTile(iconUrl(card)), cdnFallback: true };
 	}
-
-	const pending = fetchTile(url);
-	const compressed = pending.then(
-		async ({ image, bottomPadding }): Promise<CachedTile> => ({
-			png: await image.encode(TILE_COMPRESSION),
-			bottomPadding,
-		})
-	);
-
-	tileCache.set(url, compressed);
-	// Evict on failure so one bad fetch doesn't poison the cache forever; the racing render still
-	// sees the rejection through its own await on `pending`.
-	compressed.catch(() => tileCache.delete(url));
-
-	return pending;
 }
 
 /**
  * Composites a deck into a 4-column PNG grid (2 rows for a full 8-card deck; short decks simply
  * leave trailing cells empty). Runs once per deck-cache miss — `renderDeckGrid` is the cached front
- * door — and logs elapsed ms, tile-cache misses, and output size, so the per-distinct-deck render
- * cost is observable in Deploy logs.
+ * door — and logs elapsed ms, CDN fallbacks (normally 0), and output size, so the per-distinct-deck
+ * render cost is observable in Deploy logs.
  */
-async function composeDeckGrid(urls: string[]): Promise<Uint8Array<ArrayBuffer>> {
-	if (urls.length === 0) {
+async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
+	if (cards.length === 0) {
 		throw new Error("No cards to render");
 	}
 
 	const start = performance.now();
-	const cachedBefore = tileCache.size;
-	const [{ Image }, tiles] = await Promise.all([
+	const [{ Image }, loaded] = await Promise.all([
 		loadImageScript(),
-		Promise.all(urls.map((url) => loadTile(url))),
+		Promise.all(cards.map((card) => loadTile(card))),
 	]);
-	const fetched = tileCache.size - cachedBefore;
+	const fallbacks = loaded.filter((entry) => entry.cdnFallback).length;
+	const tiles = loaded.map((entry) => entry.tile);
 
 	const composeStart = performance.now();
 	// One cell size for every card, so all rows are equal height and the grid stays consistent
@@ -264,29 +268,31 @@ async function composeDeckGrid(urls: string[]): Promise<Uint8Array<ArrayBuffer>>
 	const png = new Uint8Array(await canvas.encode(GRID_COMPRESSION));
 	const end = performance.now();
 
-	// Size is worth logging: tiles composite at whatever resolution the CDN serves (no resize), so a
-	// CDN art upgrade would silently grow every upload toward Discord's attachment limit.
+	// Size is worth logging: tiles composite at the local mirror's native resolution (no resize), so
+	// re-exporting the mirror at a higher resolution would silently grow every upload toward
+	// Discord's attachment limit.
 	const elapsed = formatDuration(Math.round(end - start), { ignoreZero: true });
 	const composeElapsed = formatDuration(Math.round(end - composeStart), { ignoreZero: true });
 	log.debug(
-		`deck grid: ${String(tiles.length)} tiles (${String(fetched)} fetched), ${hl.value(formatBytes(png.length))}, in ${elapsed} (compose+encode ${composeElapsed})`
+		`deck grid: ${String(tiles.length)} tiles (${String(fallbacks)} from CDN), ${hl.value(formatBytes(png.length))}, in ${elapsed} (compose+encode ${composeElapsed})`
 	);
 
 	return png;
 }
 
 /**
- * Cached front door for `composeDeckGrid`: the render is deterministic from the deck's ordered icon
- * URLs (`iconUrl` already folds in the Evo/Hero variant), so identical decks reuse the finished PNG
- * — and a quiet Deploy log means cache hits, not missing renders. A hit refreshes the entry's
- * recency; a miss renders, caches the promise (deduping concurrent renders of the same deck), and
- * evicts the least-recently-used deck past the cap. Throws on an empty deck or an icon fetch/decode
- * failure — the caller falls back to the text-only message — and failures evict themselves so a bad
- * render isn't cached.
+ * Cached front door for `composeDeckGrid`: the render is deterministic from the deck's ordered
+ * `id:evolutionLevel` tokens (independent of whether the local file or the CDN served each tile),
+ * so identical decks reuse the finished PNG — and a quiet Deploy log means cache hits, not missing
+ * renders. A hit refreshes the entry's recency; a miss renders, caches the promise (deduping
+ * concurrent renders of the same deck), and evicts the least-recently-used deck past the cap.
+ * Throws on an empty deck or a tile load/decode failure — the caller falls back to the text-only
+ * message — and failures evict themselves so a bad render isn't cached.
  */
 async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
-	const urls = cards.map((card) => iconUrl(card));
-	const key = urls.join("|");
+	const key = cards
+		.map((card) => `${String(card.id)}:${String(card.evolutionLevel ?? 0)}`)
+		.join("|");
 	const cached = deckCache.get(key);
 
 	if (cached !== undefined) {
@@ -305,7 +311,7 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	}
 
 	// Cached before the first await, so concurrent renders of the same deck dedupe on this promise.
-	const pending = composeDeckGrid(urls);
+	const pending = composeDeckGrid(cards);
 	deckCache.set(key, pending);
 
 	try {
@@ -316,4 +322,4 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	}
 }
 
-export { renderDeckGrid };
+export { renderDeckGrid, scanArtBounds };

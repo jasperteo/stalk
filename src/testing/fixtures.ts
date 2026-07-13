@@ -12,6 +12,7 @@ const BOB = { tag: "def456", name: "Bob", crowns: 1 };
 
 function rawCard(overrides: Record<string, unknown> = {}) {
 	return {
+		id: 26_000_000,
 		name: "Knight",
 		iconUrls: { medium: "https://api.clashroyale.com/knight.png" },
 		...overrides,
