@@ -7,9 +7,10 @@ import type { Card } from "@/schema.ts";
 vi.mock("@/log.ts");
 
 // `deckCache` in deck-image.ts is module-level and persists for the whole test file, and its keys are
-// now the deck's ordered `id:evolutionLevel` tokens — so every card needs a unique id, otherwise two
-// tests would silently share (or collide on) a cached grid. A monotonic counter hands each `card()`
-// call its own id; tests that render the same deck twice build the array once and reuse it.
+// now the deck's ordered mirror filenames (derived from card id + evolutionLevel) — so every card
+// needs a unique id, otherwise two tests would silently share (or collide on) a cached grid. A
+// monotonic counter hands each `card()` call its own id; tests that render the same deck twice build
+// the array once and reuse it.
 let nextId = 1;
 
 function card(overrides: Partial<Card> = {}): Card {
