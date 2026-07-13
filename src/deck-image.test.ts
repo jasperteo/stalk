@@ -151,16 +151,6 @@ describe("renderDeckGrid", () => {
 
 		expect(urls).toContain("https://api.clashroyale.com/no-variant-card-icon.png");
 	});
-
-	it("HACK: renders Ronin from the override URL, padded onto the shared baseline", async () => {
-		const grid = await renderDeckGrid([card({ name: "Ronin" })]).then((png) => Image.decode(png));
-		const urls = fetchMock.mock.calls.map((call) => call[0]);
-
-		expect(urls).toEqual([expect.stringContaining("royaleapi.com")]);
-		expect(urls).not.toContain("https://api.clashroyale.com/ronin-icon.png");
-		// The fixture's bottom edge is flush, so the 12px pad is the whole added height.
-		expect(grid.height).toBe(TILE_HEIGHT + 12);
-	});
 });
 
 /**

@@ -103,41 +103,10 @@ const EVOLUTION_ICON = {
 } as const satisfies Record<NonNullable<Card["evolutionLevel"]>, keyof Card["iconUrls"]>;
 
 /**
- * HACK — delete once the CR API serves a working icon for Ronin.
- *
- * The API's `iconUrls.medium` for Ronin 404s, which fails the whole deck render and drops the
- * battle to discord.ts's text-only fallback. Substitute RoyaleAPI's own art, keyed by lowercased
- * card name (same shape as TOWER_TROOP_ART in discord.ts). `bottomPad` compensates for that art
- * being cropped tighter than Supercell's: the official 285x420 icons keep 17-32px of transparent
- * bottom margin, which `trimToArt` preserves as the shared baseline, while RoyaleAPI's keeps 5 — 12
- * more puts Ronin back on the same baseline as its neighbours.
- *
- * To remove: delete this block, `ART_BOTTOM_PAD`, `padBottom`, and the two `HACK:` call sites in
- * `iconUrl` and `fetchTile`.
- */
-const CARD_ART_HACK: Record<string, { url: string; bottomPad: number }> = {
-	ronin: {
-		url: "https://cdns3.royaleapi.com/cdn-cgi/image/w=302,format=png/static/img/cards/v10-9f6caa5e/ronin.png",
-		bottomPad: 12,
-	},
-};
-
-/** HACK companion: bottom pad keyed by URL, since `fetchTile` only ever sees the resolved URL. */
-const ART_BOTTOM_PAD = new Map(
-	Object.values(CARD_ART_HACK).map(({ url, bottomPad }) => [url, bottomPad])
-);
-
-/**
  * CDN art for the card as it was played; a card without its variant field — or without an
  * `evolutionLevel` at all — falls back to the always-present `medium`, so it never renders blank.
  */
 function iconUrl(card: Card) {
-	// HACK: card-art override beats every API variant; see CARD_ART_HACK.
-	const override = CARD_ART_HACK[card.name.toLowerCase()];
-	if (override !== undefined) {
-		return override.url;
-	}
-
 	const variant = card.evolutionLevel
 		? card.iconUrls[EVOLUTION_ICON[card.evolutionLevel]]
 		: undefined;
@@ -188,22 +157,6 @@ function trimToArt(image: Image): Tile {
 	};
 }
 
-/**
- * HACK companion: grows a tile's transparent bottom margin — the baseline `composeDeckGrid`
- * bottom-aligns on. ImageScript has no pad primitive, so composite onto a taller transparent
- * canvas. Takes the `Image` class from the caller, which has already loaded the module.
- */
-function padBottom(ImageClass: typeof Image, tile: Tile, pixels: number): Tile {
-	if (pixels <= 0) {
-		return tile;
-	}
-
-	const padded = new ImageClass(tile.image.width, tile.image.height + pixels);
-	padded.composite(tile.image, 0, 0);
-
-	return { image: padded, bottomPadding: tile.bottomPadding + pixels };
-}
-
 async function fetchTile(url: string): Promise<Tile> {
 	const [{ Image }, response] = await Promise.all([
 		loadImageScript(),
@@ -214,9 +167,7 @@ async function fetchTile(url: string): Promise<Tile> {
 		throw new Error(`Card icon ${String(response.status)} for ${url}`);
 	}
 
-	const tile = trimToArt(await Image.decode(new Uint8Array(await response.arrayBuffer())));
-	// HACK: see CARD_ART_HACK.
-	return padBottom(Image, tile, ART_BOTTOM_PAD.get(url) ?? 0);
+	return trimToArt(await Image.decode(new Uint8Array(await response.arrayBuffer())));
 }
 
 /** Inflates a cached tile back into a working bitmap for compositing. */
