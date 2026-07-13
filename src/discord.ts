@@ -260,9 +260,9 @@ function buildMessage(
 }
 
 /**
- * Text-only single embed, used when deck rendering fails (icon CDN outage, decode error) so an
- * image problem never drops the notification. Matches the pre-image layout: decks and tower troops
- * as text fields.
+ * Text-only single embed, used when deck rendering fails (missing/unreadable local art,
+ * CDN-fallback failure, decode error) so an image problem never drops the notification. Matches the
+ * pre-image layout: decks and tower troops as text fields.
  */
 function buildFallbackMessage(battle: Battle, me: Player) {
 	const { opponent, outcome, footer, content } = battleContext(battle, me);

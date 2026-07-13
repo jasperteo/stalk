@@ -14,15 +14,15 @@ Battle log entries that fail schema validation are skipped. To stay cheap, the n
 
 ## Source files
 
-| File                 | Responsibility                                                                                                                                                                                                                                                                                                    |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/main.ts`        | Hono app entry point; exports `{ fetch: app.fetch, onListen }` (`fetch` handles `GET /` health check, `GET /kv/last-battle` cursor view; `onListen` logs a startup line) and the `Deno.cron` handler                                                                                                              |
-| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                                                                                                                                                                                |
-| `src/discord.ts`     | Builds and posts the battle message: result and crown score in the content; two embeds (one per player), each titled with the player's name, with a deck-grid image and tower-troop thumbnail; text-only fallback if rendering fails                                                                              |
-| `src/deck-image.ts`  | Composites a deck's 8 card icons into a bottom-aligned 4-column PNG grid via ImageScript; trims transparent margins, renders at native resolution, and caches both trimmed tiles (by icon URL) and finished grids (by deck, small LRU)                                                                            |
-| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `iconUrls`                                                                                                                                                               |
-| `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing)                                                                                                                                                                           |
-| `src/log.ts`         | Console wrapper (`log.info`/`success`/`warn`/`error`/`debug`) that prefixes lines with a colored, leveled badge; sole importer of `@std/fmt/colors`, also exporting the badge palette (`levelColor`) and inline value highlighters (`hl`); color only on a real terminal, so piped/Deploy output stays plain text |
+| File                 | Responsibility                                                                                                                                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/main.ts`        | Hono app entry point, run as a script (`deno run`, not `deno serve`) — top-level `Deno.serve` binds the HTTP handler (`GET /` health check, `GET /kv/last-battle` cursor view) and `Deno.cron` drives polling; reads a `q` + Enter quit key when stdin is a terminal                                                                 |
+| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                                                                                                                                                                                                   |
+| `src/discord.ts`     | Builds and posts the battle message: result and crown score in the content; two embeds (one per player), each titled with the player's name, with a deck-grid image and tower-troop thumbnail; text-only fallback if rendering fails                                                                                                 |
+| `src/deck-image.ts`  | Composites a deck's 8 card icons into a bottom-aligned 4-column PNG grid via ImageScript; tiles are read from the local `images/` mirror (177 PNGs at the repo root, keyed by card `id` + `-evo`/`-hero` variant), with a CDN fetch only as a fallback for a card missing from the mirror; caches finished grids by deck (small LRU) |
+| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `id` (the local-art lookup key) and `iconUrls` (tower-troop thumbnail plus CDN-fallback source)                                                                                             |
+| `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing)                                                                                                                                                                                              |
+| `src/log.ts`         | Console wrapper (`log.info`/`success`/`warn`/`error`/`debug`) that prefixes lines with a colored, leveled badge; sole importer of `@std/fmt/colors`, also exporting the badge palette (`levelColor`) and inline value highlighters (`hl`); color only on a real terminal, so piped/Deploy output stays plain text                    |
 
 ## Dependencies
 
@@ -66,7 +66,7 @@ A malformed `TARGETS` value fails soft: it logs once and polls nobody, rather th
 deno task dev
 ```
 
-This starts `deno serve --watch` and loads `.env`. Deno KV is backed by a local SQLite store in dev. `Deno.cron` is registered at startup; on the local scheduler it fires on the minute (vs. Deno Deploy's managed scheduler in production).
+This runs `main.ts` under `deno watch --tunnel`, loading `.env`. `Deno.cron` is registered at startup; on the local scheduler it fires on the minute (vs. Deno Deploy's managed scheduler in production). With a terminal attached, press `q` + Enter to quit — a bare `Deno.exit()` under the watcher would only end the module run and leave the watcher supervising an empty process.
 
 ### 3. Deploy
 
@@ -91,13 +91,13 @@ Env vars are read and validated once at module load in `src/env.ts` — locally 
 ## Commands
 
 ```sh
-deno task dev     # Start local dev server (deno serve --watch, loads .env)
+deno task dev     # Start local dev server (deno watch --tunnel; q + Enter quits)
 deno task deploy  # Deploy to Deno Deploy (via deployctl)
 ```
 
 ```sh
 deno task test     # Run the Vitest suite
-deno task preview  # Render a hardcoded deck to scripts/preview.png (manual; hits the real CR CDN)
+deno task preview  # Render a hardcoded deck to scripts/preview.png (manual; offline, reads images/)
 ```
 
 ```sh

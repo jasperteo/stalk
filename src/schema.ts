@@ -8,6 +8,11 @@ import * as v from "@valibot/valibot";
 const UrlSchema = v.pipe(v.string(), v.url());
 
 const CardSchema = v.object({
+	/**
+	 * Numeric card id (e.g. 28000011), always present on battle-log cards including `supportCards`.
+	 * The deck renderer's local-art lookup key (`<id>.png` in `images/`).
+	 */
+	id: v.number(),
 	name: v.string(),
 	/**
 	 * Evolutions report `evolutionLevel: 1`, Heroes `evolutionLevel: 2`; absent for ordinary cards.
