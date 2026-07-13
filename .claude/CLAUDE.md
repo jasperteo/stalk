@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```sh
-deno task dev     # Start local dev server (deno serve --watch, loads .env)
+deno task dev     # Start local dev server (deno watch --tunnel; q + Enter quits)
 deno task deploy  # Deploy to Deno Deploy (via deployctl)
 ```
 
@@ -26,7 +26,7 @@ deno task lint    # oxlint && deno lint && deno check --unstable-tsgo .
 The project deliberately keeps **two** TypeScript configs because oxlint and Deno need different libs:
 
 - `tsconfig.json` — read by oxlint/tsgolint (vanilla TypeScript). Uses `lib: ["ESNext", "DOM"]` for web globals (`fetch`, `console`, `Response`) and picks up `deno.d.ts` for the `Deno.*` surface.
-- `deno.json` `compilerOptions` — read by `deno check`/`deno serve`. Uses `lib: ["deno.window", "deno.unstable"]` so the real `Deno` namespace (incl. unstable `Deno.cron`/`Deno.openKv`) resolves. Without this, Deno falls back to reading `tsconfig.json`, whose DOM-only lib drops `deno.ns`.
+- `deno.json` `compilerOptions` — read by `deno check`/`deno run`. Uses `lib: ["deno.window", "deno.unstable"]` so the real `Deno` namespace (incl. unstable `Deno.cron`/`Deno.openKv`) resolves. Without this, Deno falls back to reading `tsconfig.json`, whose DOM-only lib drops `deno.ns`.
 
 `deno.d.ts` is a **vendored copy of Deno's own `lib.deno.d.ts`** (the full ambient `Deno` surface), so oxlint's type-aware pass can resolve `Deno.*`; re-sync it with `deno task sync-types` (which regenerates via `deno types` and re-formats with oxfmt) when the Deno version changes. It is excluded from `deno check`/`deno lint` (via `deno.json`) and from oxlint's own file walk (`oxlint.config.ts` `ignorePatterns`) so it is only ever consumed as ambient types, never linted or double-declared.
 
@@ -48,7 +48,7 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 
 ### Source files
 
-- `src/main.ts` — Hono app entry point; `export default app` provides the `fetch` handler and `Deno.cron` drives polling. Internal imports use the `@/` import map with explicit `.ts` extensions.
+- `src/main.ts` — Hono app entry point; the module runs as a script (`deno run`, not `deno serve` — hence no default export): top-level `Deno.serve` binds the HTTP handler and `Deno.cron` drives polling. When stdin is a terminal it also reads a Vite-style quit key — `q` + Enter runs `server.shutdown()` then `Deno.kill(Deno.pid, "SIGINT")`, since a bare `Deno.exit()` under a watcher (`deno watch`, i.e. `deno run --watch-hmr`) only ends the module run and leaves the watcher supervising an empty process. The `isTerminal()` gate keeps Deploy (no TTY) from consuming a stdin that never yields. Internal imports use the `@/` import map with explicit `.ts` extensions.
 - `src/clashroyale.ts` — Fetches and parses the battle log via the RoyaleAPI proxy; selects the newest eligible battle (2v2s and entries that fail schema validation are ignored)
 - `src/discord.ts` — Builds and posts the Discord message for a single battle: the result, crown score, and HP margin go in the message content (which doubles as the push-notification text), then two embeds (one per side), each titled with that player's name and carrying a composited 2×4 deck-grid image (`attachment://` + multipart upload), trophy rows built from that side's own perspective, and the player's tower troop (curated art when known, else the API icon) as thumbnail; falls back to a text-only embed if rendering fails
 - `src/deck-image.ts` — Composites a deck's 8 card icons (CR CDN; picks the Evo/Hero art variant per `evolutionLevel`) into a bottom-aligned 4-column PNG grid via ImageScript (dynamically imported). Trims each icon's transparent margin but keeps its native bottom edge as a shared baseline and composites at native resolution (ImageScript only resizes nearest-neighbour, which blurs). Two promise caches: trimmed tiles keyed by icon URL (stored as re-encoded PNG bytes to bound memory; inflated per render) and finished grids keyed by the deck's ordered icon URLs (small LRU, `DECK_CACHE_LIMIT` derived from the target count — players repeat decks, so most battles skip the render entirely); `COLUMN_GAP`/`ROW_GAP` tune spacing (row gap is a small negative overlap into the kept bottom padding). A clearly-marked `CARD_ART_HACK` block substitutes RoyaleAPI art (plus a bottom-padding nudge back onto the shared baseline) for cards whose API icon 404s — currently only Ronin; delete the block and its two `HACK:` call sites once the API is fixed.
@@ -76,7 +76,7 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 
 ## Testing
 
-`deno task test` runs `vitest` (from `node_modules/.bin`, via `deno task`'s shell), which stays inside the Deno process — so `Deno.*` (KV, cron, env) is still the real ambient global, and tests spy on it directly (e.g. `src/main.test.ts` spies `Deno.openKv`/`Deno.cron` rather than mocking a wrapper). `vitest.config.ts`'s `environment: "node"` only selects vitest's non-DOM global set; it's unrelated to the underlying runtime. Its `restoreMocks`/`unstubGlobals`/`unstubEnvs`/`clearMocks` are all on globally (no test uses `.concurrent` — several mutate real shared `globalThis` state: `Deno.openKv`/`Deno.cron` spies, stubbed `fetch`, stubbed env — which concurrent tests in a file would race on regardless).
+`deno task test` runs `vitest` (from `node_modules/.bin`, via `deno task`'s shell), which stays inside the Deno process — so `Deno.*` (KV, cron, env) is still the real ambient global, and tests spy on it directly (e.g. `src/main.test.ts` spies `Deno.openKv`/`Deno.cron`/`Deno.serve` rather than mocking a wrapper — the `Deno.serve` spy captures the fetch handler the tests drive routes through, and keeps each import from binding a real port). `vitest.config.ts`'s `environment: "node"` only selects vitest's non-DOM global set; it's unrelated to the underlying runtime. Its `restoreMocks`/`unstubGlobals`/`unstubEnvs`/`clearMocks` are all on globally (no test uses `.concurrent` — several mutate real shared `globalThis` state: `Deno.openKv`/`Deno.cron` spies, stubbed `fetch`, stubbed env — which concurrent tests in a file would race on regardless).
 
 - `src/__mocks__/log.ts` — manual mock for `@/log.ts`, auto-applied by a bare `vi.mock("@/log.ts")` (no factory). One canonical copy of the module's export surface, so a new export means one edit here instead of one per test file; `hl`/`levelColor` are identity functions, matching the real module's behavior with color disabled.
 - `src/testing/fixtures.ts` — shared raw (pre-validation) Clash Royale API shapes: `rawCard`/`rawPlayer`/`rawBattle` factories tests build on by spreading in overrides, plus shared constants (`WEBHOOK`, `BOB`, `rawBattle`'s default opponent) so tests overriding one field don't restate the rest.

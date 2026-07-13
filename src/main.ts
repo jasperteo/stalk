@@ -141,17 +141,44 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 	log.info(`poll-battlelogs: ${String(targets.length)} targets — ${counts}`);
 });
 
-const server = {
-	fetch: app.fetch,
-	onListen: (addr) => {
+// Only an interactive terminal has a keyboard to read a quit key from; under Deno Deploy (or any
+// piped/captured stdin) the reader would just hang on a stream that never yields, so the whole
+// feature — hint included — is gated on stdin being a TTY.
+const interactive = Deno.stdin.isTerminal();
+
+const server = Deno.serve({
+	handler: app.fetch,
+	onListen: ({ hostname, port }) => {
 		const status = config
 			? `tracking ${String(config.targets.length)} target(s)`
 			: "idle (CR_API_TOKEN not set)";
-		// The HTTP server always binds a TCP socket; narrow away the Unix/VSOCK variants of Deno.Addr.
-		const where =
-			addr.transport === "tcp" ? `http://${addr.hostname}:${String(addr.port)}` : addr.transport;
-		log.info(`stalk listening on ${hl.value(where)} — ${status}`);
+		const quit = interactive ? ` — ${hl.strong("q")} + Enter to quit` : "";
+		log.info(
+			`stalk listening on ${hl.value(`http://${hostname}:${String(port)}`)} — ${status}${quit}`
+		);
 	},
-} satisfies Deno.ServeDefaultExport;
+});
 
-export default server;
+/**
+ * Vite-style quit key: `q` + Enter shuts the server down. Deno.exit() would not be enough — under
+ * `--watch`/`--watch-hmr` it only ends the module run and leaves the watcher supervising an empty
+ * process — so signal our own pid instead, which tears down watcher and all exactly like Ctrl+C.
+ *
+ * Awaiting this at the top level never settles until the process is on its way out, which is fine:
+ * the listener is already registered, so the event loop keeps serving requests regardless.
+ */
+async function quitOnKeypress() {
+	const decoder = new TextDecoder();
+
+	for await (const chunk of Deno.stdin.readable) {
+		if (decoder.decode(chunk).trim().toLowerCase() !== "q") continue;
+
+		log.info("Shutting down");
+		await server.shutdown();
+		Deno.kill(Deno.pid, "SIGINT");
+	}
+}
+
+if (interactive) {
+	await quitOnKeypress();
+}

@@ -30,15 +30,21 @@ afterEach(() => {
 
 type CronHandler = () => Promise<void> | void;
 
+// Deno.ServeHandler also takes a ServeHandlerInfo, which the tests have no use for; typing the
+// captured handler by what they actually call keeps `app.fetch(request)` a one-argument call.
+type FetchHandler = (request: Request) => Promise<Response>;
+
 function battlelogFetch(entries: unknown[]) {
 	return vi.fn(() => Promise.resolve(Response.json(entries)));
 }
 
 /**
  * Spies `Deno.openKv` (redirecting to a fresh isolated `:memory:` store, capturing the handle for
- * direct KV manipulation in tests) and `Deno.cron` (capturing its handler instead of really
- * scheduling it), then resets the module registry and freshly imports `main.ts` so its top-level
- * `await Deno.openKv()`/`Deno.cron(...)` side effects run against our spies.
+ * direct KV manipulation in tests), `Deno.cron` (capturing its handler instead of really scheduling
+ * it) and `Deno.serve` (capturing its handler instead of really binding a port — every import would
+ * otherwise fight over the same one), then resets the module registry and freshly imports `main.ts`
+ * so its top-level `await Deno.openKv()`/`Deno.cron(...)`/`Deno.serve(...)` side effects run
+ * against our spies.
  */
 async function importMain() {
 	// `restoreMocks` puts the real `Deno.openKv` back before each test, so capturing it here (rather
@@ -61,13 +67,25 @@ async function importMain() {
 		return Promise.resolve();
 	});
 
+	let fetchHandler: FetchHandler | undefined;
+
+	// `Deno.serve` is overloaded like `Deno.cron`, so capture positionally-untyped rest args; main.ts
+	// always calls the option-bag form. The returned handle only exists for the quit key's
+	// `shutdown()`, which never runs here (vitest's stdin isn't a terminal), so a stub suffices.
+	vi.spyOn(Deno, "serve").mockImplementation((...args: unknown[]) => {
+		const [options] = args as [{ handler: FetchHandler }];
+		fetchHandler = options.handler;
+		return { shutdown: () => Promise.resolve() } as unknown as Deno.HttpServer<Deno.NetAddr>;
+	});
+
 	vi.resetModules();
-	const { default: appExport } = await import("@/main.ts");
+	await import("@/main.ts");
 
 	if (cronHandler === undefined) throw new Error("Deno.cron handler was never captured");
+	if (fetchHandler === undefined) throw new Error("Deno.serve handler was never captured");
 	if (openedKv === undefined) throw new Error("Deno.openKv handle was never captured");
 
-	return { app: appExport, tick: cronHandler, kv: openedKv };
+	return { app: { fetch: fetchHandler }, tick: cronHandler, kv: openedKv };
 }
 
 async function lastBattleCursors(app: Awaited<ReturnType<typeof importMain>>["app"]) {

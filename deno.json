@@ -2,10 +2,11 @@
 	"nodeModulesDir": "auto",
 	"preferPackageJson": true,
 	"tasks": {
-		"dev": "deno serve --watch --env-file=.env src/main.ts",
+		"dev": "deno watch -A --tunnel src/main.ts",
 		"deploy": "deno run -A jsr:@deno/deployctl deploy",
 		"test": "vitest",
-		"preview": "deno run -A --env-file=.env scripts/preview.ts",
+		"preview": "deno run -A --tunnel scripts/preview.ts",
+		"measure": "deno run -A scripts/measure.ts",
 		"sync-types": "deno types > deno.d.ts && deno task fmt",
 		"fmt": "oxfmt",
 		"lint": "oxlint && deno lint && deno check --unstable-tsgo ."
@@ -23,5 +24,9 @@
 	"fmt": {
 		"exclude": ["**/*"]
 	},
-	"exclude": ["deno.d.ts", "node_modules"]
+	"exclude": ["deno.d.ts", "node_modules"],
+	"deploy": {
+		"org": "fi6pv0haybb5d3v4dab39",
+		"app": "stalk"
+	}
 }
