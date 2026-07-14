@@ -30,7 +30,7 @@ const COLUMNS = 4;
  * embed layout that depends on them — don't shift between posts.
  */
 const CELL_WIDTH = 261;
-const CELL_HEIGHT = 419;
+const CELL_HEIGHT = 405;
 /**
  * Gutter between columns, in native pixels. Tiles are trimmed on the sides, so this is the true
  * gap.
