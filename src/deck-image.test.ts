@@ -1,7 +1,7 @@
 import { Image } from "@matmen/imagescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { renderDeckGrid } from "@/deck-image.ts";
+import { CELL_HEIGHT, CELL_WIDTH, renderDeckGrid } from "@/deck-image.ts";
 import type { Card } from "@/schema.ts";
 
 vi.mock("@/log.ts");
@@ -69,7 +69,7 @@ beforeEach(() => {
 });
 
 describe("renderDeckGrid", () => {
-	it("lays out a 4-column grid at native tile resolution", async () => {
+	it("lays out a 4-column grid at the fixed cell resolution", async () => {
 		const eightCards = Array.from({ length: 8 }, () => card());
 
 		// The two renders share no cache entries (distinct ids), so they can overlap — this is the
@@ -79,10 +79,11 @@ describe("renderDeckGrid", () => {
 			renderDeckGrid([card()]).then((png) => Image.decode(png)),
 		]);
 
-		// Native resolution: one row is exactly one tile high (the fixture has no transparent margin to
-		// trim), and a lone card still reserves the full 4-column width with trailing cells empty.
-		expect(singleRow.height).toBe(TILE_HEIGHT);
-		expect(singleRow.width).toBeGreaterThanOrEqual(4 * TILE_WIDTH);
+		// Cell size is fixed (CELL_WIDTH/CELL_HEIGHT), not derived from the tiles in the deck, so even
+		// this small fixture (well under either dimension) composites into a full-size row, and a lone
+		// card still reserves the full 4-column width with trailing cells empty.
+		expect(singleRow.height).toBe(CELL_HEIGHT);
+		expect(singleRow.width).toBeGreaterThanOrEqual(4 * CELL_WIDTH);
 		// The full deck spans the same 4 columns and adds a second row. Asserted relative to the
 		// single-row render rather than against COLUMN_GAP/ROW_GAP, which are tuning knobs.
 		expect(grid.width).toBe(singleRow.width);

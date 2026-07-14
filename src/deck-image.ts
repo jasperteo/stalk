@@ -23,6 +23,15 @@ const IMAGES_DIR = new URL("../images/", import.meta.url);
 
 const COLUMNS = 4;
 /**
+ * Fixed cell dimensions every tile composites into, so all rows are equal height and the grid stays
+ * consistent across decks regardless of which cards are in it. Set to the upper bound of every
+ * local icon's trimmed size (`deno task measure`, no args, reports the aggregate) rather than
+ * computed per-render from the deck's own tiles, so the grid's pixel dimensions — and the Discord
+ * embed layout that depends on them — don't shift between posts.
+ */
+const CELL_WIDTH = 261;
+const CELL_HEIGHT = 387;
+/**
  * Gutter between columns, in native pixels. Tiles are trimmed on the sides, so this is the true
  * gap.
  */
@@ -229,13 +238,9 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 	const tiles = loaded.map((entry) => entry.tile);
 
 	const composeStart = performance.now();
-	// One cell size for every card, so all rows are equal height and the grid stays consistent
-	// across decks. Trimmed tiles vary slightly, so take the max for both dimensions.
-	const tileWidth = Math.max(...tiles.map((tile) => tile.image.width));
-	const tileHeight = Math.max(...tiles.map((tile) => tile.image.height));
 	const rows = Math.ceil(tiles.length / COLUMNS);
-	const width = COLUMNS * tileWidth + (COLUMNS - 1) * COLUMN_GAP;
-	const height = rows * tileHeight + (rows - 1) * ROW_GAP;
+	const width = COLUMNS * CELL_WIDTH + (COLUMNS - 1) * COLUMN_GAP;
+	const height = rows * CELL_HEIGHT + (rows - 1) * ROW_GAP;
 	const canvas = new Image(width, height);
 
 	for (const [index, { image: tile, bottomPadding }] of tiles.entries()) {
@@ -254,10 +259,10 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 		// (`trimToArt`), so bottom-aligning rests every card on the same baseline; taller frames
 		// (hexagonal legendaries/champions) and gems/emblems (evolutions/heroes) extend upward, the
 		// way the art is drawn. Centring would leave shorter cards floating and off-centre.
-		const cellX = (index % COLUMNS) * (tileWidth + COLUMN_GAP);
-		const cellY = row * (tileHeight + ROW_GAP);
-		const x = cellX + Math.floor((tileWidth - tile.width) / 2);
-		const y = cellY + (tileHeight - tile.height);
+		const cellX = (index % COLUMNS) * (CELL_WIDTH + COLUMN_GAP);
+		const cellY = row * (CELL_HEIGHT + ROW_GAP);
+		const x = cellX + Math.floor((CELL_WIDTH - tile.width) / 2);
+		const y = cellY + (CELL_HEIGHT - tile.height);
 		canvas.composite(tile, x, y);
 	}
 
@@ -319,4 +324,4 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	}
 }
 
-export { IMAGES_DIR, renderDeckGrid, scanArtBounds };
+export { CELL_HEIGHT, CELL_WIDTH, IMAGES_DIR, renderDeckGrid, scanArtBounds };

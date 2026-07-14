@@ -20,6 +20,8 @@ type Measurement = {
 	height: number;
 	/** Width of the art itself: what a side-trimmed tile occupies in the grid. */
 	trimmedWidth: number;
+	/** Height of the art itself, from its topmost to its lowest opaque pixel. */
+	trimmedHeight: number;
 	left: number;
 	right: number;
 	/** Transparent band above the art — `trimToArt` cuts this. */
@@ -46,6 +48,7 @@ function measure(name: string, image: Image): Measurement {
 		width,
 		height,
 		trimmedWidth: maxX - minX + 1,
+		trimmedHeight: maxY - minY + 1,
 		left: minX,
 		right: width - 1 - maxX,
 		top: minY,
@@ -73,18 +76,29 @@ async function listImages(): Promise<string[]> {
 const names = Deno.args.length > 0 ? Deno.args : await listImages();
 const measurements = await Promise.all(names.map((name) => measureFile(name)));
 
-for (const { name, width, height, trimmedWidth, left, right, top, bottom } of measurements) {
+for (const {
+	name,
+	width,
+	height,
+	trimmedWidth,
+	trimmedHeight,
+	left,
+	right,
+	top,
+	bottom,
+} of measurements) {
 	log.info(
-		`${hl.entity(name.padEnd(16))} ${String(width)}x${String(height)} → trimmed width ${hl.value(`${String(trimmedWidth)}px`)} (left ${String(left)}, right ${String(right)}), bottom padding ${hl.value(`${String(bottom)}px`)} (top ${String(top)})`
+		`${hl.entity(name.padEnd(16))} ${String(width)}x${String(height)} → trimmed ${hl.value(`${String(trimmedWidth)}x${String(trimmedHeight)}px`)} (left ${String(left)}, right ${String(right)}), bottom padding ${hl.value(`${String(bottom)}px`)} (top ${String(top)})`
 	);
 }
 
 if (measurements.length > 1) {
 	const widths = measurements.map(({ trimmedWidth }) => trimmedWidth);
+	const heights = measurements.map(({ trimmedHeight }) => trimmedHeight);
 	const bottoms = measurements.map(({ bottom }) => bottom);
 
 	// The floor here is what bounds ROW_GAP: overlap deeper than the thinnest bottom band clips art.
 	log.success(
-		`${String(measurements.length)} icons: trimmed width ${hl.value(`${String(Math.min(...widths))}–${String(Math.max(...widths))}px`)}, bottom padding ${hl.value(`${String(Math.min(...bottoms))}–${String(Math.max(...bottoms))}px`)}`
+		`${String(measurements.length)} icons: trimmed width ${hl.value(`${String(Math.min(...widths))}–${String(Math.max(...widths))}px`)}, trimmed height ${hl.value(`${String(Math.min(...heights))}–${String(Math.max(...heights))}px`)}, bottom padding ${hl.value(`${String(Math.min(...bottoms))}–${String(Math.max(...bottoms))}px`)}`
 	);
 }
