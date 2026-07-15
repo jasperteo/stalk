@@ -21,6 +21,15 @@ const kv = await Deno.openKv();
 const LAST_BATTLE_PREFIX = "lastBattle";
 const lastBattleKey = (tag: string) => [LAST_BATTLE_PREFIX, tag] as const;
 
+/**
+ * Cursors self-expire so players removed from TARGETS don't leave garbage in KV forever. Every
+ * posted/seeded battle rewrites the cursor and resets the clock, so only a cursor idle for a full
+ * month expires — after which the next battle re-seeds silently, like a first run. Temporal can't
+ * total calendar months without a reference point, and expireIn is a fixed span anyway, so a month
+ * is pinned to 30 days.
+ */
+const CURSOR_TTL_MS = Temporal.Duration.from({ days: 30 }).total("milliseconds");
+
 /** Health check endpoint for Deno Deploy. */
 app.get("/", (ctx) => ctx.json({ status: "ok" }));
 
@@ -90,7 +99,7 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		// Advance the cursor only after a successful post: at-least-once delivery. If the webhook
 		// succeeds but this put throws, the next run re-posts a duplicate rather than dropping the
 		// battle — we prefer a rare duplicate over a lost notification.
-		await kv.set(key, latest.battleTime);
+		await kv.set(key, latest.battleTime, { expireIn: CURSOR_TTL_MS });
 
 		// Log only after the effects landed, so the dashboard never claims an action that didn't
 		// happen.

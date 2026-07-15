@@ -60,17 +60,17 @@ This is a **Deno** application (deployed on **Deno Deploy**) built with **Hono**
 
 1. `Deno.cron` fires every minute → `config` from `src/env.ts` supplies the token and targets (read and validated once at module load; `undefined` when the token is missing, which skips the tick with a heartbeat log), then `poll(target)` runs for each player concurrently (`Promise.all` — `poll` catches its own errors, so it never rejects)
 2. Fetch battle log for the target's `tag` via `https://proxy.royaleapi.dev/v1`
-3. Compare the latest eligible battle's `battleTime` against the cursor stored in Deno KV under the tuple key `["lastBattle", tag]` — cursors are namespaced per tag, so all players share one KV without colliding. 2v2 battles are ignored at selection time (`latestBattle`), so they never post and never advance the cursor past an unposted 1v1
+3. Compare the latest eligible battle's `battleTime` against the cursor stored in Deno KV under the tuple key `["lastBattle", tag]` (written with a 30-day `expireIn` TTL, so cursors for players removed from `TARGETS` self-clean; each posted/seeded battle resets the clock, and a cursor that does expire just re-seeds silently like a first run) — cursors are namespaced per tag, so all players share one KV without colliding. 2v2 battles are ignored at selection time (`latestBattle`), so they never post and never advance the cursor past an unposted 1v1
 4. On first run: seed the cursor without posting (avoids a stale notification)
 5. On subsequent runs with a new battle: post the embed to the target's webhook, then update the cursor
 
 ### KV & secrets
 
-| Name           | Kind     | Purpose                                                            |
-| -------------- | -------- | ------------------------------------------------------------------ |
-| Deno KV        | KV store | Stores the `["lastBattle", tag]` cursor (opened via `Deno.openKv`) |
-| `CR_API_TOKEN` | Env var  | Bearer token for the CR API, whitelisted to the RoyaleAPI proxy IP |
-| `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player     |
+| Name           | Kind     | Purpose                                                                        |
+| -------------- | -------- | ------------------------------------------------------------------------------ |
+| Deno KV        | KV store | Stores the `["lastBattle", tag]` cursor (opened via `Deno.openKv`), 30-day TTL |
+| `CR_API_TOKEN` | Env var  | Bearer token for the CR API, whitelisted to the RoyaleAPI proxy IP             |
+| `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player                 |
 
 `TARGETS` is parsed and validated by `TargetsEnvSchema` (src/schema.ts), which takes the raw env string through `v.parseJson()` — malformed or unset values surface as validation issues, not thrown `SyntaxError`s. Player tags are normalized at parse time to canonical `#UPPERCASE` form (`TagSchema`), which the KV cursor keys and player lookup rely on. Env vars are read via `Deno.env.get`. Locally they live in `.env` (gitignored; see `.env.example`); in production they're set in the Deno Deploy dashboard (or `deployctl`). Deno KV and `Deno.cron` require the `kv`/`cron` unstable flags, declared in `deno.json`.
 

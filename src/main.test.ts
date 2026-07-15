@@ -165,6 +165,27 @@ describe("main", () => {
 		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
 	});
 
+	it("writes the cursor with a 30-day TTL on both seed and post", async () => {
+		const { tick, kv } = await importMain();
+		const setSpy = vi.spyOn(kv, "set");
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
+		await tick();
+
+		// Seed write (first run) must already carry the TTL, or a seeded-then-removed
+		// player's cursor would be the one entry that never expires.
+		expect(setSpy).toHaveBeenCalledWith(["lastBattle", TAG], "2024-01-01T00:00:00.000Z", {
+			expireIn: 2_592_000_000,
+		});
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
+		await tick();
+
+		expect(setSpy).toHaveBeenCalledWith(["lastBattle", TAG], "2024-01-15T14:30:22.000Z", {
+			expireIn: 2_592_000_000,
+		});
+	});
+
 	it("skips a repeat tick reporting the same battleTime", async () => {
 		const { tick } = await importMain();
 
