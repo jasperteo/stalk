@@ -19,14 +19,14 @@ import type { Card } from "@/schema.ts";
 const DUMMY_ICON = "https://example.invalid/card.png";
 
 const DECK: Card[] = [
-	{ id: 26_000_000, name: "Knight", evolutionLevel: 1, iconUrls: { medium: DUMMY_ICON } },
-	{ id: 26_000_027, name: "Dark Prince", evolutionLevel: 2, iconUrls: { medium: DUMMY_ICON } },
-	{ id: 26_000_069, name: "Skeleton King", iconUrls: { medium: DUMMY_ICON } },
-	{ id: 26_000_103, name: "Boss Bandit", iconUrls: { medium: DUMMY_ICON } },
-	{ id: 26_000_011, name: "Valkyrie", iconUrls: { medium: DUMMY_ICON } },
-	{ id: 26_000_045, name: "Executioner", iconUrls: { medium: DUMMY_ICON } },
-	{ id: 26_000_024, name: "Royal Giant", iconUrls: { medium: DUMMY_ICON } },
-	{ id: 26_000_030, name: "Ice Spirit", iconUrls: { medium: DUMMY_ICON } },
+	{ id: 26_000_058, name: "Wall Breakers", evolutionLevel: 1, iconUrls: { medium: DUMMY_ICON } },
+	{ id: 26_000_062, name: "Magic Archer", evolutionLevel: 2, iconUrls: { medium: DUMMY_ICON } },
+	{ id: 26_000_099, name: "Goblinstein", iconUrls: { medium: DUMMY_ICON } },
+	{ id: 28_000_015, name: "Barbarian Barrel", iconUrls: { medium: DUMMY_ICON } },
+	{ id: 26_000_102, name: "Berserker", iconUrls: { medium: DUMMY_ICON } },
+	{ id: 28_000_012, name: "Tornado", iconUrls: { medium: DUMMY_ICON } },
+	{ id: 26_000_032, name: "Miner", iconUrls: { medium: DUMMY_ICON } },
+	{ id: 27_000_004, name: "Bomb Tower", iconUrls: { medium: DUMMY_ICON } },
 ];
 
 const OUTPUT_PATH = new URL("preview.png", import.meta.url);
