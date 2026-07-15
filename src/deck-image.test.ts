@@ -1,5 +1,5 @@
 import { Image } from "@matmen/imagescript";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { CELL_HEIGHT, CELL_WIDTH, renderDeckGrid } from "@/deck-image.ts";
 import { TOKEN_VAR } from "@/env.ts";
@@ -70,7 +70,7 @@ beforeEach(() => {
 });
 
 describe("renderDeckGrid", () => {
-	it("lays out a 4-column grid at the fixed cell resolution", async () => {
+	test("lays out a 4-column grid at the fixed cell resolution", async () => {
 		const eightCards = Array.from({ length: 8 }, () => card());
 
 		// The two renders share no cache entries (distinct ids), so they can overlap — this is the
@@ -91,7 +91,7 @@ describe("renderDeckGrid", () => {
 		expect(grid.height).toBeGreaterThan(singleRow.height);
 	});
 
-	it("renders entirely from the local mirror without touching the network", async () => {
+	test("renders entirely from the local mirror without touching the network", async () => {
 		const cards = [card(), card(), card()];
 
 		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Uint8Array);
@@ -102,7 +102,7 @@ describe("renderDeckGrid", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it("reads the -evo.png / -hero.png / base variant per evolutionLevel", async () => {
+	test("reads the -evo.png / -hero.png / base variant per evolutionLevel", async () => {
 		const evo = card({ evolutionLevel: 1 });
 		const hero = card({ evolutionLevel: 2 });
 		const base = card();
@@ -118,7 +118,7 @@ describe("renderDeckGrid", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it("falls back to the CDN icon when the local mirror has no art", async () => {
+	test("falls back to the CDN icon when the local mirror has no art", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
 		const missing = card({
 			iconUrls: { medium: "https://api.clashroyale.com/fresh-release.png" },
@@ -131,7 +131,7 @@ describe("renderDeckGrid", () => {
 		expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
 	});
 
-	it("rejects without a CDN fallback when the local read fails for any reason but NotFound", async () => {
+	test("rejects without a CDN fallback when the local read fails for any reason but NotFound", async () => {
 		const permissionError = new Deno.errors.PermissionDenied("EACCES");
 		readFileMock.mockRejectedValue(permissionError);
 
@@ -141,7 +141,7 @@ describe("renderDeckGrid", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it("fetches the evolutionMedium/heroMedium icon variant when falling back for Evo/Hero cards", async () => {
+	test("fetches the evolutionMedium/heroMedium icon variant when falling back for Evo/Hero cards", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
 
 		await renderDeckGrid([
@@ -169,7 +169,7 @@ describe("renderDeckGrid", () => {
 		expect(urls).not.toContain("https://api.clashroyale.com/hero-icon.png");
 	});
 
-	it("falls back to medium when an Evo/Hero card has no variant icon", async () => {
+	test("falls back to medium when an Evo/Hero card has no variant icon", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
 
 		await renderDeckGrid([
@@ -184,14 +184,14 @@ describe("renderDeckGrid", () => {
 		);
 	});
 
-	it("rejects the render when the CDN fallback fetch fails", async () => {
+	test("rejects the render when the CDN fallback fetch fails", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
 		fetchMock.mockImplementation(() => Promise.resolve(new Response("nope", { status: 500 })));
 
 		await expect(renderDeckGrid([card()])).rejects.toThrow("Card icon 500 for");
 	});
 
-	it("recovers on the next render after a failed fallback (failure is not cached)", async () => {
+	test("recovers on the next render after a failed fallback (failure is not cached)", async () => {
 		const cards = [card()];
 
 		// Local art is missing throughout, so both renders take the CDN fallback; the first fetch 500s
@@ -205,7 +205,7 @@ describe("renderDeckGrid", () => {
 		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Uint8Array);
 	});
 
-	it("does not re-render a deck it has already rendered", async () => {
+	test("does not re-render a deck it has already rendered", async () => {
 		const cards = [card()];
 
 		const first = await renderDeckGrid(cards);
@@ -217,7 +217,7 @@ describe("renderDeckGrid", () => {
 		expect(readFileMock.mock.calls.length).toBe(readsAfterFirst);
 	});
 
-	it("renders separately for a different deck", async () => {
+	test("renders separately for a different deck", async () => {
 		await renderDeckGrid([card()]);
 		const readsAfterFirst = readFileMock.mock.calls.length;
 		await renderDeckGrid([card()]);
@@ -245,7 +245,7 @@ async function freshRenderDeckGrid() {
 describe("renderDeckGrid LRU", () => {
 	const DECK_CACHE_LIMIT = 10;
 
-	it("evicts the least-recently-used deck past the cap, keeping touched decks warm", async () => {
+	test("evicts the least-recently-used deck past the cap, keeping touched decks warm", async () => {
 		const render = await freshRenderDeckGrid();
 		// Keyed by id, so a stable id per logical deck is what makes a re-render a cache hit.
 		const deck = (id: number) => [card({ id })];

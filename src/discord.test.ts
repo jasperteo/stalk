@@ -1,5 +1,5 @@
 import * as v from "@valibot/valibot";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { renderDeckGrid } from "@/deck-image.ts";
 import { notifyBattle } from "@/discord.ts";
@@ -67,7 +67,7 @@ beforeEach(() => {
 });
 
 describe("notifyBattle", () => {
-	it("posts a win with the winner's HP margin and both decks attached", async () => {
+	test("posts a win with the winner's HP margin and both decks attached", async () => {
 		await notifyBattle(WEBHOOK, makeBattle({ team: [player({ crowns: 2 })] }));
 
 		const [url, init] = vi.mocked(fetch).mock.calls[0] ?? [];
@@ -82,7 +82,7 @@ describe("notifyBattle", () => {
 		expect(init?.signal).toBeInstanceOf(AbortSignal);
 	});
 
-	it("posts a loss with the opponent's HP margin", async () => {
+	test("posts a loss with the opponent's HP margin", async () => {
 		await notifyBattle(
 			WEBHOOK,
 			makeBattle({
@@ -94,7 +94,7 @@ describe("notifyBattle", () => {
 		expect(sentPayload().content).toBe("# Defeat\n## Alice  1 — 2  Bob\nLost by 1,000hp");
 	});
 
-	it("posts a draw with no HP margin line", async () => {
+	test("posts a draw with no HP margin line", async () => {
 		await notifyBattle(
 			WEBHOOK,
 			makeBattle({
@@ -106,7 +106,7 @@ describe("notifyBattle", () => {
 		expect(sentPayload().content).toBe("# Draw\n## Alice  1 — 1  Bob");
 	});
 
-	it("falls back to a text-only JSON embed when deck rendering fails", async () => {
+	test("falls back to a text-only JSON embed when deck rendering fails", async () => {
 		vi.mocked(renderDeckGrid).mockRejectedValue(new Error("icon CDN down"));
 
 		await notifyBattle(WEBHOOK, makeBattle());
@@ -123,7 +123,7 @@ describe("notifyBattle", () => {
 		expect(log.error).toHaveBeenCalled();
 	});
 
-	it("throws when the webhook responds with a non-ok status", async () => {
+	test("throws when the webhook responds with a non-ok status", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(() => Promise.resolve(new Response("x".repeat(300), { status: 502 })))
@@ -132,13 +132,13 @@ describe("notifyBattle", () => {
 		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 502");
 	});
 
-	it("does nothing when the battle has no tracked player", async () => {
+	test("does nothing when the battle has no tracked player", async () => {
 		await notifyBattle(WEBHOOK, makeBattle({ team: [] }));
 
 		expect(fetch).not.toHaveBeenCalled();
 	});
 
-	it("drops the second embed and file when there is no opponent", async () => {
+	test("drops the second embed and file when there is no opponent", async () => {
 		await notifyBattle(WEBHOOK, makeBattle({ opponent: [] }));
 
 		const form = sentForm();

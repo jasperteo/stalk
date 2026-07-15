@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 // `log.ts` binds `console.info`/`warn`/`error`/`debug` into its closures once at module import
 // time, so a spy installed after a static top-level import is too late to intercept anything.
@@ -19,7 +19,7 @@ async function importLog() {
 describe("log", () => {
 	// The badges are padded to a shared fixed width so lines align — the table keeps them
 	// column-aligned here too, making a drifted pad width visible at a glance.
-	it.each([
+	test.each([
 		{ level: "info", badge: "info ", via: "info" },
 		{ level: "success", badge: "ok   ", via: "info" },
 		{ level: "warn", badge: "warn ", via: "warn" },
@@ -36,7 +36,7 @@ describe("log", () => {
 		}
 	);
 
-	it("passes extra arguments through after the message untouched", async () => {
+	test("passes extra arguments through after the message untouched", async () => {
 		const { log, spies } = await importLog();
 		const err = new Error("boom");
 
@@ -47,7 +47,7 @@ describe("log", () => {
 });
 
 describe("hl", () => {
-	it("entity/value/strong are identity functions when color is disabled", async () => {
+	test("entity/value/strong are identity functions when color is disabled", async () => {
 		const { hl } = await importLog();
 
 		expect(hl.entity("tag")).toBe("tag");
@@ -57,7 +57,7 @@ describe("hl", () => {
 });
 
 describe("levelColor", () => {
-	it("exposes an identity paint function per level when color is disabled", async () => {
+	test("exposes an identity paint function per level when color is disabled", async () => {
 		const { levelColor } = await importLog();
 
 		expect(levelColor.info("x")).toBe("x");

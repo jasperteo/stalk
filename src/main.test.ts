@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { notifyBattle } from "@/discord.ts";
 import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
@@ -92,14 +92,14 @@ async function lastBattleCursors(app: Awaited<ReturnType<typeof importMain>>["ap
 }
 
 describe("main", () => {
-	it("responds to the health check", async () => {
+	test("responds to the health check", async () => {
 		const { app } = await importMain();
 		const response = await app.fetch(new Request("http://localhost/"));
 
 		expect(await response.json()).toEqual({ status: "ok" });
 	});
 
-	it("seeds the cursor on first run without notifying", async () => {
+	test("seeds the cursor on first run without notifying", async () => {
 		const { app, tick } = await importMain();
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
 
@@ -109,7 +109,7 @@ describe("main", () => {
 		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-01T00:00:00.000Z" });
 	});
 
-	it("posts and advances the cursor on a new battle after the first run", async () => {
+	test("posts and advances the cursor on a new battle after the first run", async () => {
 		const { app, tick } = await importMain();
 
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
@@ -122,7 +122,7 @@ describe("main", () => {
 		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
 	});
 
-	it("leaves the cursor untouched when the post fails, then retries next tick", async () => {
+	test("leaves the cursor untouched when the post fails, then retries next tick", async () => {
 		const { app, tick } = await importMain();
 
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
@@ -142,7 +142,7 @@ describe("main", () => {
 		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
 	});
 
-	it("prefers a duplicate post over a lost battle when the cursor write fails", async () => {
+	test("prefers a duplicate post over a lost battle when the cursor write fails", async () => {
 		const { app, tick, kv } = await importMain();
 
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
@@ -163,7 +163,7 @@ describe("main", () => {
 		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
 	});
 
-	it("writes the cursor with a 30-day TTL on both seed and post", async () => {
+	test("writes the cursor with a 30-day TTL on both seed and post", async () => {
 		const { tick, kv } = await importMain();
 		const setSpy = vi.spyOn(kv, "set");
 
@@ -184,7 +184,7 @@ describe("main", () => {
 		});
 	});
 
-	it("skips a repeat tick reporting the same battleTime", async () => {
+	test("skips a repeat tick reporting the same battleTime", async () => {
 		const { tick } = await importMain();
 
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
@@ -197,7 +197,7 @@ describe("main", () => {
 		expect(notifyBattle).toHaveBeenCalledTimes(1);
 	});
 
-	it("skips without writing a cursor when there is no eligible battle", async () => {
+	test("skips without writing a cursor when there is no eligible battle", async () => {
 		const { app, tick } = await importMain();
 		vi.stubGlobal("fetch", battlelogFetch([]));
 
@@ -207,7 +207,7 @@ describe("main", () => {
 		expect(await lastBattleCursors(app)).toEqual({});
 	});
 
-	it("re-seeds without throwing when the stored cursor is corrupt", async () => {
+	test("re-seeds without throwing when the stored cursor is corrupt", async () => {
 		const { app, tick, kv } = await importMain();
 		await kv.set(["lastBattle", TAG], "garbage-cursor");
 
@@ -218,7 +218,7 @@ describe("main", () => {
 		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
 	});
 
-	it("leaves the cursor untouched when the CR API request fails", async () => {
+	test("leaves the cursor untouched when the CR API request fails", async () => {
 		const { app, tick } = await importMain();
 		vi.stubGlobal(
 			"fetch",
@@ -231,7 +231,7 @@ describe("main", () => {
 		expect(await lastBattleCursors(app)).toEqual({});
 	});
 
-	it("skips the tick with a heartbeat when CR_API_TOKEN is unset", async () => {
+	test("skips the tick with a heartbeat when CR_API_TOKEN is unset", async () => {
 		vi.stubEnv(TOKEN_VAR, undefined);
 
 		const { tick } = await importMain();

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
 import { WEBHOOK } from "@/testing/fixtures.ts";
@@ -21,7 +21,7 @@ async function importEnv() {
 }
 
 describe("config", () => {
-	it("is undefined when CR_API_TOKEN is missing", async () => {
+	test("is undefined when CR_API_TOKEN is missing", async () => {
 		vi.stubEnv(TOKEN_VAR, undefined);
 		vi.stubEnv(TARGETS_VAR, undefined);
 
@@ -31,7 +31,7 @@ describe("config", () => {
 		expect(log.error).toHaveBeenCalledWith(expect.stringContaining(TOKEN_VAR), expect.anything());
 	});
 
-	it("defaults targets to [] when TARGETS is missing", async () => {
+	test("defaults targets to [] when TARGETS is missing", async () => {
 		vi.stubEnv(TOKEN_VAR, "my-token");
 		vi.stubEnv(TARGETS_VAR, undefined);
 
@@ -40,7 +40,7 @@ describe("config", () => {
 		expect(config).toEqual({ token: "my-token", targets: [] });
 	});
 
-	it("parses and normalizes a valid TARGETS value", async () => {
+	test("parses and normalizes a valid TARGETS value", async () => {
 		vi.stubEnv(TOKEN_VAR, "my-token");
 		vi.stubEnv(TARGETS_VAR, JSON.stringify([{ tag: "abc", webhook: WEBHOOK }]));
 
@@ -52,7 +52,7 @@ describe("config", () => {
 		});
 	});
 
-	it("falls back to [] and logs once when TARGETS is malformed JSON", async () => {
+	test("falls back to [] and logs once when TARGETS is malformed JSON", async () => {
 		vi.stubEnv(TOKEN_VAR, "my-token");
 		vi.stubEnv(TARGETS_VAR, "{not json");
 
