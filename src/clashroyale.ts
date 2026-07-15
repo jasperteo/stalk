@@ -11,15 +11,13 @@ import type { Battle } from "@/schema.ts";
 const PROXY_BASE = "https://proxy.royaleapi.dev/v1";
 
 /**
- * Abort the battle-log request after this long. Without it a hung proxy connection never rejects,
- * so the awaiting cron tick stalls forever with nothing logged — a timeout turns that into a normal
- * caught error and the next tick retries.
+ * Aborts the battle-log request after this long — an unbounded hang would stall the cron tick
+ * forever.
  */
 const FETCH_TIMEOUT_MS = 10_000;
 
 /** Fetches a player's raw battle log entries. Schema validation is deferred to `latestBattle`. */
 async function fetchBattlelog(playerTag: string, token: string): Promise<unknown[]> {
-	// `encodeURIComponent` turns the leading "#" into "%23".
 	const url = `${PROXY_BASE}/players/${encodeURIComponent(playerTag)}/battlelog`;
 
 	const response = await fetch(url, {
@@ -42,10 +40,9 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
 }
 
 /**
- * Returns the newest eligible (1v1) battle entry, fully validated (or undefined if no entry is
- * eligible or the newest one fails the schema). Picks the newest by cheap timestamp comparison and
- * runs `BattleSchema` on just that one, so full validation runs once per log instead of once per
- * entry.
+ * Picks the newest battle by timestamp first and validates only that one entry.
+ *
+ * @returns The newest eligible (1v1) battle, fully validated, or `undefined` if none qualify.
  */
 function latestBattle(entries: unknown[]): Battle | undefined {
 	let newest: unknown;
@@ -66,9 +63,7 @@ function latestBattle(entries: unknown[]): Battle | undefined {
 		return result.output;
 	}
 
-	// `newest` is undefined when no entry was eligible — the normal quiet path. A defined entry
-	// failing here means the API's shape drifted; without this line that failure is
-	// indistinguishable from "no new battles" and notifications stop silently.
+	// A defined `newest` failing here means the API's shape drifted, not just "no new battles".
 	if (newest !== undefined) {
 		log.warn("Newest eligible battle failed schema validation:", v.flatten(result.issues));
 	}

@@ -15,12 +15,10 @@ const CardSchema = v.object({
 	id: v.number(),
 	name: v.string(),
 	/**
-	 * Evolutions report `evolutionLevel: 1`, Heroes `evolutionLevel: 2`; absent for ordinary cards.
-	 * `fallback` coerces any other/unknown level to `undefined`, so one new card can't fail the
-	 * battle. `optional` must nest _inside_ `fallback`: it makes the key absent-able and widens the
-	 * output to `1 | 2 | undefined`, which is what lets `undefined` be a valid fallback value (a
-	 * fallback must match the wrapped schema's output type — `undefined` alone isn't assignable to
-	 * bare `1 | 2`).
+	 * Evolutions report `evolutionLevel: 1`, Heroes report `2`; ordinary cards omit it. `fallback`
+	 * coerces any other/unknown value to `undefined` so one new card can't fail the battle.
+	 * `optional` must nest _inside_ `fallback`, not outside: a fallback's replacement value must
+	 * match the wrapped schema's output type, and only `optional`'s output includes `undefined`.
 	 */
 	evolutionLevel: v.fallback(v.optional(v.picklist([1, 2])), undefined),
 	/**
@@ -50,17 +48,16 @@ const PlayerSchema = v.object({
 	name: v.string(),
 	crowns: v.number(),
 	/**
-	 * Trophy progression for the match. Present on trophy-road/ladder games; absent in modes without
-	 * trophies (tournaments, friendlies, Path of Legend), so both are optional. Trophies after the
-	 * match are derived as `startingTrophies + trophyChange`.
+	 * Trophy progression for the match. Present on trophy-road/ladder games, absent in modes without
+	 * trophies (tournaments, friendlies, Path of Legend). Trophies after the match are derived as
+	 * `startingTrophies + trophyChange`.
 	 */
 	startingTrophies: v.optional(v.number()),
 	trophyChange: v.optional(v.number()),
 	/**
 	 * Tower HP remaining at match end. The API omits destroyed towers, so we backfill them as 0 — a
-	 * tower is destroyed exactly when its HP hits 0, so a felled tower reads as the lowest possible
-	 * rather than vanishing. King defaults to 0; the princess array is always padded to its full
-	 * two.
+	 * tower is destroyed exactly when its HP hits 0. King defaults to 0; the princess array is always
+	 * padded to its full two.
 	 */
 	kingTowerHitPoints: v.optional(v.number(), 0),
 	princessTowersHitPoints: v.pipe(
@@ -74,9 +71,9 @@ const PlayerSchema = v.object({
 const BattleSchema = v.object({
 	type: v.string(),
 	/**
-	 * Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that basic
-	 * format natively and rejects invalid dates. fractionalSecondDigits keeps the exact fixed-width
-	 * ".000Z" shape the KV cursors already store, so string order stays chronological.
+	 * Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that and
+	 * rejects invalid dates. Fixing `fractionalSecondDigits` keeps the fixed-width shape KV cursors
+	 * store, so plain string comparison stays chronological.
 	 */
 	battleTime: v.pipe(
 		v.string(),
@@ -95,12 +92,9 @@ const BattleSchema = v.object({
 });
 
 /**
- * Cheap ordering-and-eligibility pass: reuses BattleSchema's own battleTime rule (defined once
- * there) and checks the battle is 1v1 (a single `team` entry) without paying for full battle
- * validation. battleTime normalizes to standard ISO 8601, which is fixed-width and zero-padded, so
- * string order matches chronological order. Entries that fail — malformed or team battles (2v2) —
- * fall back to "", which never wins the newest-comparison; ignoring 2v2s here (rather than after
- * selection) means one can't mask an older eligible battle behind it.
+ * Cheap eligibility check: reuses BattleSchema's own battleTime rule and requires a single `team`
+ * entry (1v1), without the cost of full battle validation. Malformed or 2v2 entries fall back to
+ * "", which never wins the newest-battle comparison.
  */
 const EligibleBattleTimeSchema = v.fallback(
 	v.pipe(
@@ -114,18 +108,12 @@ const EligibleBattleTimeSchema = v.fallback(
 );
 
 /**
- * A stored lastBattle KV cursor. Reuses BattleSchema's own battleTime rule (defined once there), so
- * "passes the schema" and "can match a battleTime" are the same claim by construction: the pipe is
- * idempotent on its own canonical output, re-normalizes an equivalent-but-differently- shaped
- * timestamp into the fixed-width form the `===` comparison needs, and rejects garbage — instead of
- * trusting a `kv.get<string>` cast.
+ * A stored lastBattle KV cursor. Reuses BattleSchema's own battleTime rule, so parsing it also
+ * re-normalizes and validates the stored value instead of trusting a raw `kv.get<string>` cast.
  */
 const CursorSchema = BattleSchema.entries.battleTime;
 
-/**
- * CR_API_TOKEN: rejects both an unset env var (`v.string()` fails on `undefined`) and an empty
- * string.
- */
+/** CR_API_TOKEN: rejects both an unset env var and an empty string. */
 const TokenEnvSchema = v.pipe(v.string(), v.nonEmpty());
 
 /** A single player to track and the Discord webhook to notify for them. */
@@ -135,8 +123,8 @@ const TargetSchema = v.object({
 });
 
 /**
- * The raw TARGETS env var: a JSON string of Target pairs. parseJson makes malformed JSON a normal
- * validation issue, and an unset env var (undefined) fails the string step instead of throwing.
+ * The raw TARGETS env var: a JSON string of Target pairs. `parseJson` turns malformed JSON into a
+ * normal validation issue rather than a thrown error; an unset env var fails the string step.
  */
 const TargetsEnvSchema = v.pipe(v.string(), v.parseJson(), v.array(TargetSchema));
 
