@@ -4,29 +4,29 @@ A **Deno** application (deployed on **Deno Deploy**), built with **Hono**, that 
 
 ## How it works
 
-1. `Deno.cron` fires every minute → `config` (from `src/env.ts`, read and validated once at module load) supplies the token and targets; a missing token skips the tick with a heartbeat log. Otherwise `poll(target)` runs for each player concurrently (`Promise.all` — `poll` catches its own errors and never rejects, so one player's failure can't sink the others).
+1. `Deno.cron` fires every minute → `config` (from `src/env.ts`, read and validated once at module load) supplies the token and targets; a missing token skips the tick with a heartbeat log. Otherwise `poll(target)` runs for each player concurrently (`Promise.all` — `poll` catches its own errors and never rejects, so one player's failure can't sink the others). Each tick ends with a one-line tally of per-target outcomes (posted / seeded / skipped / failed).
 2. The player's battle log is fetched for their `tag` via the [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy) (`https://proxy.royaleapi.dev/v1`), which gives a stable outbound IP to whitelist on the API token.
-3. The latest `battleTime` is compared against a cursor stored in Deno KV under the tuple key `["lastBattle", tag]`, written with a 30-day `expireIn` TTL so cursors for players removed from `TARGETS` self-clean (each posted/seeded battle resets the clock). Cursors are namespaced per tag, so every player shares one KV store without colliding.
+3. The latest `battleTime` is compared against a cursor stored in Deno KV under the tuple key `["lastBattle", tag]`, written with a 30-day `expireIn` TTL so cursors for players removed from `TARGETS` self-clean (each posted/seeded battle resets the clock). Cursors are namespaced per tag, so every player shares one KV store without colliding. A corrupt cursor is detected on read and re-seeded like a first run.
 4. **First run:** the cursor is seeded without posting, to avoid a stale notification.
-5. **Subsequent runs with a new battle:** a Discord message is posted to that player's webhook — the result and crown score in the message content, then one embed per player, each titled with that player's name and showing that side's deck as a composited card-image grid — then the cursor is updated.
+5. **Subsequent runs with a new battle:** a Discord message is posted to that player's webhook — the result, crown score, and HP margin in the message content, then one embed per player, each titled with that player's name and showing that side's trophy progression, tower troop, and deck as a composited card-image grid — then the cursor is updated. The cursor only advances after a successful post, so delivery is at-least-once: a rare duplicate beats a dropped battle.
 
-Battle log entries that fail schema validation are skipped. To stay cheap, the newest entry is picked by a fast timestamp comparison and only that one entry is fully validated against the schema — so full validation runs once per log instead of once per entry.
+Battle log entries that fail schema validation are skipped, and 2v2 battles are ignored outright. To stay cheap, the newest eligible entry is picked by a fast timestamp comparison and only that one entry is fully validated against the schema — so full validation runs once per log instead of once per entry.
 
 ## Source files
 
-| File                 | Responsibility                                                                                                                                                                                                                                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/main.ts`        | Hono app entry point, run as a script (`deno run`, not `deno serve`) — top-level `Deno.serve` binds the HTTP handler (`GET /` health check, `GET /kv/last-battle` cursor view) and `Deno.cron` drives polling; reads a `q` + Enter quit key when stdin is a terminal                                                                 |
-| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest battle                                                                                                                                                                                                                                   |
-| `src/discord.ts`     | Builds and posts the battle message: result and crown score in the content; two embeds (one per player), each titled with the player's name, with a deck-grid image and tower-troop thumbnail; text-only fallback if rendering fails                                                                                                 |
-| `src/deck-image.ts`  | Composites a deck's 8 card icons into a bottom-aligned 4-column PNG grid via ImageScript; tiles are read from the local `images/` mirror (177 PNGs at the repo root, keyed by card `id` + `-evo`/`-hero` variant), with a CDN fetch only as a fallback for a card missing from the mirror; caches finished grids by deck (small LRU) |
-| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `id` (the local-art lookup key) and `iconUrls` (tower-troop thumbnail plus CDN-fallback source)                                                                                             |
-| `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing)                                                                                                                                                                                              |
-| `src/log.ts`         | Console wrapper (`log.info`/`success`/`warn`/`error`/`debug`) that prefixes lines with a colored, leveled badge; sole importer of `@std/fmt/colors`, also exporting the badge palette (`levelColor`) and inline value highlighters (`hl`); color only on a real terminal, so piped/Deploy output stays plain text                    |
+| File                 | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.ts`        | Hono app entry point, run as a script (`deno run`, not `deno serve`) — top-level `Deno.serve` binds the HTTP handler (`GET /` health check, `GET /kv/last-battle` cursor view) and `Deno.cron` drives polling; reads a `q` + Enter quit key when stdin is a terminal                                                                                                                                          |
+| `src/clashroyale.ts` | Fetches and parses the battle log via the RoyaleAPI proxy; selects and validates the latest eligible battle                                                                                                                                                                                                                                                                                                   |
+| `src/discord.ts`     | Builds and posts the battle message: result, crown score, and HP margin in the content; two embeds (one per player), each titled with the player's name, with trophy rows, a deck-grid image, and a tower-troop thumbnail; text-only fallback if rendering fails                                                                                                                                              |
+| `src/deck-image.ts`  | Composites a deck's 8 card icons into a bottom-aligned 4-column PNG grid via ImageScript, on fixed-size cells so the grid's dimensions stay constant across decks; tiles are read from the local `images/` mirror (177 PNGs at the repo root, keyed by card `id` + `-evo`/`-hero` variant), with a CDN fetch only as a fallback for a card missing from the mirror; caches finished grids by deck (small LRU) |
+| `src/schema.ts`      | Valibot schemas for `Battle`, `Player`, and `TARGETS`; normalises the compact ISO 8601 timestamps the CR API sends and captures per-card `id` (the local-art lookup key) and `iconUrls` (tower-troop thumbnail plus CDN-fallback source)                                                                                                                                                                      |
+| `src/env.ts`         | Reads and validates all env vars once at module load; exports `config` (`{ token, targets }`, or `undefined` when the token is missing)                                                                                                                                                                                                                                                                       |
+| `src/log.ts`         | Console wrapper (`log.info`/`success`/`warn`/`error`/`debug`) that prefixes lines with a colored, leveled badge; sole importer of `@std/fmt/colors`, also exporting the badge palette (`levelColor`) and inline value highlighters (`hl`); color only on a real terminal, so piped/Deploy output stays plain text                                                                                             |
 
 ## Dependencies
 
-Runtime dependencies come from [JSR](https://jsr.io) — `@hono/hono`, `@valibot/valibot`, `@matmen/imagescript` (deck-image compositing), and `@std/fmt` (log formatting and colored console badges) — declared directly in `package.json`'s `dependencies` as `npm:@jsr/<scope>__<name>` aliases; Deno resolves the `@jsr` scope natively, and `preferPackageJson` in `deno.json` makes `package.json` the dependency source of truth (no `.npmrc` needed). This lets both Deno and oxlint's type-aware pass resolve them straight out of `node_modules`, with no separate materialization step. `package.json`'s `devDependencies` carries dev tooling (oxlint, oxfmt). Run `deno install` after cloning.
+Runtime dependencies come from [JSR](https://jsr.io) — `@hono/hono`, `@valibot/valibot`, `@matmen/imagescript` (deck-image compositing), and `@std/fmt` (log formatting and colored console badges) — declared directly in `package.json`'s `dependencies` as `npm:@jsr/<scope>__<name>` aliases; Deno resolves the `@jsr` scope natively, and `preferPackageJson` in `deno.json` makes `package.json` the dependency source of truth (no `.npmrc` needed). This lets both Deno and oxlint's type-aware pass resolve them straight out of `node_modules`, with no separate materialization step. `package.json`'s `devDependencies` carries dev tooling (oxlint, oxfmt, oxlint-tsgolint, vitest). Run `deno install` after cloning.
 
 ## Setup
 
@@ -76,7 +76,7 @@ Set `CR_API_TOKEN` and `TARGETS` as environment variables in the Deno Deploy pro
 deno task deploy
 ```
 
-Deno KV and `Deno.cron` are provisioned automatically on Deno Deploy — no separate namespace creation step.
+Deno KV and `Deno.cron` are provisioned automatically on Deno Deploy — no separate namespace creation step. The `images/` card-art mirror is a deploy-required asset: the renderer reads it in production, and it's uploaded with the deployment.
 
 ## KV & secrets
 
@@ -98,18 +98,20 @@ deno task deploy  # Deploy to Deno Deploy (via deployctl)
 ```sh
 deno task test     # Run the Vitest suite
 deno task preview  # Render a hardcoded deck to scripts/preview.png (manual; offline, reads images/)
+deno task measure  # Report card icons' transparent margins (no args = every icon + aggregate)
 ```
 
 ```sh
-deno task fmt     # Format (oxfmt)
-deno task lint    # oxlint && deno lint && deno check --unstable-tsgo .
+deno task fmt         # Format (oxfmt)
+deno task lint        # oxlint && deno lint && deno check --unstable-tsgo .
+deno task sync-types  # Regenerate the vendored deno.d.ts (after a Deno version change)
 ```
 
 `deno task lint` covers everything — do **not** run a separate `tsc --noEmit` or a standalone `deno check`. It chains oxlint (type-aware via oxlint-tsgolint), `deno lint` (Deno-idiom rules), and `deno check --unstable-tsgo` (Deno's own types via the native TypeScript-Go checker).
 
 ## Testing
 
-Tests run under Vitest (`deno task test`), inside the same Deno process (`Deno.*` globals — KV, cron, env — stay real and get spied on directly). Shared test fixtures live in `src/testing/fixtures.ts`; `src/__mocks__/log.ts` is a manual mock for `@/log.ts`, auto-applied by `vi.mock("@/log.ts")`.
+Tests run under Vitest (`deno task test`), inside the same Deno process (`Deno.*` globals — KV, cron, env — stay real and get spied on directly); discovery is scoped to `src/`. Shared test fixtures live in `src/testing/fixtures.ts`; `src/__mocks__/log.ts` is a manual mock for `@/log.ts`, auto-applied by `vi.mock("@/log.ts")`.
 
 ## Code style
 
