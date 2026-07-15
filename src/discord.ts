@@ -22,10 +22,7 @@ const OUTCOMES = {
 	},
 	[0]: {
 		result: "Draw",
-		/**
-		 * A draw has no margin line, so no verb — `battleContext` keys the HP line off this being
-		 * absent.
-		 */
+		/** No verb: `battleContext` keys the absent HP-margin line off this being undefined. */
 		verb: undefined,
 		color: COLOR_DRAW,
 	},
@@ -34,25 +31,28 @@ const OUTCOMES = {
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
 
 /**
- * Abort the webhook POST after this long. Generous relative to the other fetches: the multipart
- * body carries a few hundred KB of deck PNGs. A timeout rejects, poll() logs the failure without
- * advancing the cursor, and the next tick re-posts — the same at-least-once path as any other
- * webhook error.
+ * Abort the webhook POST after this long; generous because the multipart body carries a few hundred
+ * KB of deck PNGs.
  */
 const WEBHOOK_TIMEOUT_MS = 15_000;
 
 const SPACER_FIELD = { name: "\u200B", value: "\u200B" } as const;
 
-/** Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. */
+/**
+ * Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. The
+ * `satisfies` guard works like `EVOLUTION_SUFFIX` in deck-image.ts: a new schema level fails to
+ * compile rather than fall through to a bare name.
+ */
 const EVOLUTION_PREFIX = {
 	1: "Evo ",
 	2: "Hero ",
 } as const satisfies Record<NonNullable<Card["evolutionLevel"]>, string>;
 
 /**
- * Lowest HP among a player's _surviving_ towers (HP > 0) — the one the opponent was closest to
- * taking next. Destroyed towers (backfilled to 0) are skipped: they've already fallen and are no
- * longer the "next crown". Returns 0 if no towers survive (all destroyed, or no player).
+ * Lowest HP among a player's surviving towers (HP > 0) — the one closest to falling next. Destroyed
+ * towers (backfilled to 0) are skipped.
+ *
+ * @returns 0 when no towers survive, or when there is no player.
  */
 function weakestSurvivingTowerHp(player: Player | undefined) {
 	if (player === undefined) {
@@ -84,9 +84,8 @@ function formatDeck(cards: Card[] | undefined) {
 }
 
 /**
- * Trophy progression for a player, e.g. "5,432 → 5,463 (+31)". Absent on modes without trophies
- * (`startingTrophies` undefined), so the field is dropped entirely. Trophies after the match are
- * `startingTrophies + trophyChange`; a missing `trophyChange` counts as 0.
+ * Trophy progression for a player, e.g. "5,432 → 5,463 (+31)". Dropped entirely on modes without
+ * trophies (`startingTrophies` undefined). A missing `trophyChange` counts as 0.
  */
 function buildTrophyField(player: Player | undefined, label: string) {
 	if (player?.startingTrophies === undefined) {
@@ -106,10 +105,8 @@ function buildTrophyField(player: Player | undefined, label: string) {
 
 /**
  * The pair of inline trophy rows for an embed from `subject`'s point of view: their own progression
- * labelled "Trophies" and the other player's as "Opponent Trophies". Each side is passed as
- * `(subject, other)`, so the opponent's embed leads with — and correctly labels — the opponent's
- * own trophies rather than reusing the tracked player's labelling. Rows drop out in modes without
- * trophies (`buildTrophyField` returns undefined).
+ * as "Trophies" and the other player's as "Opponent Trophies". Passing each embed its own subject
+ * keeps the opponent's embed labelled from the opponent's side.
  */
 function buildTrophyFields(subject: Player | undefined, other: Player | undefined) {
 	return [
@@ -134,7 +131,6 @@ function buildAuthor(tag: string) {
 	return {
 		name: "Match History",
 		icon_url: ROYALE_API_ICON,
-		// The royaleapi.com profile path uses the tag without its leading "#".
 		url: `https://royaleapi.com/player/${tag.replace("#", "")}/battles`,
 	};
 }
@@ -164,9 +160,7 @@ function towerThumbnail(player: Player | undefined) {
 
 /**
  * The battle-wide bits both message shapes (image embeds and text fallback) share: the opponent,
- * the outcome (colour/verb), the content block (result header + crown score + HP margin), and the
- * footer. Trophy rows are built per embed by `buildTrophyFields` (they're perspective-dependent),
- * and the per-side embed titles are the players' names, taken straight from `me`/`opponent`.
+ * the outcome (colour/verb), the content block, and the footer.
  */
 function battleContext(battle: Battle, me: Player) {
 	const opponent = battle.opponent[0];
@@ -176,19 +170,14 @@ function battleContext(battle: Battle, me: Player) {
 
 	const outcome = OUTCOMES[diff as 1 | -1 | 0];
 
-	// Weakest-tower HP margin on decisive games, shown as normal text under the crown score. A draw
-	// has no verb, so it gets no margin line (undefined drops out of the content) and never computes
-	// HP. The margin is the weakest surviving tower on the winner's side — the tower the loser was
-	// closest to taking next. Using the winner avoids "0hp" when both sides felled a tower (e.g.
-	// 2-1).
+	// HP margin on decisive games only, measured on the winner's side so it stays positive even
+	// when both sides felled a tower (e.g. 2-1).
 	const winner = diff === 1 ? me : opponent;
 	const margin = outcome.verb
 		? `${outcome.verb} by ${weakestSurvivingTowerHp(winner).toLocaleString()}hp`
 		: undefined;
 
-	// Content (above the embeds) doubles as the push-notification text, which bare embeds wouldn't
-	// provide: the result as an H1, the crown score as an H2 subheader, then the HP margin as plain
-	// text. A draw's absent margin simply drops its line.
+	// Content doubles as the push-notification text, which bare embeds wouldn't provide.
 	const scoreLine = `${me.name}  ${String(myCrowns)} — ${String(opponentCrowns)}  ${opponent?.name ?? "Unknown"}`;
 	const content = [`# ${outcome.result}`, `## ${scoreLine}`, margin].filter(Boolean).join("\n");
 
@@ -201,9 +190,9 @@ function battleContext(battle: Battle, me: Player) {
 }
 
 /**
- * A rendered deck grid bundled with the `File` to upload and the `attachment://` image reference
- * the embed uses. Discord pairs the two by filename string and silently drops the image on a
- * mismatch — deriving both from one filename here makes that mismatch unrepresentable.
+ * A rendered deck grid bundled with the `File` to upload and the `attachment://` reference the
+ * embed uses. Discord pairs the two by filename and drops the image on a mismatch, so both derive
+ * from the one `filename` here.
  */
 async function renderDeckAttachment(cards: Card[], filename: string) {
 	const png = await renderDeckGrid(cards);
@@ -217,12 +206,9 @@ async function renderDeckAttachment(cards: Card[], filename: string) {
 type DeckAttachment = Awaited<ReturnType<typeof renderDeckAttachment>>;
 
 /**
- * The image-rich message: one embed per side, each titled with the player's name and stamped with
- * the same footer + timestamp. Embed 1 carries the tracked player's trophies, deck grid, and
- * tower-troop thumbnail; embed 2 mirrors the branding for the opponent, with the trophy rows built
- * from the opponent's perspective so their own trophies lead and are labelled correctly. The
- * result, crown score, and HP margin live in the message content. Each embed's image reference
- * comes from the same `DeckAttachment` whose file `buildForm` uploads alongside this payload.
+ * The image-rich message: one embed per side, each titled with the player's name and carrying that
+ * side's trophies, deck grid, and tower-troop thumbnail. The result, crown score, and HP margin
+ * live in the message content.
  */
 function buildMessage(
 	battle: Battle,
@@ -232,8 +218,7 @@ function buildMessage(
 ) {
 	const { opponent, outcome, footer, content } = battleContext(battle, me);
 
-	// Both sides share one embed shape; each is built from its own player's perspective, so the
-	// trophy rows lead with — and label — that player's own trophies.
+	// One embed shape for both sides, built from each player's own perspective.
 	const sideEmbed = (player: Player, deck: DeckAttachment, other: Player | undefined) => ({
 		author: buildAuthor(player.tag),
 		title: player.name,
@@ -247,8 +232,7 @@ function buildMessage(
 
 	const myEmbed = sideEmbed(me, myDeck, opponent);
 
-	// The second embed exists exactly when the opponent's deck rendered; its image reference and
-	// the uploaded file are two halves of the same attachment, so they can't drift apart.
+	// The second embed exists only when the opponent's deck rendered.
 	const opponentEmbed =
 		opponent === undefined || opponentDeck === undefined
 			? undefined
@@ -260,9 +244,8 @@ function buildMessage(
 }
 
 /**
- * Text-only single embed, used when deck rendering fails (missing/unreadable local art,
- * CDN-fallback failure, decode error) so an image problem never drops the notification. Matches the
- * pre-image layout: decks and tower troops as text fields.
+ * Text-only single embed, used when deck rendering fails so an image problem never drops the
+ * notification. Decks and tower troops become text fields.
  */
 function buildFallbackMessage(battle: Battle, me: Player) {
 	const { opponent, outcome, footer, content } = battleContext(battle, me);
@@ -314,10 +297,9 @@ async function buildForm(battle: Battle, me: Player) {
 }
 
 /**
- * Posts a single battle to the webhook: result in the content, matchup details in the embeds.
- * `battle.team` is the queried player's side, so its sole entry (2v2 is filtered out upstream) is
- * always the tracked player. Multipart when the deck images render (fetch derives the boundary from
- * the FormData body — no manual Content-Type); JSON fallback otherwise.
+ * Posts a single battle to the webhook. `battle.team[0]` is always the tracked player (2v2 is
+ * filtered out upstream). Multipart when the deck images render — fetch derives the boundary from
+ * the FormData body, so no manual Content-Type — otherwise the JSON text fallback.
  */
 async function notifyBattle(webhookUrl: string, battle: Battle) {
 	const me = battle.team[0];

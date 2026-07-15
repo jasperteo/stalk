@@ -7,27 +7,21 @@ import { hl, log } from "@/log.ts";
 import type { Card } from "@/schema.ts";
 
 /**
- * ImageScript is imported lazily: its module evaluation compiles ~1.8 MB of codec WASM
- * (svg/gif/font/jpeg/tiff/png), and this file sits on the unconditional main.ts → discord.ts import
- * path — a static import would tax every isolate cold boot, though most never render. The runtime
- * caches the module, so only the first render pays.
+ * Imported lazily so its ~1.8 MB of codec WASM compiles on the first render rather than at every
+ * isolate cold boot. The runtime caches the module after that first load.
  */
 const loadImageScript = () => import("@matmen/imagescript");
 
 /**
  * The local card-art mirror (`<id>.png`, `<id>-evo.png`, `<id>-hero.png`), resolved relative to
- * this module rather than the cwd so it survives Deno Deploy, where the process cwd is not the repo
- * root. Every playable card ships here, so reads are the hot path and never touch the network.
+ * this module rather than the cwd so it survives Deno Deploy, where the cwd isn't the repo root.
  */
 const IMAGES_DIR = new URL("../images/", import.meta.url);
 
 const COLUMNS = 4;
 /**
- * Fixed cell dimensions every tile composites into, so all rows are equal height and the grid stays
- * consistent across decks regardless of which cards are in it. Set to the upper bound of every
- * local icon's trimmed size (`deno task measure`, no args, reports the aggregate) rather than
- * computed per-render from the deck's own tiles, so the grid's pixel dimensions — and the Discord
- * embed layout that depends on them — don't shift between posts.
+ * Fixed cell size every tile composites into, so the grid's pixel dimensions stay constant across
+ * decks. Set to the upper bound of every local icon's trimmed size (`deno task measure`).
  */
 const CELL_WIDTH = 261;
 const CELL_HEIGHT = 405;
@@ -37,39 +31,28 @@ const CELL_HEIGHT = 405;
  */
 const COLUMN_GAP = 12;
 /**
- * Gutter between rows. Negative: the upper row keeps its native bottom padding (`trimToArt`), which
- * is transparent, so a small overlap tightens the rows without clipping any card art. Don't go
- * below roughly -20 — a top row of hexagon/champion frames has less bottom padding to overlap
- * into.
+ * Gutter between rows. Negative so the upper row's transparent bottom padding overlaps the row
+ * below, tightening them. Don't go below roughly -20, or hexagon/champion frames start to clip.
  */
 const ROW_GAP = -16;
 /** Alpha at or below this counts as transparent when scanning for a card's art bounds. */
 const ALPHA_THRESHOLD = 8;
-/**
- * PNG deflate level, 0–9, for the shipped grid. Lossless, so it trades encode CPU for upload size.
- * The deck cache amortizes this encode across every repeat post of the deck, so if Deploy egress
- * ever becomes the tight budget, raising this toward 9 is the cheap first lever.
- */
+/** PNG deflate level (0–9) for the shipped grid; lossless, trading encode CPU for upload size. */
 const GRID_COMPRESSION = 6;
 /**
- * Abort a fallback card-icon CDN fetch after this long. The fallback only runs for a card absent
- * from the local mirror (a fresh release), and those fetch in parallel per deck, so this bounds the
- * whole tile-load phase; a timeout rejects the render and discord.ts falls back to the text-only
- * message instead of the tick hanging.
+ * Abort a fallback card-icon CDN fetch after this long, so a hung request can't stall the cron
+ * tick.
  */
 const ICON_TIMEOUT_MS = 10_000;
 /**
- * Finished grids kept per distinct deck, sized from the live target count: each tracked player
- * needs a warm entry per side they appear on, and the headroom absorbs one-shot opponent decks.
- * Deriving from `config` means growing TARGETS can't silently push warm decks into eviction churn.
- * At a few hundred KB per PNG the cap stays in the tens of MB.
+ * How many finished grids the LRU keeps, sized from the live target count so growing TARGETS keeps
+ * each tracked player's decks warm plus headroom for one-shot opponent decks.
  */
 const DECK_CACHE_LIMIT = 3 * (config?.targets.length ?? 0) + 10;
 
 /**
- * A trimmed icon ready to composite, plus the transparent bottom margin the art kept (`trimToArt`
- * preserves the native bottom edge) — the compose layer needs the padding to know how far a row
- * below may overlap without clipping.
+ * A trimmed icon ready to composite, plus the transparent bottom margin it kept — the compose layer
+ * uses that padding to know how far the row below may overlap without clipping.
  */
 type Tile = {
 	image: Image;
@@ -77,19 +60,17 @@ type Tile = {
 };
 
 /**
- * Finished grids keyed by the deck's ordered mirror filenames (`tileName`). Players run one deck
- * for many battles in a row, so the expensive part (tile load, compose, encode) runs once per deck
- * instead of once per battle. Small LRU: hits re-insert at the back, inserts evict from the front,
- * so tracked players' decks stay warm while one-shot opponent decks churn through. Sharing the
- * cached bytes across posts is safe — callers only wrap them in a `File`, never mutate them.
+ * Finished grids keyed by the deck's ordered mirror filenames, so a repeated deck skips the render.
+ * The only cache here — per-tile reads are covered by the OS page cache. A small LRU: hits
+ * re-insert at the back, inserts evict from the front. The cached bytes are shared across posts —
+ * safe because callers only wrap them in a `File`, never mutate them.
  */
 const deckCache = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
 
 /**
- * Which local-art filename suffix each `evolutionLevel` uses (1 = Evolution, 2 = Hero); ordinary
- * cards use the bare `<id>.png`. The `satisfies` clause keeps this table — like `EVOLUTION_PREFIX`
- * in discord.ts — in lockstep with the schema's picklist: a new level fails to compile here instead
- * of silently falling through to the base art.
+ * Local-art filename suffix per `evolutionLevel` (1 = Evolution, 2 = Hero); ordinary cards use the
+ * bare `<id>.png`. The `satisfies` clause makes a new schema level fail to compile here rather than
+ * silently fall through to the base art.
  */
 const EVOLUTION_SUFFIX = {
 	1: "-evo",
@@ -103,9 +84,8 @@ function tileName(card: Card): string {
 }
 
 /**
- * Which `iconUrls` variant each `evolutionLevel` prefers on the CDN-fallback path — the same
- * lockstep `satisfies` guard as `EVOLUTION_SUFFIX`, so a new level fails to compile here too
- * instead of silently fetching the base art.
+ * Which `iconUrls` variant each `evolutionLevel` prefers on the CDN-fallback path; guarded like
+ * `EVOLUTION_SUFFIX`.
  */
 const EVOLUTION_ICON = {
 	1: "evolutionMedium",
@@ -113,9 +93,8 @@ const EVOLUTION_ICON = {
 } as const satisfies Record<NonNullable<Card["evolutionLevel"]>, keyof Card["iconUrls"]>;
 
 /**
- * CDN art URL for the card as it was played — the fallback source when the local mirror has no file
- * for the card yet. Prefers the played evo/hero variant and falls back to the always-present
- * `medium`, so it never resolves blank.
+ * CDN art URL for the card as played — the fallback when the local mirror has no file yet. Prefers
+ * the evo/hero variant, falling back to the always-present `medium` so it never resolves blank.
  */
 function iconUrl(card: Card): string {
 	const variant = card.evolutionLevel
@@ -125,11 +104,11 @@ function iconUrl(card: Card): string {
 }
 
 /**
- * Scans a decoded RGBA bitmap for the bounding box of its opaque pixels: the min/max x and y where
- * alpha exceeds `ALPHA_THRESHOLD`. A fully transparent bitmap yields `maxX === -1` (with `minX`/
- * `minY` left at width/height), the sentinel callers must handle. Walks the raw byte array with a
- * running offset (alpha is byte 3 of each RGBA quad) — this scans every pixel, and per-pixel
- * `getPixelAt` would pay a bounds-check call plus a big-endian u32 read each time.
+ * Scans a decoded bitmap for its opaque pixels (alpha above `ALPHA_THRESHOLD`). Walks the raw RGBA
+ * byte array directly (alpha is byte 3 of each quad) to avoid per-pixel `getPixelAt` overhead.
+ *
+ * @returns The opaque bounding box; `maxX === -1` when the bitmap is fully transparent — the
+ *   sentinel callers must handle.
  */
 function scanArtBounds({ bitmap, width, height }: Image) {
 	let minX = width;
@@ -153,21 +132,15 @@ function scanArtBounds({ bitmap, width, height }: Image) {
 }
 
 /**
- * Trims a decoded icon's transparent margin on the top and sides, but keeps its native bottom edge.
- * Each card PNG bakes in a margin (~5% per side, plus a ~10% band on top) that otherwise reads as
- * extra space between cards. The bottom is left intact deliberately: the game renders every icon on
- * the same canvas, so the native bottom is a consistent baseline across rarities — bottom-aligning
- * on it (see `composeDeckGrid`) lines the card frames up, whereas trimming to each card's own
- * lowest opaque pixel would follow per-card shadow/decoration variation instead. Kept at native
- * resolution — the only resize ImageScript offers is nearest-neighbour, which softens detailed
- * art.
+ * Trims a decoded icon's transparent margin on the top and sides but keeps its native bottom edge:
+ * every icon shares that baseline, so bottom-aligning on it (see `composeDeckGrid`) lines the card
+ * frames up. Kept at native resolution, since ImageScript only resizes nearest-neighbour.
  */
 function trimToArt(image: Image): Tile {
 	const { height } = image;
 	const { minX, minY, maxX, maxY } = scanArtBounds(image);
 
-	// Fully transparent (shouldn't happen for card art): leave it rather than crop to nothing. All
-	// padding, so no overlap can clip art.
+	// Fully transparent (shouldn't happen for card art): leave it rather than crop to nothing.
 	if (maxX < 0) {
 		return { image, bottomPadding: height };
 	}
@@ -192,12 +165,10 @@ async function fetchTile(url: string): Promise<Tile> {
 }
 
 /**
- * Loads a card's tile ready to composite. The local mirror covers every playable card, so the file
- * read is the normal path — decode + trim of a few tiles per deck-cache miss is tens of ms, and the
- * OS page cache absorbs repeats, so no per-tile cache is kept. A `NotFound` means the card released
- * after the last mirror sync: `log.warn` (the signal to add its art) and fall back to the card's
- * CDN icon. `cdnFallback` reports whether that fallback ran, so `composeDeckGrid` can log it. Any
- * fetch/decode error propagates — the render rejects and discord.ts posts its text-only message.
+ * Loads a card's tile ready to composite, reading from the local mirror. A `NotFound` means the
+ * card released after the last mirror sync: warn (the signal to add its art) and fall back to the
+ * CDN icon. `cdnFallback` reports whether that fallback ran so `composeDeckGrid` can log it. Any
+ * other fetch/decode error propagates and rejects the render.
  */
 async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean }> {
 	try {
@@ -219,10 +190,8 @@ async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean 
 }
 
 /**
- * Composites a deck into a 4-column PNG grid (2 rows for a full 8-card deck; short decks simply
- * leave trailing cells empty). Runs once per deck-cache miss — `renderDeckGrid` is the cached front
- * door — and logs elapsed ms, CDN fallbacks (normally 0), and output size, so the per-distinct-deck
- * render cost is observable in Deploy logs.
+ * The uncached render behind `renderDeckGrid`, run on a cache miss; short decks leave trailing
+ * cells empty.
  */
 async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	if (cards.length === 0) {
@@ -246,19 +215,16 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 	for (const [index, { image: tile, bottomPadding }] of tiles.entries()) {
 		const row = Math.floor(index / COLUMNS);
 
-		// The negative ROW_GAP overlaps the row below into this tile's kept bottom padding; if the
-		// art leaves less padding than the overlap (e.g. a future frame style), it would clip — say
-		// so. Bottom-row tiles have no row below them, so they can't clip.
+		// Warn when a tile's kept bottom padding can't cover the ROW_GAP overlap and the row below
+		// would clip into its art. Bottom-row tiles have no row below.
 		if (row < rows - 1 && bottomPadding < -ROW_GAP) {
 			log.warn(
 				`card art bottom padding ${hl.strong(String(bottomPadding))}px < row overlap ${hl.strong(String(-ROW_GAP))}px; grid rows may clip`
 			);
 		}
 
-		// Centre horizontally, align to the cell's bottom. Tiles keep their native bottom edge
-		// (`trimToArt`), so bottom-aligning rests every card on the same baseline; taller frames
-		// (hexagonal legendaries/champions) and gems/emblems (evolutions/heroes) extend upward, the
-		// way the art is drawn. Centring would leave shorter cards floating and off-centre.
+		// Centre horizontally, align to the cell's bottom so every card rests on the shared baseline
+		// and taller frames extend upward.
 		const cellX = (index % COLUMNS) * (CELL_WIDTH + COLUMN_GAP);
 		const cellY = row * (CELL_HEIGHT + ROW_GAP);
 		const x = cellX + Math.floor((CELL_WIDTH - tile.width) / 2);
@@ -266,14 +232,11 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 		canvas.composite(tile, x, y);
 	}
 
-	// Re-wrap onto a fresh ArrayBuffer: ImageScript types encode() as Uint8Array<ArrayBufferLike>,
-	// which BlobPart (File/FormData) rejects. One small copy per render.
+	// Re-wrap onto a fresh ArrayBuffer: ImageScript's encode() returns Uint8Array<ArrayBufferLike>,
+	// which BlobPart (File/FormData) rejects.
 	const png = new Uint8Array(await canvas.encode(GRID_COMPRESSION));
 	const end = performance.now();
 
-	// Size is worth logging: tiles composite at the local mirror's native resolution (no resize), so
-	// re-exporting the mirror at a higher resolution would silently grow every upload toward
-	// Discord's attachment limit.
 	const elapsed = formatDuration(Math.round(end - start), { ignoreZero: true });
 	const composeElapsed = formatDuration(Math.round(end - composeStart), { ignoreZero: true });
 	log.debug(
@@ -284,14 +247,13 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 }
 
 /**
- * Cached front door for `composeDeckGrid`: the render is deterministic from the deck's ordered
- * mirror filenames — `tileName` already encodes the card as played (id + variant), independent of
- * whether the local file or the CDN served each tile — so identical decks reuse the finished PNG —
- * and a quiet Deploy log means cache hits, not missing renders. A hit refreshes the entry's
- * recency; a miss renders, caches the promise (deduping concurrent renders of the same deck), and
- * evicts the least-recently-used deck past the cap. Throws on an empty deck or a tile load/decode
- * failure — the caller falls back to the text-only message — and failures evict themselves so a bad
- * render isn't cached.
+ * Renders a deck as a 4-column PNG grid (2 rows for a full 8-card deck), cached: the result is
+ * deterministic from the deck's ordered mirror filenames, so identical decks reuse the finished
+ * PNG. A hit refreshes recency; a miss renders, caches the promise, and evicts the
+ * least-recently-used deck past the cap.
+ *
+ * @throws On an empty deck or a tile load/decode failure; the caller posts the text-only fallback.
+ *   A failed render evicts itself so it isn't cached.
  */
 async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	const key = cards.map((card) => tileName(card)).join("|");
