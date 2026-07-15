@@ -14,19 +14,16 @@ const app = new Hono();
 const kv = await Deno.openKv();
 
 /**
- * Single definition of the cursor key schema, shared by poll() and the read-only endpoint so the
- * two can't drift. Keys are namespaced per tag, so multiple players share one KV without
- * colliding.
+ * Cursor key, shared by poll() and the read-only endpoint; namespaced per tag so multiple players
+ * share one KV without colliding.
  */
 const LAST_BATTLE_PREFIX = "lastBattle";
 const lastBattleKey = (tag: string) => [LAST_BATTLE_PREFIX, tag] as const;
 
 /**
  * Cursors self-expire so players removed from TARGETS don't leave garbage in KV forever. Every
- * posted/seeded battle rewrites the cursor and resets the clock, so only a cursor idle for a full
- * month expires — after which the next battle re-seeds silently, like a first run. Temporal can't
- * total calendar months without a reference point, and expireIn is a fixed span anyway, so a month
- * is pinned to 30 days.
+ * posted/seeded battle resets the clock; an expired cursor just re-seeds silently, like a first
+ * run. Pinned to 30 days since Temporal can't total calendar months without a reference point.
  */
 const CURSOR_TTL_MS = Temporal.Duration.from({ days: 30 }).total("milliseconds");
 
@@ -35,8 +32,8 @@ app.get("/", (ctx) => ctx.json({ status: "ok" }));
 
 /** Read-only view of the lastBattle cursors; no secrets live in KV, so this is safe to expose. */
 app.get("/kv/last-battle", async (ctx) => {
-	// Values pass through raw on purpose: this debug view's job is to show exactly what's stored;
-	// interpreting cursors (validation, first-run vs. corrupt) is poll()'s.
+	// Raw values on purpose — interpreting cursors (validation, first-run vs. corrupt) is poll()'s
+	// job.
 	const cursors: Record<string, unknown> = {};
 
 	for await (const entry of kv.list({ prefix: [LAST_BATTLE_PREFIX] })) {
@@ -51,9 +48,8 @@ app.get("/kv/last-battle", async (ctx) => {
 const POLL_OUTCOMES = ["posted", "seeded", "skipped", "failed"] as const;
 type PollOutcome = (typeof POLL_OUTCOMES)[number];
 
-// Each outcome borrows the badge color of the level it corresponds to (posted~ok, seeded~info,
-// failed~error; skipped gets debug's gray since a skip isn't actionable), so the heartbeat tally
-// reads like a mini heat-map that stays in sync with the badges by construction.
+// Each outcome borrows its corresponding level's badge color, so the tally stays in sync with the
+// badges by construction.
 const outcomeColor: Record<PollOutcome, (str: string) => string> = {
 	posted: levelColor.ok,
 	seeded: levelColor.info,
@@ -75,16 +71,14 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		const key = lastBattleKey(tag);
 		const { value: stored } = await kv.get(key);
 
-		// null (first run) fails the parse too; only a non-null failure is corrupt — warn and
-		// re-seed like a first run rather than re-posting every tick against a cursor that can
-		// never match.
+		// null (first run) fails the parse too; only a non-null failure is corrupt, so re-seed
+		// like a first run instead of re-posting every tick against a cursor that can never match.
 		const cursor = v.safeParse(CursorSchema, stored);
 		if (stored !== null && !cursor.success) {
 			log.warn(`Corrupt lastBattle cursor for ${hl.entity(tag)}; re-seeding without posting`);
 		}
 		const lastSeen = cursor.success ? cursor.output : undefined;
 
-		// No new battles since the last run; nothing to do.
 		if (latest.battleTime === lastSeen) {
 			return "skipped";
 		}
@@ -97,12 +91,9 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		}
 
 		// Advance the cursor only after a successful post: at-least-once delivery. If the webhook
-		// succeeds but this put throws, the next run re-posts a duplicate rather than dropping the
-		// battle — we prefer a rare duplicate over a lost notification.
+		// succeeds but this put throws, the next run re-posts a duplicate rather than drops the battle.
 		await kv.set(key, latest.battleTime, { expireIn: CURSOR_TTL_MS });
 
-		// Log only after the effects landed, so the dashboard never claims an action that didn't
-		// happen.
 		if (isFirstRun) {
 			log.info(`Seeded cursor for ${hl.entity(tag)} (first run, no notification sent)`);
 			return "seeded";
@@ -111,19 +102,17 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		log.success(`Posted battle for ${hl.entity(tag)} at ${latest.battleTime}`);
 		return "posted";
 	} catch (error) {
-		// Log and move on; the next cron run retries without overwriting the cursor.
+		// Next cron run retries without overwriting the cursor.
 		log.error(`Poll failed for ${hl.entity(tag)}:`, error);
 		return "failed";
 	}
 }
 
-// Poll every minute. Deno.cron registers at module load and runs on Deno Deploy's scheduler.
-// The returned promise only surfaces registration errors and must not be awaited (the job runs
-// for the isolate's lifetime), so we void it to satisfy no-floating-promises; a failed
-// registration still shows up as the absence of heartbeat lines on the dashboard.
+// The registration promise only surfaces registration errors and must not be awaited (the job
+// runs for the isolate's lifetime), so it's voided to satisfy no-floating-promises.
 void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
-	// Can't poll without a token; env.ts already logged why, once. Still emit a heartbeat so a
-	// misconfigured deploy shows up as a loud skipped tick, not a silent dashboard.
+	// Still emit a heartbeat so a misconfigured deploy shows up as a loud skipped tick, not a
+	// silent dashboard.
 	if (config === undefined) {
 		log.warn("poll-battlelogs: skipped tick — CR_API_TOKEN not set");
 		return;
@@ -131,8 +120,8 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 
 	const { token, targets } = config;
 
-	// poll() catches its own errors and resolves "failed", so one player's failure can't sink the
-	// others — no rejection path, hence Promise.all over allSettled.
+	// poll() catches its own errors and resolves "failed" — no rejection path, hence Promise.all
+	// over allSettled.
 	const outcomes = await Promise.all(targets.map((target) => poll(target, token)));
 
 	const tally: Record<PollOutcome, number> = { posted: 0, seeded: 0, skipped: 0, failed: 0 };
@@ -140,9 +129,7 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 		tally[outcome]++;
 	}
 
-	// Heartbeat: one line per tick so a quiet minute still shows up on the Deno Deploy dashboard.
-	// Counts iterate POLL_OUTCOMES, which PollOutcome derives from — so a new outcome can't go
-	// missing here, and the summary order is fixed by declaration rather than insertion.
+	// One heartbeat line per tick; iterates POLL_OUTCOMES so a new outcome can't go missing.
 	const counts = POLL_OUTCOMES.map((outcome) =>
 		outcomeColor[outcome](`${outcome} ${String(tally[outcome])}`)
 	).join(", ");
@@ -150,9 +137,8 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 	log.info(`poll-battlelogs: ${String(targets.length)} targets — ${counts}`);
 });
 
-// Only an interactive terminal has a keyboard to read a quit key from; under Deno Deploy (or any
-// piped/captured stdin) the reader would just hang on a stream that never yields, so the whole
-// feature — hint included — is gated on stdin being a TTY.
+// Gated on stdin being a TTY: under Deno Deploy or any piped/captured stdin, reading a quit key
+// would just hang on a stream that never yields.
 const interactive = Deno.stdin.isTerminal();
 
 const server = Deno.serve({
@@ -169,12 +155,9 @@ const server = Deno.serve({
 });
 
 /**
- * Vite-style quit key: `q` + Enter shuts the server down. Deno.exit() would not be enough — under
+ * Vite-style quit key: `q` + Enter shuts the server down. `Deno.exit()` isn't enough — under
  * `--watch`/`--watch-hmr` it only ends the module run and leaves the watcher supervising an empty
- * process — so signal our own pid instead, which tears down watcher and all exactly like Ctrl+C.
- *
- * Awaiting this at the top level never settles until the process is on its way out, which is fine:
- * the listener is already registered, so the event loop keeps serving requests regardless.
+ * process — so this signals our own pid instead, tearing down the watcher just like Ctrl+C.
  */
 async function quitOnKeypress() {
 	const decoder = new TextDecoder();

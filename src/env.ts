@@ -24,8 +24,8 @@ const targets = parseEnv("TARGETS", TargetsEnvSchema, []);
 
 /**
  * Poll configuration, or undefined when CR_API_TOKEN is missing — consumers guard once instead of
- * re-checking the token. Destructured locals stay narrowed inside closures, unlike imported
- * bindings, which TypeScript re-widens when a nested function captures them.
+ * re-checking the token. Destructured locals stay narrowed inside closures, unlike an imported
+ * binding, which TypeScript re-widens once a nested function captures it.
  */
 const config = token === undefined ? undefined : { token, targets };
 
