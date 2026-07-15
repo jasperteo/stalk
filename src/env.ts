@@ -19,8 +19,12 @@ function parseEnv<TOutput>(
 	return parsed.output;
 }
 
-const token = parseEnv("CR_API_TOKEN", TokenEnvSchema, undefined);
-const targets = parseEnv("TARGETS", TargetsEnvSchema, []);
+/** Env var names, exported so tests stub the same names this module reads. */
+const TOKEN_VAR = "CR_API_TOKEN";
+const TARGETS_VAR = "TARGETS";
+
+const token = parseEnv(TOKEN_VAR, TokenEnvSchema, undefined);
+const targets = parseEnv(TARGETS_VAR, TargetsEnvSchema, []);
 
 /**
  * Poll configuration, or undefined when CR_API_TOKEN is missing — consumers guard once instead of
@@ -29,4 +33,4 @@ const targets = parseEnv("TARGETS", TargetsEnvSchema, []);
  */
 const config = token === undefined ? undefined : { token, targets };
 
-export { config };
+export { config, TARGETS_VAR, TOKEN_VAR };

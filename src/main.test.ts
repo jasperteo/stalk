@@ -1,18 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { notifyBattle } from "@/discord.ts";
+import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
 import { rawBattle, WEBHOOK } from "@/testing/fixtures.ts";
 
 vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn() }));
 vi.mock("@/log.ts");
 
-const TOKEN_VAR = "CR_API_TOKEN";
-const TARGETS_VAR = "TARGETS";
 const TAG = "#ABC123";
 
-// Common happy-path env for every test. `vi.stubEnv` mutates `process.env`, which Deno's
-// node-compat live-backs with the real env, so env.ts's `Deno.env.get` sees it; `unstubEnvs` in
-// vitest.config.ts restores before each test. The missing-token test re-stubs inside its own body.
+// Common happy-path env for every test (`unstubEnvs` restores between tests); the missing-token
+// test re-stubs inside its own body.
 beforeEach(() => {
 	vi.stubEnv(TOKEN_VAR, "test-token");
 	vi.stubEnv(TARGETS_VAR, JSON.stringify([{ tag: TAG, webhook: WEBHOOK }]));

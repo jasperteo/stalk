@@ -55,7 +55,7 @@ describe("latestBattle", () => {
 
 describe("fetchBattlelog", () => {
 	it("requests the proxy URL with the bearer token and accept header", async () => {
-		const fetchMock = vi.fn(() => Response.json([{ any: "thing" }], { status: 200 }));
+		const fetchMock = vi.fn(() => Response.json([{ any: "thing" }]));
 		vi.stubGlobal("fetch", fetchMock);
 
 		const result = await fetchBattlelog("#ABC123", "my-token");

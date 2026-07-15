@@ -62,7 +62,7 @@ beforeEach(() => {
 	vi.mocked(renderDeckGrid).mockResolvedValue(new Uint8Array([1, 2, 3]));
 	vi.stubGlobal(
 		"fetch",
-		vi.fn(() => Promise.resolve(new Response(undefined, { status: 200 })))
+		vi.fn(() => Promise.resolve(new Response()))
 	);
 });
 

@@ -2,12 +2,13 @@ import { Image } from "@matmen/imagescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CELL_HEIGHT, CELL_WIDTH, renderDeckGrid } from "@/deck-image.ts";
+import { TOKEN_VAR } from "@/env.ts";
 import type { Card } from "@/schema.ts";
 
 vi.mock("@/log.ts");
 
-// `deckCache` in deck-image.ts is module-level and persists for the whole test file, and its keys are
-// now the deck's ordered mirror filenames (derived from card id + evolutionLevel) — so every card
+// `deckCache` in deck-image.ts is module-level and persists for the whole test file, and its keys
+// are the deck's ordered mirror filenames (derived from card id + evolutionLevel) — so every card
 // needs a unique id, otherwise two tests would silently share (or collide on) a cached grid. A
 // monotonic counter hands each `card()` call its own id; tests that render the same deck twice build
 // the array once and reuse it.
@@ -232,10 +233,10 @@ describe("renderDeckGrid", () => {
  * module registry — the `Deno.readFile` spy from `beforeEach` is a global and survives, so the
  * fresh module still reads the fixture. Cache hits return the same resolved Uint8Array instance
  * (the cached promise), so identity distinguishes a hit from a re-render (a re-render re-reads
- * every tile now that no per-tile cache exists, but identity is the direct signal).
+ * every tile since there is no per-tile cache, but identity is the direct signal).
  */
 async function freshRenderDeckGrid() {
-	vi.stubEnv("CR_API_TOKEN", undefined);
+	vi.stubEnv(TOKEN_VAR, undefined);
 	vi.resetModules();
 	const { renderDeckGrid: render } = await import("@/deck-image.ts");
 	return render;
