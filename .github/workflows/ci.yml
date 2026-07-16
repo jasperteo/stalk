@@ -13,8 +13,9 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+          cache: true
       - name: Install dependencies
-        run: deno install
+        run: deno ci
       - name: Format check
         run: deno task fmt --check
       - name: Lint and typecheck
