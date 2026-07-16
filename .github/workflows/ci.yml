@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Install dependencies
+        run: deno install
+      - name: Format check
+        run: deno task fmt --check
+      - name: Lint and typecheck
+        run: deno task lint
+      - name: Test
+        run: deno task test
+        env:
+          CI: "1"
