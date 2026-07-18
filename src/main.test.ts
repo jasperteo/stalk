@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { notifyBattle } from "@/discord.ts";
 import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
 import { rawBattle, WEBHOOK } from "@/testing/fixtures.ts";
+import { spyMemoryKv } from "@/testing/kv.ts";
 
 vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn() }));
 vi.mock("@/log.ts");
@@ -16,25 +17,11 @@ beforeEach(() => {
 	vi.stubEnv(TARGETS_VAR, JSON.stringify([{ tag: TAG, webhook: WEBHOOK }]));
 });
 
-// Each test's importMain opens a fresh `:memory:` KV that main.ts never closes (production holds
-// one handle for the isolate's lifetime); close it here so the tests don't accumulate open KV
-// resources for the worker's lifetime.
-let openedKv: Deno.Kv | undefined;
-
-afterEach(() => {
-	openedKv?.close();
-	openedKv = undefined;
-});
-
 type CronHandler = () => Promise<void> | void;
 
 // Deno.ServeHandler also takes a ServeHandlerInfo, which the tests have no use for; typing the
 // captured handler by what they actually call keeps `app.fetch(request)` a one-argument call.
 type FetchHandler = (request: Request) => Promise<Response>;
-
-function battlelogFetch(entries: unknown[]) {
-	return vi.fn(() => Promise.resolve(Response.json(entries)));
-}
 
 /**
  * Serves a distinct battle log per player tag, dispatching on the encoded tag in the request URL; a
@@ -52,23 +39,14 @@ function battlelogFetchByTag(logs: Record<string, unknown[]>) {
 }
 
 /**
- * Spies `Deno.openKv` (redirecting to a fresh isolated `:memory:` store, capturing the handle for
- * direct KV manipulation in tests), `Deno.cron` (capturing its handler instead of really scheduling
- * it) and `Deno.serve` (capturing its handler instead of really binding a port — every import would
- * otherwise fight over the same one), then resets the module registry and freshly imports `main.ts`
- * so its top-level `await Deno.openKv()`/`Deno.cron(...)`/`Deno.serve(...)` side effects run
- * against our spies.
+ * Spies `Deno.openKv` (via `spyMemoryKv`, redirecting to a fresh isolated `:memory:` store),
+ * `Deno.cron` (capturing its handler instead of really scheduling it) and `Deno.serve` (capturing
+ * its handler instead of really binding a port — every import would otherwise fight over the same
+ * one), then resets the module registry and freshly imports `main.ts` so its top-level `await
+ * Deno.openKv()`/`Deno.cron(...)`/`Deno.serve(...)` side effects run against our spies.
  */
 async function importMain() {
-	// `restoreMocks` puts the real `Deno.openKv` back before each test, so capturing it here (rather
-	// than calling `Deno.openKv` from inside the mock, which would recurse into the spy itself) always
-	// grabs the genuine implementation.
-	const openKv = Deno.openKv.bind(Deno);
-
-	vi.spyOn(Deno, "openKv").mockImplementation(async () => {
-		openedKv = await openKv(":memory:");
-		return openedKv;
-	});
+	const getKv = spyMemoryKv();
 
 	let cronHandler: CronHandler | undefined;
 
@@ -96,9 +74,9 @@ async function importMain() {
 
 	if (cronHandler === undefined) throw new Error("Deno.cron handler was never captured");
 	if (fetchHandler === undefined) throw new Error("Deno.serve handler was never captured");
-	if (openedKv === undefined) throw new Error("Deno.openKv handle was never captured");
+	getKv(); // throws if the spy never captured a KV handle
 
-	return { app: { fetch: fetchHandler }, tick: cronHandler, kv: openedKv };
+	return { app: { fetch: fetchHandler }, tick: cronHandler };
 }
 
 async function lastBattleCursors(app: Awaited<ReturnType<typeof importMain>>["app"]) {
@@ -112,138 +90,6 @@ describe("main", () => {
 		const response = await app.fetch(new Request("http://localhost/"));
 
 		expect(await response.json()).toEqual({ status: "ok" });
-	});
-
-	test("seeds the cursor on first run without notifying", async () => {
-		const { app, tick } = await importMain();
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
-
-		await tick();
-
-		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-01T00:00:00.000Z" });
-	});
-
-	test("posts and advances the cursor on a new battle after the first run", async () => {
-		const { app, tick } = await importMain();
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
-		await tick();
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
-		await tick();
-
-		expect(notifyBattle).toHaveBeenCalledTimes(1);
-		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
-	});
-
-	test("leaves the cursor untouched when the post fails, then retries next tick", async () => {
-		const { app, tick } = await importMain();
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
-		await tick();
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
-		vi.mocked(notifyBattle).mockRejectedValueOnce(new Error("webhook down"));
-		await tick();
-
-		// The failed post must not advance the cursor — the battle is still owed.
-		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-01T00:00:00.000Z" });
-
-		await tick();
-
-		// The retry posts the same battle and only then advances the cursor.
-		expect(notifyBattle).toHaveBeenCalledTimes(2);
-		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
-	});
-
-	test("prefers a duplicate post over a lost battle when the cursor write fails", async () => {
-		const { app, tick, kv } = await importMain();
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
-		await tick();
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
-		vi.spyOn(kv, "set").mockRejectedValueOnce(new Error("kv write failed"));
-		await tick();
-
-		// The post happened, but the failed write leaves the old cursor — the battle is not marked done.
-		expect(notifyBattle).toHaveBeenCalledTimes(1);
-		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-01T00:00:00.000Z" });
-
-		await tick();
-
-		// At-least-once: the same battle posts again (a duplicate), then the cursor finally advances.
-		expect(notifyBattle).toHaveBeenCalledTimes(2);
-		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
-	});
-
-	test("writes the cursor with a 30-day TTL on both seed and post", async () => {
-		const { tick, kv } = await importMain();
-		const setSpy = vi.spyOn(kv, "set");
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
-		await tick();
-
-		// Seed write (first run) must already carry the TTL, or a seeded-then-removed
-		// player's cursor would be the one entry that never expires.
-		expect(setSpy).toHaveBeenCalledWith(["lastBattle", TAG], "2024-01-01T00:00:00.000Z", {
-			expireIn: 2_592_000_000,
-		});
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
-		await tick();
-
-		expect(setSpy).toHaveBeenCalledWith(["lastBattle", TAG], "2024-01-15T14:30:22.000Z", {
-			expireIn: 2_592_000_000,
-		});
-	});
-
-	test("skips a repeat tick reporting the same battleTime", async () => {
-		const { tick } = await importMain();
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
-		await tick();
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
-		await tick();
-		await tick();
-
-		expect(notifyBattle).toHaveBeenCalledTimes(1);
-	});
-
-	test("skips without writing a cursor when there is no eligible battle", async () => {
-		const { app, tick } = await importMain();
-		vi.stubGlobal("fetch", battlelogFetch([]));
-
-		await tick();
-
-		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await lastBattleCursors(app)).toEqual({});
-	});
-
-	test("re-seeds without throwing when the stored cursor is corrupt", async () => {
-		const { app, tick, kv } = await importMain();
-		await kv.set(["lastBattle", TAG], "garbage-cursor");
-
-		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
-		await tick();
-
-		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await lastBattleCursors(app)).toEqual({ "#ABC123": "2024-01-15T14:30:22.000Z" });
-	});
-
-	test("leaves the cursor untouched when the CR API request fails", async () => {
-		const { app, tick } = await importMain();
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(() => Promise.resolve(new Response("server error", { status: 500 })))
-		);
-
-		await tick();
-
-		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await lastBattleCursors(app)).toEqual({});
 	});
 
 	test("skips the tick with a heartbeat when CR_API_TOKEN is unset", async () => {
