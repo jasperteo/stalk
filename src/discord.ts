@@ -137,15 +137,17 @@ function buildAuthor(tag: string) {
 
 /**
  * Curated art for the tower troops we have art for, overriding the API's own `iconUrls.medium`.
- * Keyed by lowercased troop name; anything else (a newer troop) falls through to the API icon.
+ * Keyed by troop card id; anything else (a newer troop) falls through to the API icon.
  */
-const TOWER_TROOP_ART: Record<string, string> = {
-	"tower princess":
-		"https://liquipedia.net/commons/images/5/54/Clash_Royale_Card_Tower_Princess.png",
-	cannoneer: "https://liquipedia.net/commons/images/0/06/Clash_Royale_Card_Cannoneer.png",
-	"dagger duchess":
-		"https://liquipedia.net/commons/images/f/fb/Clash_Royale_Card_Dagger_Duchess.png",
-	"royal chef": "https://liquipedia.net/commons/images/5/50/Clash_Royale_Card_Royal_Chef.png",
+const TOWER_TROOP_ART: Record<number, string> = {
+	// Tower Princess
+	159_000_000: "https://liquipedia.net/commons/images/5/54/Clash_Royale_Card_Tower_Princess.png",
+	// Cannoneer
+	159_000_001: "https://liquipedia.net/commons/images/0/06/Clash_Royale_Card_Cannoneer.png",
+	// Dagger Duchess
+	159_000_002: "https://liquipedia.net/commons/images/f/fb/Clash_Royale_Card_Dagger_Duchess.png",
+	// Royal Chef
+	159_000_004: "https://liquipedia.net/commons/images/5/50/Clash_Royale_Card_Royal_Chef.png",
 };
 
 /** The player's tower troop art as the embed thumbnail; undefined if the mode has none. */
@@ -155,7 +157,7 @@ function towerThumbnail(player: Player | undefined) {
 		return undefined;
 	}
 
-	return { url: TOWER_TROOP_ART[troop.name.toLowerCase()] ?? troop.iconUrls.medium };
+	return { url: TOWER_TROOP_ART[troop.id] ?? troop.iconUrls.medium };
 }
 
 /**
