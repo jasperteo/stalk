@@ -1,16 +1,24 @@
-import type { Image } from "@matmen/imagescript";
 import { format as formatBytes } from "@std/fmt/bytes";
 import { format as formatDuration } from "@std/fmt/duration";
+import type { SharpConstructor } from "sharp";
 
 import { config } from "@/env.ts";
 import { hl, log } from "@/log.ts";
 import type { Card } from "@/schema.ts";
 
 /**
- * Imported lazily so its ~1.8 MB of codec WASM compiles on the first render rather than at every
- * isolate cold boot. The runtime caches the module after that first load.
+ * Imported lazily so its codec native binding loads on the first render rather than at every
+ * isolate cold boot, and memoized so subsequent renders reuse the resolved module.
+ * `sharp.cache(false)` disables libvips' own operation cache — the deck LRU is the only cache we
+ * want; libvips' would just hold memory.
  */
-const loadImageScript = () => import("@matmen/imagescript");
+let sharpModule: Promise<SharpConstructor> | undefined;
+
+const loadSharp = () =>
+	(sharpModule ??= import("sharp").then(({ default: sharp }) => {
+		sharp.cache(false);
+		return sharp;
+	}));
 
 /**
  * The local card-art mirror (`<id>.png`, `<id>-evo.png`, `<id>-hero.png`), resolved relative to
@@ -37,7 +45,10 @@ const COLUMN_GAP = 12;
 const ROW_GAP = -16;
 /** Alpha at or below this counts as transparent when scanning for a card's art bounds. */
 const ALPHA_THRESHOLD = 8;
-/** PNG deflate level (0–9) for the shipped grid; lossless, trading encode CPU for upload size. */
+/**
+ * PNG zlib compressionLevel (0–9) for the shipped grid; lossless, trading encode CPU for upload
+ * size.
+ */
 const GRID_COMPRESSION = 6;
 /**
  * Abort a fallback card-icon CDN fetch after this long, so a hung request can't stall the cron
@@ -50,12 +61,23 @@ const ICON_TIMEOUT_MS = 10_000;
  */
 const DECK_CACHE_LIMIT = 3 * (config?.targets.length ?? 0) + 10;
 
+/** A decoded, row-major RGBA bitmap: the shape `scanArtBounds` walks. */
+type RawImage = {
+	data: Uint8Array;
+	width: number;
+	height: number;
+};
+
 /**
  * A trimmed icon ready to composite, plus the transparent bottom margin it kept — the compose layer
- * uses that padding to know how far the row below may overlap without clipping.
+ * uses that padding to know how far the row below may overlap without clipping. `data` stays the
+ * `Buffer` sharp returns so it feeds straight into `OverlayOptions.input` without a cast; it never
+ * leaves this module.
  */
 type Tile = {
-	image: Image;
+	data: Buffer;
+	width: number;
+	height: number;
 	bottomPadding: number;
 };
 
@@ -105,12 +127,12 @@ function iconUrl(card: Card): string {
 
 /**
  * Scans a decoded bitmap for its opaque pixels (alpha above `ALPHA_THRESHOLD`). Walks the raw RGBA
- * byte array directly (alpha is byte 3 of each quad) to avoid per-pixel `getPixelAt` overhead.
+ * byte array directly (alpha is byte 3 of each quad) to avoid per-pixel accessor overhead.
  *
  * @returns The opaque bounding box; `maxX === -1` when the bitmap is fully transparent — the
  *   sentinel callers must handle.
  */
-function scanArtBounds({ bitmap, width, height }: Image) {
+function scanArtBounds({ data, width, height }: RawImage) {
 	let minX = width;
 	let minY = height;
 	let maxX = -1;
@@ -119,7 +141,7 @@ function scanArtBounds({ bitmap, width, height }: Image) {
 	let offset = 3;
 	for (let y = 0; y < height; y++) {
 		for (let x = 0; x < width; x++, offset += 4) {
-			if ((bitmap[offset] ?? 0) > ALPHA_THRESHOLD) {
+			if ((data[offset] ?? 0) > ALPHA_THRESHOLD) {
 				if (x < minX) minX = x;
 				if (x > maxX) maxX = x;
 				if (y < minY) minY = y;
@@ -132,36 +154,62 @@ function scanArtBounds({ bitmap, width, height }: Image) {
 }
 
 /**
- * Trims a decoded icon's transparent margin on the top and sides but keeps its native bottom edge:
- * every icon shares that baseline, so bottom-aligning on it (see `composeDeckGrid`) lines the card
- * frames up. Kept at native resolution, since ImageScript only resizes nearest-neighbour.
+ * Decodes an encoded icon to the raw RGBA bitmap `scanArtBounds` walks. Exported for
+ * `scripts/measure.ts`, so its margin numbers come from the renderer's own decode rather than a
+ * copy that could drift.
  */
-function trimToArt(image: Image): Tile {
-	const { height } = image;
-	const { minX, minY, maxX, maxY } = scanArtBounds(image);
+async function decodeToRaw(bytes: Uint8Array): Promise<RawImage> {
+	const sharp = await loadSharp();
+	const { data, info } = await sharp(bytes).ensureAlpha().raw().toUint8Array();
+	return { data, width: info.width, height: info.height };
+}
 
-	// Fully transparent (shouldn't happen for card art): leave it rather than crop to nothing.
-	if (maxX < 0) {
-		return { image, bottomPadding: height };
-	}
+/**
+ * Decodes an encoded icon and trims its transparent margin on the top and sides but keeps its
+ * native bottom edge: every icon shares that baseline, so bottom-aligning on it (see
+ * `composeDeckGrid`) lines the card frames up. Kept at native resolution, since upscaling would
+ * blur.
+ *
+ * Decodes once to raw RGBA, scans the art bounds, then does a single extract pass — the trimmed
+ * `bottomPadding` is the transparent band the compose layer lets the row below overlap into.
+ */
+async function trimToArt(bytes: Uint8Array): Promise<Tile> {
+	const raw = await decodeToRaw(bytes);
+	const { data, width, height } = raw;
+	const { minX, minY, maxX, maxY } = scanArtBounds(raw);
+
+	// One derivation owns both the crop region and the kept bottom padding; the fully-transparent
+	// sentinel (shouldn't happen for card art) keeps the whole frame rather than crop to nothing.
+	const { region, bottomPadding } =
+		maxX < 0
+			? { region: { left: 0, top: 0, width, height }, bottomPadding: height }
+			: {
+					region: { left: minX, top: minY, width: maxX - minX + 1, height: height - minY },
+					bottomPadding: height - 1 - maxY,
+				};
+
+	const sharp = await loadSharp();
+	const cropped = await sharp(data, { raw: { width, height, channels: 4 } })
+		.extract(region)
+		.raw()
+		.toBuffer({ resolveWithObject: true });
 
 	return {
-		image: image.crop(minX, minY, maxX - minX + 1, height - minY),
-		bottomPadding: height - 1 - maxY,
+		data: cropped.data,
+		width: cropped.info.width,
+		height: cropped.info.height,
+		bottomPadding,
 	};
 }
 
 async function fetchTile(url: string): Promise<Tile> {
-	const [{ Image }, response] = await Promise.all([
-		loadImageScript(),
-		fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) }),
-	]);
+	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
 
 	if (!response.ok) {
 		throw new Error(`Card icon ${String(response.status)} for ${url}`);
 	}
 
-	return trimToArt(await Image.decode(new Uint8Array(await response.arrayBuffer())));
+	return trimToArt(new Uint8Array(await response.arrayBuffer()));
 }
 
 /**
@@ -172,11 +220,8 @@ async function fetchTile(url: string): Promise<Tile> {
  */
 async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean }> {
 	try {
-		const [{ Image }, bytes] = await Promise.all([
-			loadImageScript(),
-			Deno.readFile(new URL(tileName(card), IMAGES_DIR)),
-		]);
-		return { tile: trimToArt(await Image.decode(bytes)), cdnFallback: false };
+		const bytes = await Deno.readFile(new URL(tileName(card), IMAGES_DIR));
+		return { tile: await trimToArt(bytes), cdnFallback: false };
 	} catch (error) {
 		if (!(error instanceof Deno.errors.NotFound)) {
 			throw error;
@@ -199,8 +244,8 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 	}
 
 	const start = performance.now();
-	const [{ Image }, loaded] = await Promise.all([
-		loadImageScript(),
+	const [sharp, loaded] = await Promise.all([
+		loadSharp(),
 		Promise.all(cards.map((card) => loadTile(card))),
 	]);
 	const fallbacks = loaded.filter((entry) => entry.cdnFallback).length;
@@ -210,16 +255,15 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 	const rows = Math.ceil(tiles.length / COLUMNS);
 	const width = COLUMNS * CELL_WIDTH + (COLUMNS - 1) * COLUMN_GAP;
 	const height = rows * CELL_HEIGHT + (rows - 1) * ROW_GAP;
-	const canvas = new Image(width, height);
 
-	for (const [index, { image: tile, bottomPadding }] of tiles.entries()) {
+	const overlays = tiles.map((tile, index) => {
 		const row = Math.floor(index / COLUMNS);
 
 		// Warn when a tile's kept bottom padding can't cover the ROW_GAP overlap and the row below
 		// would clip into its art. Bottom-row tiles have no row below.
-		if (row < rows - 1 && bottomPadding < -ROW_GAP) {
+		if (row < rows - 1 && tile.bottomPadding < -ROW_GAP) {
 			log.warn(
-				`card art bottom padding ${hl.strong(String(bottomPadding))}px < row overlap ${hl.strong(String(-ROW_GAP))}px; grid rows may clip`
+				`card art bottom padding ${hl.strong(String(tile.bottomPadding))}px < row overlap ${hl.strong(String(-ROW_GAP))}px; grid rows may clip`
 			);
 		}
 
@@ -227,14 +271,26 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 		// and taller frames extend upward.
 		const cellX = (index % COLUMNS) * (CELL_WIDTH + COLUMN_GAP);
 		const cellY = row * (CELL_HEIGHT + ROW_GAP);
-		const x = cellX + Math.floor((CELL_WIDTH - tile.width) / 2);
-		const y = cellY + (CELL_HEIGHT - tile.height);
-		canvas.composite(tile, x, y);
-	}
+		const left = cellX + Math.floor((CELL_WIDTH - tile.width) / 2);
+		const top = cellY + (CELL_HEIGHT - tile.height);
 
-	// Re-wrap onto a fresh ArrayBuffer: ImageScript's encode() returns Uint8Array<ArrayBufferLike>,
-	// which BlobPart (File/FormData) rejects.
-	const png = new Uint8Array(await canvas.encode(GRID_COMPRESSION));
+		return {
+			input: tile.data,
+			raw: { width: tile.width, height: tile.height, channels: 4 as const },
+			left,
+			top,
+		};
+	});
+
+	const { data } = await sharp({
+		create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+	})
+		.composite(overlays)
+		.png({ compressionLevel: GRID_COMPRESSION })
+		.toUint8Array();
+	// Re-wrap onto a fresh ArrayBuffer: toUint8Array() types as Uint8Array<ArrayBufferLike>, which
+	// BlobPart (File/FormData) rejects.
+	const png = new Uint8Array(data);
 	const end = performance.now();
 
 	const elapsed = formatDuration(Math.round(end - start), { ignoreZero: true });
@@ -286,4 +342,5 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	}
 }
 
-export { CELL_HEIGHT, CELL_WIDTH, IMAGES_DIR, renderDeckGrid, scanArtBounds };
+export { CELL_HEIGHT, CELL_WIDTH, decodeToRaw, IMAGES_DIR, renderDeckGrid, scanArtBounds };
+export type { RawImage };

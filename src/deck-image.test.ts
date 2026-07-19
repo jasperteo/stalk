@@ -1,4 +1,4 @@
-import { Image } from "@matmen/imagescript";
+import sharp from "sharp";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { CELL_HEIGHT, CELL_WIDTH, renderDeckGrid } from "@/deck-image.ts";
@@ -33,9 +33,17 @@ const TILE_HEIGHT = 30;
  * read-only — every serve wraps a fresh `Uint8Array` copy — so both the local-mirror read and the
  * CDN fallback can hand back the same image.
  */
-const fixtureImage = new Image(TILE_WIDTH, TILE_HEIGHT);
-fixtureImage.fill(Image.rgbaToColor(200, 30, 30, 255));
-const FIXTURE = new Uint8Array(await fixtureImage.encode());
+const { data } = await sharp({
+	create: {
+		width: TILE_WIDTH,
+		height: TILE_HEIGHT,
+		channels: 4,
+		background: { r: 200, g: 30, b: 30, alpha: 1 },
+	},
+})
+	.png()
+	.toUint8Array();
+const FIXTURE = new Uint8Array(data);
 
 /**
  * Spies `Deno.readFile` — the module's primary tile source (the local `images/` mirror) — to serve
@@ -69,6 +77,12 @@ beforeEach(() => {
 	vi.stubGlobal("fetch", fetchMock);
 });
 
+/** Decodes a PNG's dimensions via sharp's metadata (width/height are optional — normalize to 0). */
+async function dimensions(png: Uint8Array) {
+	const { width, height } = await sharp(png).metadata();
+	return { width: width ?? 0, height: height ?? 0 };
+}
+
 describe("renderDeckGrid", () => {
 	test("lays out a 4-column grid at the fixed cell resolution", async () => {
 		const eightCards = Array.from({ length: 8 }, () => card());
@@ -76,8 +90,8 @@ describe("renderDeckGrid", () => {
 		// The two renders share no cache entries (distinct ids), so they can overlap — this is the
 		// suite's most expensive test (9 tile decode round-trips).
 		const [grid, singleRow] = await Promise.all([
-			renderDeckGrid(eightCards).then((png) => Image.decode(png)),
-			renderDeckGrid([card()]).then((png) => Image.decode(png)),
+			renderDeckGrid(eightCards).then((png) => dimensions(png)),
+			renderDeckGrid([card()]).then((png) => dimensions(png)),
 		]);
 
 		// Cell size is fixed (CELL_WIDTH/CELL_HEIGHT), not derived from the tiles in the deck, so even

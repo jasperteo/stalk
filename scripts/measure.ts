@@ -1,6 +1,4 @@
-import { Image } from "@matmen/imagescript";
-
-import { IMAGES_DIR, scanArtBounds } from "@/deck-image.ts";
+import { decodeToRaw, IMAGES_DIR, scanArtBounds, type RawImage } from "@/deck-image.ts";
 import { hl, log } from "@/log.ts";
 
 /**
@@ -33,7 +31,7 @@ type Measurement = {
 	bottom: number;
 };
 
-function measure(name: string, image: Image): Measurement {
+function measure(name: string, image: RawImage): Measurement {
 	const { width, height } = image;
 	// The exact bounds scan the renderer trims with (`trimToArt` in deck-image.ts wraps this same
 	// function), so these margins are precisely what it sees — no risk of the two drifting.
@@ -58,7 +56,7 @@ function measure(name: string, image: Image): Measurement {
 
 async function measureFile(name: string): Promise<Measurement> {
 	const file = new URL(`${name}.png`, IMAGES_DIR);
-	return measure(name, await Image.decode(await Deno.readFile(file)));
+	return measure(name, await decodeToRaw(await Deno.readFile(file)));
 }
 
 async function listImages(): Promise<string[]> {
