@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import { format as formatBytes } from "@std/fmt/bytes";
 import { format as formatDuration } from "@std/fmt/duration";
 import type { SharpConstructor } from "sharp";
@@ -11,14 +13,25 @@ import type { Card } from "@/schema.ts";
  * isolate cold boot, and memoized so subsequent renders reuse the resolved module.
  * `sharp.cache(false)` disables libvips' own operation cache — the deck LRU is the only cache we
  * want; libvips' would just hold memory.
+ *
+ * Only success is memoized: a failed load clears the slot so the next render retries. Caching the
+ * rejection instead would let one transient dlopen failure poison every later render for the
+ * isolate's lifetime, and silently — `discord.ts` catches a failed render and posts the text-only
+ * fallback, so the symptom would be decks quietly vanishing from every post.
  */
 let sharpModule: Promise<SharpConstructor> | undefined;
 
 const loadSharp = () =>
-	(sharpModule ??= import("sharp").then(({ default: sharp }) => {
-		sharp.cache(false);
-		return sharp;
-	}));
+	(sharpModule ??= import("sharp").then(
+		({ default: sharp }) => {
+			sharp.cache(false);
+			return sharp;
+		},
+		(error: unknown) => {
+			sharpModule = undefined;
+			throw error;
+		}
+	));
 
 /**
  * The local card-art mirror (`<id>.png`, `<id>-evo.png`, `<id>-hero.png`), resolved relative to
@@ -46,6 +59,11 @@ const ROW_GAP = -16;
 /** Alpha at or below this counts as transparent when scanning for a card's art bounds. */
 const ALPHA_THRESHOLD = 8;
 /**
+ * Stride of the raw bitmaps this module works in. `decodeToRaw`'s `.ensureAlpha().raw()` always
+ * yields RGBA — `.raw()` converts to sRGB first, so even a greyscale source decodes to 4 channels.
+ */
+const BYTES_PER_PIXEL = 4;
+/**
  * PNG zlib compressionLevel (0–9) for the shipped grid; lossless, trading encode CPU for upload
  * size.
  */
@@ -70,9 +88,9 @@ type RawImage = {
 
 /**
  * A trimmed icon ready to composite, plus the transparent bottom margin it kept — the compose layer
- * uses that padding to know how far the row below may overlap without clipping. `data` stays the
- * `Buffer` sharp returns so it feeds straight into `OverlayOptions.input` without a cast; it never
- * leaves this module.
+ * uses that padding to know how far the row below may overlap without clipping. `data` is a
+ * `Buffer` (allocated by `cropRaw`) so it feeds straight into `OverlayOptions.input` without a
+ * cast; it never leaves this module.
  */
 type Tile = {
 	data: Buffer;
@@ -140,7 +158,7 @@ function scanArtBounds({ data, width, height }: RawImage) {
 
 	let offset = 3;
 	for (let y = 0; y < height; y++) {
-		for (let x = 0; x < width; x++, offset += 4) {
+		for (let x = 0; x < width; x++, offset += BYTES_PER_PIXEL) {
 			if ((data[offset] ?? 0) > ALPHA_THRESHOLD) {
 				if (x < minX) minX = x;
 				if (x > maxX) maxX = x;
@@ -164,18 +182,46 @@ async function decodeToRaw(bytes: Uint8Array): Promise<RawImage> {
 	return { data, width: info.width, height: info.height };
 }
 
+/** A crop rectangle in raw-bitmap pixel coordinates. */
+type Region = {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+};
+
+/**
+ * Copies a rectangle out of a raw RGBA bitmap, row by row. Doing this in-process rather than
+ * through a second `sharp(...).extract()` pipeline keeps the crop a plain memcpy: the decoded bytes
+ * are already in JS memory, so a round-trip into libvips and back would just add a native call plus
+ * two buffer copies per tile. Returns a `Buffer` so it feeds `OverlayOptions.input` without a
+ * cast.
+ */
+function cropRaw({ data, width }: RawImage, region: Region): Buffer {
+	const rowBytes = region.width * BYTES_PER_PIXEL;
+	const cropped = Buffer.allocUnsafe(region.height * rowBytes);
+
+	for (let y = 0; y < region.height; y++) {
+		const start = ((region.top + y) * width + region.left) * BYTES_PER_PIXEL;
+		cropped.set(data.subarray(start, start + rowBytes), y * rowBytes);
+	}
+
+	return cropped;
+}
+
 /**
  * Decodes an encoded icon and trims its transparent margin on the top and sides but keeps its
  * native bottom edge: every icon shares that baseline, so bottom-aligning on it (see
  * `composeDeckGrid`) lines the card frames up. Kept at native resolution, since upscaling would
  * blur.
  *
- * Decodes once to raw RGBA, scans the art bounds, then does a single extract pass — the trimmed
- * `bottomPadding` is the transparent band the compose layer lets the row below overlap into.
+ * Decodes once to raw RGBA, scans the art bounds, then slices the region straight out of that
+ * bitmap — the trimmed `bottomPadding` is the transparent band the compose layer lets the row below
+ * overlap into.
  */
 async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 	const raw = await decodeToRaw(bytes);
-	const { data, width, height } = raw;
+	const { width, height } = raw;
 	const { minX, minY, maxX, maxY } = scanArtBounds(raw);
 
 	// One derivation owns both the crop region and the kept bottom padding; the fully-transparent
@@ -188,16 +234,10 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 					bottomPadding: height - 1 - maxY,
 				};
 
-	const sharp = await loadSharp();
-	const cropped = await sharp(data, { raw: { width, height, channels: 4 } })
-		.extract(region)
-		.raw()
-		.toBuffer({ resolveWithObject: true });
-
 	return {
-		data: cropped.data,
-		width: cropped.info.width,
-		height: cropped.info.height,
+		data: cropRaw(raw, region),
+		width: region.width,
+		height: region.height,
 		bottomPadding,
 	};
 }
@@ -244,10 +284,10 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 	}
 
 	const start = performance.now();
-	const [sharp, loaded] = await Promise.all([
-		loadSharp(),
-		Promise.all(cards.map((card) => loadTile(card))),
-	]);
+	// Not raced against `loadSharp()`: every tile load awaits it internally (via `decodeToRaw`), so
+	// sharp is already resolved by the time the tiles are and this await comes off the memo.
+	const loaded = await Promise.all(cards.map((card) => loadTile(card)));
+	const sharp = await loadSharp();
 	const fallbacks = loaded.filter((entry) => entry.cdnFallback).length;
 	const tiles = loaded.map((entry) => entry.tile);
 
@@ -288,9 +328,10 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 		.composite(overlays)
 		.png({ compressionLevel: GRID_COMPRESSION })
 		.toUint8Array();
-	// Re-wrap onto a fresh ArrayBuffer: toUint8Array() types as Uint8Array<ArrayBufferLike>, which
-	// BlobPart (File/FormData) rejects.
-	const png = new Uint8Array(data);
+	// Narrowed, not copied: sharp 0.35 documents toUint8Array() as returning a transferable, plain
+	// ArrayBuffer — only the declared type is the wider Uint8Array<ArrayBufferLike> that BlobPart
+	// (File/FormData) rejects. Copying a grid-sized PNG per render to satisfy the type isn't worth it.
+	const png = data as Uint8Array<ArrayBuffer>;
 	const end = performance.now();
 
 	const elapsed = formatDuration(Math.round(end - start), { ignoreZero: true });

@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { CELL_HEIGHT, CELL_WIDTH, renderDeckGrid } from "@/deck-image.ts";
+import { CELL_HEIGHT, CELL_WIDTH, decodeToRaw, renderDeckGrid } from "@/deck-image.ts";
 import { TOKEN_VAR } from "@/env.ts";
 import type { Card } from "@/schema.ts";
 
@@ -77,10 +77,14 @@ beforeEach(() => {
 	vi.stubGlobal("fetch", fetchMock);
 });
 
-/** Decodes a PNG's dimensions via sharp's metadata (width/height are optional — normalize to 0). */
+/**
+ * Fully decodes a rendered grid through the renderer's own `decodeToRaw`, so these assertions cover
+ * the whole pixel stream: a grid whose PNG header is valid but whose body is corrupt or truncated
+ * fails here rather than passing a header-only check.
+ */
 async function dimensions(png: Uint8Array) {
-	const { width, height } = await sharp(png).metadata();
-	return { width: width ?? 0, height: height ?? 0 };
+	const { width, height } = await decodeToRaw(png);
+	return { width, height };
 }
 
 describe("renderDeckGrid", () => {
