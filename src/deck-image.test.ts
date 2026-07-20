@@ -245,6 +245,76 @@ describe("renderDeckGrid", () => {
 });
 
 /**
+ * Counts opaque pixels down the grid's leftmost column (x = 0). The 20×30 fixture tiles are centred
+ * in 261-wide cells, so no card ever reaches x = 0 — the only thing that can paint there is a
+ * full-width deck-boundary divider. So this count is 0 for a single deck and scales with the number
+ * of divider rules (DIVIDER_THICKNESS px each) for a duel.
+ */
+async function leftEdgeOpaquePixels(png: Uint8Array) {
+	const { data, width, height } = await decodeToRaw(png);
+	let count = 0;
+
+	for (let y = 0; y < height; y++) {
+		const alpha = data[y * width * 4 + 3] ?? 0;
+		if (alpha > 0) count++;
+	}
+
+	return count;
+}
+
+describe("renderDeckGrid duel layout", () => {
+	// Distinct ids per card so no two decks collide in the module-level deck cache (see the file
+	// header comment). A duel's cards array is the concatenation of 2 or 3 full 8-card decks.
+	const deck = (blocks: number) => Array.from({ length: blocks * 8 }, () => card());
+
+	test("keeps all four columns (constant width) regardless of deck count", async () => {
+		const [one, two, three] = await Promise.all([
+			renderDeckGrid(deck(1)).then(dimensions),
+			renderDeckGrid(deck(2)).then(dimensions),
+			renderDeckGrid(deck(3)).then(dimensions),
+		]);
+
+		expect(two.width).toBe(one.width);
+		expect(three.width).toBe(one.width);
+	});
+
+	test("inserts a block gap so stacked decks are taller than the same rows run together", async () => {
+		const [one, two, three] = await Promise.all([
+			renderDeckGrid(deck(1)).then(dimensions),
+			renderDeckGrid(deck(2)).then(dimensions),
+			renderDeckGrid(deck(3)).then(dimensions),
+		]);
+
+		// A 16-card duel is two 8-card blocks plus a positive gap between them, so it is strictly
+		// taller than two single decks stacked with no gap would be. This is the assertion that fails
+		// if the block gap is ever dropped (the old continuous grid made two decks SHORTER than
+		// 2×one, because of the negative row overlap at the boundary).
+		expect(two.height).toBeGreaterThan(2 * one.height);
+		expect(three.height).toBeGreaterThan(two.height);
+	});
+
+	test("draws one divider rule per block boundary and none for a single deck", async () => {
+		const [one, two, three] = await Promise.all([
+			renderDeckGrid(deck(1)),
+			renderDeckGrid(deck(2)),
+			renderDeckGrid(deck(3)),
+		]);
+
+		const [edgeOne, edgeTwo, edgeThree] = await Promise.all([
+			leftEdgeOpaquePixels(one),
+			leftEdgeOpaquePixels(two),
+			leftEdgeOpaquePixels(three),
+		]);
+
+		// No divider on a normal 8-card deck; the leftmost column stays fully transparent.
+		expect(edgeOne).toBe(0);
+		// A 16-card duel has exactly one divider; a 24-card duel has two, so twice the painted pixels.
+		expect(edgeTwo).toBeGreaterThan(0);
+		expect(edgeThree).toBe(2 * edgeTwo);
+	});
+});
+
+/**
  * LRU tests need their own module instance: the static import's deckCache carries entries from the
  * tests above, and DECK_CACHE_LIMIT is baked at module load from env (3 * targets + 10). Unsetting
  * CR_API_TOKEN pins config to undefined, so the limit is exactly 10. `resetModules` only clears the

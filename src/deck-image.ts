@@ -78,6 +78,24 @@ const ICON_TIMEOUT_MS = 10_000;
  * each tracked player's decks warm plus headroom for one-shot opponent decks.
  */
 const DECK_CACHE_LIMIT = 3 * (config?.targets.length ?? 0) + 10;
+/** Cards in a Clash Royale deck. A duel stacks 2 or 3 decks, so `cards.length` is 16 or 24. */
+const DECK_SIZE = 8;
+/** Rows one 8-card deck block occupies in the 4-column grid. */
+const ROWS_PER_DECK = Math.ceil(DECK_SIZE / COLUMNS);
+/**
+ * Vertical space inserted between deck blocks, replacing the negative ROW_GAP that tightens rows
+ * *within* one deck — so a duel's 2–3 stacked decks read as separate 8-card decks. A normal single
+ * deck has no block boundary, so this never affects it. Wide enough to seat the divider with
+ * clearance; tune alongside DIVIDER_* via `deno task preview` on a 16-card deck.
+ */
+const DECK_GAP = 48;
+/** Divider-rule thickness, in native px. Kept thick enough to survive Discord's downscale of the grid. */
+const DIVIDER_THICKNESS = 4;
+/**
+ * Deck-boundary divider colour, straight-alpha RGBA. A muted, semi-transparent grey reads as a soft
+ * separator on Discord's embed background in both light and dark client themes.
+ */
+const DIVIDER_COLOR = { r: 154, g: 160, b: 166, alpha: 140 } as const;
 
 /** A decoded, row-major RGBA bitmap: the shape `scanArtBounds` walks. */
 type RawImage = {
@@ -210,6 +228,27 @@ function cropRaw({ data, width }: RawImage, region: Region): Buffer {
 }
 
 /**
+ * A solid horizontal rule as a raw straight-alpha RGBA bitmap of `width`×DIVIDER_THICKNESS, ready to
+ * composite. Filled in JS rather than via a `sharp({create})` round-trip, matching how tiles stay in
+ * raw memory. Returns a `Buffer` so it feeds `OverlayOptions.input` without a cast, like `cropRaw`.
+ */
+function solidRule(
+	width: number,
+	color: { r: number; g: number; b: number; alpha: number }
+): Buffer {
+	const rule = Buffer.allocUnsafe(width * DIVIDER_THICKNESS * BYTES_PER_PIXEL);
+
+	for (let offset = 0; offset < rule.length; offset += BYTES_PER_PIXEL) {
+		rule[offset] = color.r;
+		rule[offset + 1] = color.g;
+		rule[offset + 2] = color.b;
+		rule[offset + 3] = color.alpha;
+	}
+
+	return rule;
+}
+
+/**
  * Decodes an encoded icon and trims its transparent margin on the top and sides but keeps its
  * native bottom edge: every icon shares that baseline, so bottom-aligning on it (see
  * `composeDeckGrid`) lines the card frames up. Kept at native resolution, since upscaling would
@@ -294,14 +333,32 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 	const composeStart = performance.now();
 	const rows = Math.ceil(tiles.length / COLUMNS);
 	const width = COLUMNS * CELL_WIDTH + (COLUMNS - 1) * COLUMN_GAP;
-	const height = rows * CELL_HEIGHT + (rows - 1) * ROW_GAP;
 
-	const overlays = tiles.map((tile, index) => {
+	// Top y of each row. Rows inside one deck overlap by ROW_GAP (negative, tightening them); the
+	// first row of each new deck block is pushed down by the positive DECK_GAP instead, so a duel
+	// (16 or 24 cards = 2 or 3 blocks of 8) renders as separate decks. A single 8-card deck has one
+	// block, so every gap is ROW_GAP and the layout is identical to before.
+	const rowTops: number[] = [];
+	let nextTop = 0;
+	for (let row = 0; row < rows; row++) {
+		if (row > 0) {
+			const startsBlock = row % ROWS_PER_DECK === 0;
+			nextTop += CELL_HEIGHT + (startsBlock ? DECK_GAP : ROW_GAP);
+		}
+
+		rowTops.push(nextTop);
+	}
+	const height = nextTop + CELL_HEIGHT;
+
+	const tileOverlays = tiles.map((tile, index) => {
 		const row = Math.floor(index / COLUMNS);
 
-		// Warn when a tile's kept bottom padding can't cover the ROW_GAP overlap and the row below
-		// would clip into its art. Bottom-row tiles have no row below.
-		if (row < rows - 1 && tile.bottomPadding < -ROW_GAP) {
+		// Warn only when the row directly below is in the SAME deck block (a ROW_GAP overlap) and this
+		// tile's kept bottom padding can't cover it, so the row below would clip its art. A block
+		// boundary below uses the positive DECK_GAP, which never clips; bottom-row tiles have no row
+		// below.
+		const rowBelowStartsBlock = (row + 1) % ROWS_PER_DECK === 0;
+		if (row < rows - 1 && !rowBelowStartsBlock && tile.bottomPadding < -ROW_GAP) {
 			log.warn(
 				`card art bottom padding ${hl.strong(String(tile.bottomPadding))}px < row overlap ${hl.strong(String(-ROW_GAP))}px; grid rows may clip`
 			);
@@ -310,7 +367,7 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 		// Centre horizontally, align to the cell's bottom so every card rests on the shared baseline
 		// and taller frames extend upward.
 		const cellX = (index % COLUMNS) * (CELL_WIDTH + COLUMN_GAP);
-		const cellY = row * (CELL_HEIGHT + ROW_GAP);
+		const cellY = rowTops[row] ?? 0;
 		const left = cellX + Math.floor((CELL_WIDTH - tile.width) / 2);
 		const top = cellY + (CELL_HEIGHT - tile.height);
 
@@ -321,6 +378,23 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 			top,
 		};
 	});
+
+	// One full-width divider rule centred in each deck-boundary gap band (none for a single 8-card
+	// deck, so ordinary decks composite exactly as before).
+	const dividerOverlays: typeof tileOverlays = [];
+	for (let row = ROWS_PER_DECK; row < rows; row += ROWS_PER_DECK) {
+		const bandTop = (rowTops[row - 1] ?? 0) + CELL_HEIGHT;
+		const top = bandTop + Math.floor((DECK_GAP - DIVIDER_THICKNESS) / 2);
+
+		dividerOverlays.push({
+			input: solidRule(width, DIVIDER_COLOR),
+			raw: { width, height: DIVIDER_THICKNESS, channels: 4 as const },
+			left: 0,
+			top,
+		});
+	}
+
+	const overlays = [...tileOverlays, ...dividerOverlays];
 
 	const { data } = await sharp({
 		create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
