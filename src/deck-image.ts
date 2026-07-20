@@ -84,12 +84,15 @@ const DECK_SIZE = 8;
 const ROWS_PER_DECK = Math.ceil(DECK_SIZE / COLUMNS);
 /**
  * Vertical space inserted between deck blocks, replacing the negative ROW_GAP that tightens rows
- * *within* one deck — so a duel's 2–3 stacked decks read as separate 8-card decks. A normal single
+ * _within_ one deck — so a duel's 2–3 stacked decks read as separate 8-card decks. A normal single
  * deck has no block boundary, so this never affects it. Wide enough to seat the divider with
  * clearance; tune alongside DIVIDER_* via `deno task preview` on a 16-card deck.
  */
 const DECK_GAP = 48;
-/** Divider-rule thickness, in native px. Kept thick enough to survive Discord's downscale of the grid. */
+/**
+ * Divider-rule thickness, in native px. Kept thick enough to survive Discord's downscale of the
+ * grid.
+ */
 const DIVIDER_THICKNESS = 4;
 /**
  * Deck-boundary divider colour, straight-alpha RGBA. A muted, semi-transparent grey reads as a soft
@@ -228,9 +231,10 @@ function cropRaw({ data, width }: RawImage, region: Region): Buffer {
 }
 
 /**
- * A solid horizontal rule as a raw straight-alpha RGBA bitmap of `width`×DIVIDER_THICKNESS, ready to
- * composite. Filled in JS rather than via a `sharp({create})` round-trip, matching how tiles stay in
- * raw memory. Returns a `Buffer` so it feeds `OverlayOptions.input` without a cast, like `cropRaw`.
+ * A solid horizontal rule as a raw straight-alpha RGBA bitmap of `width`×DIVIDER_THICKNESS, ready
+ * to composite. Filled in JS rather than via a `sharp({create})` round-trip, matching how tiles
+ * stay in raw memory. Returns a `Buffer` so it feeds `OverlayOptions.input` without a cast, like
+ * `cropRaw`.
  */
 function solidRule(
 	width: number,
