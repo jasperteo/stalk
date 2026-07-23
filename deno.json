@@ -1,6 +1,7 @@
 {
 	"nodeModulesDir": "auto",
 	"preferPackageJson": true,
+
 	"tasks": {
 		"dev": "deno watch -A --tunnel src/main.ts",
 		"deploy": "deno run -A jsr:@deno/deployctl deploy",
@@ -11,22 +12,26 @@
 		"fmt": "oxfmt",
 		"lint": "oxlint && deno lint && deno check --unstable-tsgo ."
 	},
-	"imports": {
-		"@/": "./src/"
-	},
-	"unstable": ["kv", "cron"],
+
 	"compilerOptions": {
-		"lib": ["deno.window", "deno.unstable"]
+		"lib": ["deno.window", "deno.unstable"],
+
+		"verbatimModuleSyntax": true,
+		"erasableSyntaxOnly": true,
+
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+
+		"paths": { "@/*": ["./src/*"] }
 	},
-	"lint": {
-		"rules": { "tags": ["recommended"] }
-	},
-	"fmt": {
-		"exclude": ["**/*"]
-	},
-	"exclude": ["deno.d.ts", "node_modules"],
-	"deploy": {
-		"org": "fi6pv0haybb5d3v4dab39",
-		"app": "stalk"
-	}
+	"imports": { "@/": "./src/" },
+	"exclude": ["**/deno.d.ts", "**/node_modules"],
+
+	"lint": { "rules": { "tags": ["recommended"] } },
+	"fmt": { "exclude": ["**/*"] },
+
+	"unstable": ["kv", "cron"],
+	"deploy": { "org": "fi6pv0haybb5d3v4dab39", "app": "stalk" }
 }
