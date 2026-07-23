@@ -1,7 +1,21 @@
 {
 	"compilerOptions": {
+		"target": "esnext",
+		"skipLibCheck": true,
+
+		"module": "nodenext",
 		"noEmit": true,
 		"allowImportingTsExtensions": true,
+
+		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true,
+
+		"checkJs": true,
+		"noFallthroughCasesInSwitch": true,
+		"noImplicitOverride": true,
+		"noUncheckedIndexedAccess": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
 
 		"paths": { "@/*": ["./src/*"] }
 	}

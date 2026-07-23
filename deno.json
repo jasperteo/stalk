@@ -16,20 +16,19 @@
 	"compilerOptions": {
 		"lib": ["deno.window", "deno.unstable"],
 
-		"verbatimModuleSyntax": true,
 		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true,
 
+		"checkJs": true,
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedIndexedAccess": true,
 		"noUnusedLocals": true,
-		"noUnusedParameters": true,
-
-		"paths": { "@/*": ["./src/*"] }
+		"noUnusedParameters": true
 	},
-	"imports": { "@/": "./src/" },
-	"exclude": ["**/deno.d.ts", "**/node_modules"],
 
-	"lint": { "rules": { "tags": ["recommended"] } },
+	"imports": { "@/": "./src/" },
+
+	"lint": { "rules": { "tags": ["recommended"] }, "exclude": ["**/deno.d.ts"] },
 	"fmt": { "exclude": ["**/*"] },
 
 	"unstable": ["kv", "cron"],
