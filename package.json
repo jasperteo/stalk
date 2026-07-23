@@ -2,16 +2,16 @@
 	"name": "stalk",
 	"type": "module",
 	"dependencies": {
-		"@hono/hono": "npm:@jsr/hono__hono@^4.12.30",
+		"@hono/hono": "npm:@jsr/hono__hono@^4.12.31",
 		"@std/fmt": "npm:@jsr/std__fmt@^1.0.10",
 		"@valibot/valibot": "npm:@jsr/valibot__valibot@^1.4.2",
 		"sharp": "^0.35.3"
 	},
 	"devDependencies": {
-		"@types/node": "^24",
-		"oxfmt": "^0.59.0",
-		"oxlint": "^1.74.0",
-		"oxlint-tsgolint": "^0.24.0",
+		"@types/node": "^26.1.1",
+		"oxfmt": "^0.60.0",
+		"oxlint": "^1.75.0",
+		"oxlint-tsgolint": "^7.0.2001",
 		"vitest": "5.0.0-beta.6"
 	}
 }
