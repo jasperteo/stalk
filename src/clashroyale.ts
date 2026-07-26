@@ -1,5 +1,6 @@
 import * as v from "@valibot/valibot";
 
+import { sendRequest } from "@/http.ts";
 import { log } from "@/log.ts";
 import { BattleSchema, EligibleBattleTimeSchema } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
@@ -20,13 +21,17 @@ const FETCH_TIMEOUT_MS = 10_000;
 async function fetchBattlelog(playerTag: string, token: string): Promise<unknown[]> {
 	const url = `${PROXY_BASE}/players/${encodeURIComponent(playerTag)}/battlelog`;
 
-	const response = await fetch(url, {
-		headers: {
-			Authorization: `Bearer ${token}`,
-			Accept: "application/json",
+	const response = await sendRequest(
+		url,
+		"Clash Royale API",
+		{
+			headers: {
+				Authorization: `Bearer ${token}`,
+				Accept: "application/json",
+			},
 		},
-		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-	});
+		FETCH_TIMEOUT_MS
+	);
 
 	if (!response.ok) {
 		const body = await response.text();
