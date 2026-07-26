@@ -12,7 +12,6 @@ import {
 	renderDeckGrid,
 	trimToArt,
 } from "@/deck-image.ts";
-import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
 import type { Card } from "@/schema.ts";
 
 vi.mock("@/log.ts");
@@ -443,17 +442,18 @@ describe("renderDeckGrid duel layout", () => {
 
 /**
  * LRU tests need their own module instance: the static import's deckCache carries entries from the
- * tests above, and DECK_CACHE_LIMIT is baked at module load from env (3 * targets + 10). Unsetting
- * CR_API_TOKEN pins config to undefined, so the limit is exactly 10. `resetModules` only clears the
- * module registry — the `Deno.readFile` spy from `beforeEach` is a global and survives, so the
- * fresh module still reads the fixture. Cache hits return the same resolved Uint8Array instance
- * (the cached promise), so identity distinguishes a hit from a re-render (a re-render re-reads
- * every tile since there is no per-tile cache, but identity is the direct signal).
+ * tests above, and there is no reset for a running module's cache short of a fresh instance.
+ * `resetModules` only clears the module registry — the `Deno.readFile` spy from `beforeEach` is a
+ * global and survives, so the fresh module still reads the fixture. `configureDeckCache(0)` sets
+ * the fresh instance's entry-count guard to exactly 10. Cache hits return the same resolved
+ * Uint8Array instance (the cached promise), so identity distinguishes a hit from a re-render (a
+ * re-render re-reads every tile since there is no per-tile cache, but identity is the direct
+ * signal).
  */
 async function freshRenderDeckGrid() {
-	vi.stubEnv(TOKEN_VAR, undefined);
 	vi.resetModules();
-	const { renderDeckGrid: render } = await import("@/deck-image.ts");
+	const { configureDeckCache, renderDeckGrid: render } = await import("@/deck-image.ts");
+	configureDeckCache(0);
 	return render;
 }
 
@@ -483,6 +483,35 @@ describe("renderDeckGrid LRU", () => {
 		expect(await render(deck(0))).toBe(first); // deck 0 survived — recency was refreshed
 	});
 
+	test("configureDeckCache raises the cap from its argument, not a fixed default", async () => {
+		vi.resetModules();
+		const { configureDeckCache, renderDeckGrid: render } = await import("@/deck-image.ts");
+		const targetCount = 2;
+		const raisedLimit = 3 * targetCount + 10; // 16 — above the bare default of 10.
+		configureDeckCache(targetCount);
+
+		const deck = (id: number) => [card({ id })];
+
+		// Fill the cache to the raised cap: ids 0 .. 15. If the setter's multiplier weren't honored
+		// (e.g. it silently clamped back to the bare default of 10), deck 1 would already be evicted
+		// by the time this loop finishes.
+		const first = await render(deck(0));
+		for (let id = 1; id < raisedLimit; id++) {
+			await render(deck(id));
+		}
+
+		// Touch deck 0 so deck 1 becomes the eviction candidate; a hit is the same instance.
+		expect(await render(deck(0))).toBe(first);
+
+		// One over the raised cap evicts exactly one deck: the untouched deck 1.
+		await render(deck(999));
+
+		const second = await render(deck(1));
+		expect(second).not.toBe(await render(deck(0))); // sanity: distinct decks, distinct pngs
+		expect(await render(deck(1))).toBe(second); // deck 1 re-rendered, now cached again
+		expect(await render(deck(0))).toBe(first); // deck 0 survived — recency was refreshed
+	});
+
 	// An eviction-identity test (asserting a mid-render eviction doesn't delete a healthy newer
 	// promise under the same key) is deliberately not included here: it needs a render to still be
 	// in flight when its own cache entry is evicted by cap pressure and then replaced by a second
@@ -495,24 +524,15 @@ describe("renderDeckGrid LRU", () => {
 });
 
 /**
- * Byte-budget tests need their own module instance too, plus a `DECK_CACHE_LIMIT` well above what
- * these tests fill (a valid token and 20 targets pushes it to 3 * 20 + 10 = 70), so entry-count
- * eviction never fires here — that guard is already covered by "renderDeckGrid LRU" above. These
- * tests isolate the byte budget (`DECK_CACHE_BYTES`) as the one doing the evicting.
+ * Byte-budget tests need their own module instance too, plus an entry-count guard well above what
+ * these tests fill (`configureDeckCache(20)` sets it to 3 * 20 + 10 = 70), so entry-count eviction
+ * never fires here — that guard is already covered by "renderDeckGrid LRU" above. These tests
+ * isolate the byte budget (`DECK_CACHE_BYTES`) as the one doing the evicting.
  */
 async function freshRenderDeckGridWithHeadroom() {
-	vi.stubEnv(TOKEN_VAR, "test-token");
-	vi.stubEnv(
-		TARGETS_VAR,
-		JSON.stringify(
-			Array.from({ length: 20 }, (_, i: number) => ({
-				tag: `#T${String(i)}`,
-				webhook: `https://discord.com/api/webhooks/${String(i)}/x`,
-			}))
-		)
-	);
 	vi.resetModules();
-	const { renderDeckGrid: render } = await import("@/deck-image.ts");
+	const { configureDeckCache, renderDeckGrid: render } = await import("@/deck-image.ts");
+	configureDeckCache(20);
 	return render;
 }
 

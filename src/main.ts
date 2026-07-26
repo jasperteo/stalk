@@ -1,5 +1,6 @@
 import { Hono } from "@hono/hono";
 
+import { configureDeckCache } from "@/deck-image.ts";
 import { config } from "@/env.ts";
 import { hl, levelColor, log } from "@/log.ts";
 import { listCursors, poll, POLL_OUTCOMES } from "@/poll.ts";
@@ -39,6 +40,12 @@ const outcomeColor: Record<PollOutcome, (str: string) => string> = {
 	drifted: levelColor.warn,
 	failed: levelColor.error,
 };
+
+// Runs once at startup, not per tick: sizes the renderer's deck-cache entry-count guard from the
+// live target count so the renderer itself never reads app config.
+if (config !== undefined) {
+	configureDeckCache(config.targets.length);
+}
 
 // The registration promise only surfaces registration errors and must not be awaited (the job
 // runs for the isolate's lifetime), so it's voided to satisfy no-floating-promises.
