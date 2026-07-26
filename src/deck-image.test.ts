@@ -36,23 +36,35 @@ function card(overrides: Partial<Card> = {}): Card {
 const TILE_WIDTH = 20;
 const TILE_HEIGHT = 30;
 
+/** A fully-opaque solid-color PNG of the given size — the base shape of every fixture below. */
+async function solidPng(
+	width: number,
+	height: number,
+	color: { r: number; g: number; b: number }
+): Promise<Uint8Array> {
+	const { data } = await sharp({
+		create: { width, height, channels: 4, background: { ...color, alpha: 1 } },
+	})
+		.png()
+		.toUint8Array();
+	return new Uint8Array(data);
+}
+
+/** Encodes a raw straight-alpha RGBA buffer to PNG. */
+async function rawToPng(raw: Buffer, width: number, height: number): Promise<Uint8Array> {
+	const { data } = await sharp(raw, { raw: { width, height, channels: 4 } })
+		.png()
+		.toUint8Array();
+	return new Uint8Array(data);
+}
+
 /**
  * A small, fully-opaque solid-color PNG, encoded once for the whole file. It has no transparent
  * margin, so `trimToArt` keeps it at full size and its geometry is predictable. The bytes are
  * read-only — every serve wraps a fresh `Uint8Array` copy — so both the local-mirror read and the
  * CDN fallback can hand back the same image.
  */
-const { data } = await sharp({
-	create: {
-		width: TILE_WIDTH,
-		height: TILE_HEIGHT,
-		channels: 4,
-		background: { r: 200, g: 30, b: 30, alpha: 1 },
-	},
-})
-	.png()
-	.toUint8Array();
-const FIXTURE = new Uint8Array(data);
+const FIXTURE = await solidPng(TILE_WIDTH, TILE_HEIGHT, { r: 200, g: 30, b: 30 });
 
 /**
  * A raw straight-alpha RGBA canvas (`width`×`height`, fully transparent) with an opaque solid-color
@@ -79,10 +91,7 @@ async function insetFixture(
 		}
 	}
 
-	const encoded = await sharp(raw, { raw: { width, height, channels: 4 } })
-		.png()
-		.toUint8Array();
-	return new Uint8Array(encoded.data);
+	return rawToPng(raw, width, height);
 }
 
 /**
@@ -92,17 +101,11 @@ async function insetFixture(
  */
 const OVERSIZED_WIDTH = CELL_WIDTH + 40;
 const OVERSIZED_HEIGHT = CELL_HEIGHT + 60;
-const { data: oversizedData } = await sharp({
-	create: {
-		width: OVERSIZED_WIDTH,
-		height: OVERSIZED_HEIGHT,
-		channels: 4,
-		background: { r: 30, g: 120, b: 200, alpha: 1 },
-	},
-})
-	.png()
-	.toUint8Array();
-const OVERSIZED_FIXTURE = new Uint8Array(oversizedData);
+const OVERSIZED_FIXTURE = await solidPng(OVERSIZED_WIDTH, OVERSIZED_HEIGHT, {
+	r: 30,
+	g: 120,
+	b: 200,
+});
 
 /**
  * A deterministic pseudo-random `[0, 1)` value for call index `n` — `Math.random` would make the
@@ -130,12 +133,7 @@ for (let i = 0; i < noisyRaw.length; i += 4) {
 	noisyRaw[i + 3] = 255;
 }
 
-const { data: noisyData } = await sharp(noisyRaw, {
-	raw: { width: CELL_WIDTH, height: CELL_HEIGHT, channels: 4 },
-})
-	.png()
-	.toUint8Array();
-const NOISY_FIXTURE = new Uint8Array(noisyData);
+const NOISY_FIXTURE = await rawToPng(noisyRaw, CELL_WIDTH, CELL_HEIGHT);
 
 /**
  * Spies `Deno.readFile` — the module's primary tile source (the local `images/` mirror) — to serve
@@ -441,76 +439,56 @@ describe("renderDeckGrid duel layout", () => {
 });
 
 /**
- * LRU tests need their own module instance: the static import's deckCache carries entries from the
- * tests above, and there is no reset for a running module's cache short of a fresh instance.
+ * Cache tests need their own module instance: the static import's deckCache carries entries from
+ * the tests above, and there is no reset for a running module's cache short of a fresh instance.
  * `resetModules` only clears the module registry — the `Deno.readFile` spy from `beforeEach` is a
- * global and survives, so the fresh module still reads the fixture. `configureDeckCache(0)` sets
- * the fresh instance's entry-count guard to exactly 10. Cache hits return the same resolved
- * Uint8Array instance (the cached promise), so identity distinguishes a hit from a re-render (a
- * re-render re-reads every tile since there is no per-tile cache, but identity is the direct
- * signal).
+ * global and survives, so the fresh module still reads the fixture. Cache hits return the same
+ * resolved Uint8Array instance (the cached promise), so identity distinguishes a hit from a
+ * re-render (a re-render re-reads every tile since there is no per-tile cache, but identity is the
+ * direct signal).
+ *
+ * `targetCount` sizes the fresh instance's entry-count guard to `3 * targetCount + 10`: 0 for the
+ * bare default of 10, higher when a test needs the entry guard out of the way.
  */
-async function freshRenderDeckGrid() {
+async function freshRenderDeckGrid(targetCount = 0) {
 	vi.resetModules();
 	const { configureDeckCache, renderDeckGrid: render } = await import("@/deck-image.ts");
-	configureDeckCache(0);
+	configureDeckCache(targetCount);
 	return render;
 }
 
 describe("renderDeckGrid LRU", () => {
-	const DECK_CACHE_LIMIT = 10;
+	// The entry-count guard is `3 * targetCount + 10`, so a target count of 0 caps at the bare
+	// default and 2 raises it to 16 — enough to prove the multiplier is honored, not clamped.
+	test.each([
+		[0, 10],
+		[2, 16],
+	])(
+		"evicts the least-recently-used deck past the cap for %i targets, keeping touched decks warm",
+		async (targetCount, limit) => {
+			const render = await freshRenderDeckGrid(targetCount);
+			// Keyed by id, so a stable id per logical deck is what makes a re-render a cache hit.
+			const deck = (id: number) => [card({ id })];
 
-	test("evicts the least-recently-used deck past the cap, keeping touched decks warm", async () => {
-		const render = await freshRenderDeckGrid();
-		// Keyed by id, so a stable id per logical deck is what makes a re-render a cache hit.
-		const deck = (id: number) => [card({ id })];
+			// Fill the cache to its cap. If the multiplier weren't honored on the raised-cap run, deck 1
+			// would already have been evicted by the time this loop finishes.
+			const first = await render(deck(0));
+			for (let id = 1; id < limit; id++) {
+				await render(deck(id));
+			}
 
-		// Fill the cache to its cap: ids 0 .. 9.
-		const first = await render(deck(0));
-		for (let id = 1; id < DECK_CACHE_LIMIT; id++) {
-			await render(deck(id));
+			// Touch deck 0 so deck 1 becomes the eviction candidate; a hit is the same instance.
+			expect(await render(deck(0))).toBe(first);
+
+			// One over the cap evicts exactly one deck: the untouched deck 1.
+			await render(deck(999));
+
+			const second = await render(deck(1));
+			expect(second).not.toBe(await render(deck(0))); // sanity: distinct decks, distinct pngs
+			expect(await render(deck(1))).toBe(second); // deck 1 re-rendered, now cached again
+			expect(await render(deck(0))).toBe(first); // deck 0 survived — recency was refreshed
 		}
-
-		// Touch deck 0 so deck 1 becomes the eviction candidate; a hit is the same instance.
-		expect(await render(deck(0))).toBe(first);
-
-		// One over the cap evicts exactly one deck: the untouched deck 1.
-		await render(deck(999));
-
-		const second = await render(deck(1));
-		expect(second).not.toBe(await render(deck(0))); // sanity: distinct decks, distinct pngs
-		expect(await render(deck(1))).toBe(second); // deck 1 re-rendered, now cached again
-		expect(await render(deck(0))).toBe(first); // deck 0 survived — recency was refreshed
-	});
-
-	test("configureDeckCache raises the cap from its argument, not a fixed default", async () => {
-		vi.resetModules();
-		const { configureDeckCache, renderDeckGrid: render } = await import("@/deck-image.ts");
-		const targetCount = 2;
-		const raisedLimit = 3 * targetCount + 10; // 16 — above the bare default of 10.
-		configureDeckCache(targetCount);
-
-		const deck = (id: number) => [card({ id })];
-
-		// Fill the cache to the raised cap: ids 0 .. 15. If the setter's multiplier weren't honored
-		// (e.g. it silently clamped back to the bare default of 10), deck 1 would already be evicted
-		// by the time this loop finishes.
-		const first = await render(deck(0));
-		for (let id = 1; id < raisedLimit; id++) {
-			await render(deck(id));
-		}
-
-		// Touch deck 0 so deck 1 becomes the eviction candidate; a hit is the same instance.
-		expect(await render(deck(0))).toBe(first);
-
-		// One over the raised cap evicts exactly one deck: the untouched deck 1.
-		await render(deck(999));
-
-		const second = await render(deck(1));
-		expect(second).not.toBe(await render(deck(0))); // sanity: distinct decks, distinct pngs
-		expect(await render(deck(1))).toBe(second); // deck 1 re-rendered, now cached again
-		expect(await render(deck(0))).toBe(first); // deck 0 survived — recency was refreshed
-	});
+	);
 
 	// An eviction-identity test (asserting a mid-render eviction doesn't delete a healthy newer
 	// promise under the same key) is deliberately not included here: it needs a render to still be
@@ -524,17 +502,11 @@ describe("renderDeckGrid LRU", () => {
 });
 
 /**
- * Byte-budget tests need their own module instance too, plus an entry-count guard well above what
- * these tests fill (`configureDeckCache(20)` sets it to 3 * 20 + 10 = 70), so entry-count eviction
- * never fires here — that guard is already covered by "renderDeckGrid LRU" above. These tests
- * isolate the byte budget (`DECK_CACHE_BYTES`) as the one doing the evicting.
+ * Byte-budget tests pass a target count of 20, putting the entry-count guard at 3 * 20 + 10 = 70 —
+ * well above what they fill, so entry-count eviction never fires here (it is already covered by
+ * "renderDeckGrid LRU" above) and `DECK_CACHE_BYTES` is isolated as the one doing the evicting.
  */
-async function freshRenderDeckGridWithHeadroom() {
-	vi.resetModules();
-	const { configureDeckCache, renderDeckGrid: render } = await import("@/deck-image.ts");
-	configureDeckCache(20);
-	return render;
-}
+const HEADROOM_TARGETS = 20;
 
 describe("renderDeckGrid byte budget", () => {
 	// A 24-card duel of NOISY_FIXTURE tiles composes to a few hundred KB, so every deck in a given run
@@ -544,7 +516,7 @@ describe("renderDeckGrid byte budget", () => {
 	const duel = (id: number) => Array.from({ length: 24 }, (_, i) => card({ id: id * 100 + i }));
 
 	test("evicts once the byte budget is exceeded, and the evicted deck re-renders on request", async () => {
-		const render = await freshRenderDeckGridWithHeadroom();
+		const render = await freshRenderDeckGrid(HEADROOM_TARGETS);
 
 		readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
 
@@ -574,7 +546,7 @@ describe("renderDeckGrid byte budget", () => {
 	});
 
 	test("serves a deck still within budget from cache", async () => {
-		const render = await freshRenderDeckGridWithHeadroom();
+		const render = await freshRenderDeckGrid(HEADROOM_TARGETS);
 
 		readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
 

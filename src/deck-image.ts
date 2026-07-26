@@ -147,38 +147,40 @@ type Tile = {
 };
 
 /**
+ * One cache slot: the in-flight or finished render, plus the byte size eviction charges for it.
+ * Bundling the two means every path that removes a slot removes its accounting with it — a separate
+ * size map would have to be kept in step by hand at each mutation site. `bytes` stays 0 until the
+ * render resolves, since a pending render has no size yet.
+ */
+type DeckCacheEntry = { png: Promise<Uint8Array<ArrayBuffer>>; bytes: number };
+
+/**
  * Finished grids keyed by the deck's ordered mirror filenames, so a repeated deck skips the render.
  * The only cache here — per-tile reads are covered by the OS page cache. A small LRU: hits
  * re-insert at the back, inserts evict from the front. The cached bytes are shared across posts —
  * safe because callers only wrap them in a `File`, never mutate them.
  */
-const deckCache = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
-/** Running total of resolved grid bytes in `deckCache`; promises count as 0 until they resolve. */
+const deckCache = new Map<string, DeckCacheEntry>();
+/** Running total of `deckCache`'s resolved bytes; an entry contributes 0 until its render lands. */
 let deckCacheBytes = 0;
-/** Resolved size per cache key, so eviction can subtract exactly what it removes. */
-const deckCacheSizes = new Map<string, number>();
 
 /**
  * Evicts from the front of `deckCache` (oldest / least-recently-used) until both the byte budget
- * and the entry-count guard are satisfied. Always deletes from both maps and decrements the running
- * total together, so `deckCacheBytes` stays exactly the sum of `deckCacheSizes`.
+ * and the entry-count guard are satisfied. Size travels inside the entry, so removing one can't
+ * leave its bytes behind in the running total.
  */
 function evictDeckCache(): void {
 	while (deckCacheBytes > DECK_CACHE_BYTES || deckCache.size > deckCacheLimit) {
-		const oldest = deckCache.keys().next().value;
+		const oldest = deckCache.entries().next().value;
 
 		if (oldest === undefined) {
 			break;
 		}
 
-		deckCache.delete(oldest);
+		const [key, entry] = oldest;
 
-		const size = deckCacheSizes.get(oldest);
-
-		if (size !== undefined) {
-			deckCacheSizes.delete(oldest);
-			deckCacheBytes -= size;
-		}
+		deckCache.delete(key);
+		deckCacheBytes -= entry.bytes;
 	}
 }
 
@@ -325,17 +327,17 @@ function solidRule(
 }
 
 /**
- * Decodes an encoded icon and trims its transparent margin on the top and sides but keeps its
- * native bottom edge: every icon shares that baseline, so bottom-aligning on it (see
- * `composeDeckGrid`) lines the card frames up. Kept at native resolution, since upscaling would
- * blur.
+ * Trims a decoded bitmap's transparent margin on the top and sides but keeps its native bottom
+ * edge: every icon shares that baseline, so bottom-aligning on it (see `composeDeckGrid`) lines the
+ * card frames up. Kept at native resolution, since upscaling would blur.
  *
- * Decodes once to raw RGBA, scans the art bounds, then slices the region straight out of that
- * bitmap — the trimmed `bottomPadding` is the transparent band the compose layer lets the row below
- * overlap into.
+ * Scans the art bounds, then slices the region straight out of the bitmap — the trimmed
+ * `bottomPadding` is the transparent band the compose layer lets the row below overlap into.
+ *
+ * Takes an already-decoded `RawImage` rather than encoded bytes so a caller that already holds one
+ * (`fetchTile`, straight off its resize) doesn't have to encode just to have this decode again.
  */
-async function trimToArt(bytes: Uint8Array): Promise<Tile> {
-	const raw = await decodeToRaw(bytes);
+function trimRaw(raw: RawImage): Tile {
 	const { width, height } = raw;
 	const { minX, minY, maxX, maxY } = scanArtBounds(raw);
 
@@ -357,6 +359,11 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 	};
 }
 
+/** Decodes an encoded icon, then trims it — see `trimRaw`. The local-art path's entry point. */
+async function trimToArt(bytes: Uint8Array): Promise<Tile> {
+	return trimRaw(await decodeToRaw(bytes));
+}
+
 /**
  * Fetches a fallback card icon and resizes it to fit inside the cell before decoding. `CELL_WIDTH`/
  * `CELL_HEIGHT` are the upper bound of every _local_ icon's trimmed size (`deno task measure`); the
@@ -370,13 +377,18 @@ async function fetchTile(url: string): Promise<Tile> {
 	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
 
 	if (!response.ok) {
-		await response.text();
+		// Drain so the connection is released rather than pinned by an unread body.
+		await response.body?.cancel();
 		throw new Error(`Card icon ${String(response.status)} for ${url}`);
 	}
 
 	const fetched = new Uint8Array(await response.arrayBuffer());
 	const sharp = await loadSharp();
-	const { width, height } = await sharp(fetched).metadata();
+
+	// One instance for both the header read and the pipeline below — a second `sharp(fetched)` would
+	// parse the same buffer again.
+	const image = sharp(fetched);
+	const { width, height } = await image.metadata();
 
 	if (width > CELL_WIDTH || height > CELL_HEIGHT) {
 		log.warn(
@@ -384,12 +396,15 @@ async function fetchTile(url: string): Promise<Tile> {
 		);
 	}
 
-	const { data } = await sharp(fetched)
+	// Out as raw RGBA, not PNG: `trimRaw` wants a decoded bitmap, so encoding here would only buy a
+	// deflate pass plus the inflate to undo it. Same rule `cropRaw` follows — stay in raw memory.
+	const { data, info } = await image
 		.resize({ width: CELL_WIDTH, height: CELL_HEIGHT, fit: "inside", withoutEnlargement: true })
-		.png()
+		.ensureAlpha()
+		.raw()
 		.toUint8Array();
 
-	return trimToArt(data);
+	return trimRaw({ data, width: info.width, height: info.height });
 }
 
 /**
@@ -542,35 +557,32 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 
 	if (cached !== undefined) {
 		// Maps iterate in insertion order, so re-inserting moves this deck out of eviction's way.
-		// deckCacheSizes is left alone here — it is only ever consulted by key, never by order, so
-		// it does not need to track deckCache's insertion order.
 		deckCache.delete(key);
 		deckCache.set(key, cached);
-		return cached;
+		return cached.png;
 	}
 
 	// Cached before the first await, so concurrent renders of the same deck dedupe on this promise.
-	const pending = composeDeckGrid(cards);
-	deckCache.set(key, pending);
+	const entry: DeckCacheEntry = { png: composeDeckGrid(cards), bytes: 0 };
+	deckCache.set(key, entry);
 
 	try {
-		const png = await pending;
+		const png = await entry.png;
 
-		// Account on resolution — a pending promise has no size yet. Only if this entry is still the
+		// Account on resolution — a pending render has no size yet. Only if this entry is still the
 		// cached one; an eviction during the render means it is no longer ours to account for.
-		if (deckCache.get(key) === pending) {
-			deckCacheSizes.set(key, png.length);
+		if (deckCache.get(key) === entry) {
+			entry.bytes = png.length;
 			deckCacheBytes += png.length;
 			evictDeckCache();
 		}
 
 		return png;
 	} catch (error) {
-		// Keep plan 012's identity check — an eviction during the render may have replaced this
-		// entry, and deleting blindly would drop a healthy newer promise. Both maps, together.
-		if (deckCache.get(key) === pending) {
+		// Identity-checked: an eviction during the render may have replaced this entry, and deleting
+		// blindly would drop a healthy newer one.
+		if (deckCache.get(key) === entry) {
 			deckCache.delete(key);
-			deckCacheSizes.delete(key);
 		}
 
 		throw error;
