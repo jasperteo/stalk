@@ -1,5 +1,4 @@
 import { renderDeckGrid } from "@/deck-image.ts";
-import { sendRequest } from "@/http.ts";
 import { hl, log } from "@/log.ts";
 import type { Battle, Card, Player } from "@/schema.ts";
 
@@ -316,6 +315,14 @@ async function buildForm(battle: Battle, me: Player) {
  */
 const PAYLOAD_REJECTED = new Set([400, 413]);
 
+/** POSTs one prepared request to the webhook, returning the response for the caller to judge. */
+async function postWebhook(webhookUrl: string, request: RequestInit) {
+	return await fetch(webhookUrl, {
+		...request,
+		signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+	});
+}
+
 /**
  * Posts a single battle to the webhook. `battle.team[0]` is always the tracked player (2v2 is
  * filtered out upstream). Multipart when the deck images render — fetch derives the boundary from
@@ -346,7 +353,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		log.error("Deck image render failed, posting text-only fallback:", error);
 	}
 
-	let response = await sendRequest(webhookUrl, request, WEBHOOK_TIMEOUT_MS);
+	let response = await postWebhook(webhookUrl, request);
 
 	// Only retry when Discord rejected the image payload itself — see PAYLOAD_REJECTED.
 	if (!response.ok && isImage && PAYLOAD_REJECTED.has(response.status)) {
@@ -356,7 +363,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 			`Discord rejected the deck image (${hl.strong(String(response.status))}), retrying text-only: ${rejected.slice(0, 200)}`
 		);
 
-		response = await sendRequest(webhookUrl, fallback, WEBHOOK_TIMEOUT_MS);
+		response = await postWebhook(webhookUrl, fallback);
 	}
 
 	if (!response.ok) {

@@ -4,7 +4,6 @@ import { format as formatBytes } from "@std/fmt/bytes";
 import { format as formatDuration } from "@std/fmt/duration";
 import type { SharpConstructor } from "sharp";
 
-import { sendRequest } from "@/http.ts";
 import { hl, log } from "@/log.ts";
 import type { Card } from "@/schema.ts";
 
@@ -368,7 +367,7 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
  * fallback (which does fit) is unaffected.
  */
 async function fetchTile(url: string): Promise<Tile> {
-	const response = await sendRequest(url, {}, ICON_TIMEOUT_MS);
+	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
 
 	if (!response.ok) {
 		await response.text();
