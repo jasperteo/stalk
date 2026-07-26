@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { CELL_HEIGHT, CELL_WIDTH, decodeToRaw, renderDeckGrid } from "@/deck-image.ts";
+import { CELL_HEIGHT, decodeToRaw, MAX_GRID_WIDTH, renderDeckGrid } from "@/deck-image.ts";
 import { TOKEN_VAR } from "@/env.ts";
 import type { Card } from "@/schema.ts";
 
@@ -87,6 +87,10 @@ async function dimensions(png: Uint8Array) {
 	return { width, height };
 }
 
+// 4 * CELL_WIDTH + 3 * COLUMN_GAP; COLUMN_GAP is module-private, so the derived total is inlined.
+const NATIVE_WIDTH = 1080;
+const scaled = (px: number) => Math.round((px * MAX_GRID_WIDTH) / NATIVE_WIDTH);
+
 describe("renderDeckGrid", () => {
 	test("lays out a 4-column grid at the fixed cell resolution", async () => {
 		const eightCards = Array.from({ length: 8 }, () => card());
@@ -100,9 +104,11 @@ describe("renderDeckGrid", () => {
 
 		// Cell size is fixed (CELL_WIDTH/CELL_HEIGHT), not derived from the tiles in the deck, so even
 		// this small fixture (well under either dimension) composites into a full-size row, and a lone
-		// card still reserves the full 4-column width with trailing cells empty.
-		expect(singleRow.height).toBe(CELL_HEIGHT);
-		expect(singleRow.width).toBeGreaterThanOrEqual(4 * CELL_WIDTH);
+		// card still reserves the full 4-column width with trailing cells empty. The composed grid is
+		// downscaled to MAX_GRID_WIDTH before encode, so the shipped dimensions are scaled from the
+		// native CELL_HEIGHT/4-column-width, not equal to them.
+		expect(singleRow.height).toBe(scaled(CELL_HEIGHT));
+		expect(singleRow.width).toBe(MAX_GRID_WIDTH);
 		// The full deck spans the same 4 columns and adds a second row. Asserted relative to the
 		// single-row render rather than against COLUMN_GAP/ROW_GAP, which are tuning knobs.
 		expect(grid.width).toBe(singleRow.width);
@@ -306,11 +312,15 @@ describe("renderDeckGrid duel layout", () => {
 			leftEdgeOpaquePixels(three),
 		]);
 
-		// No divider on a normal 8-card deck; the leftmost column stays fully transparent.
+		// No divider on a normal 8-card deck; the leftmost column stays fully transparent — a fully
+		// transparent column stays fully transparent under any resample.
 		expect(edgeOne).toBe(0);
-		// A 16-card duel has exactly one divider; a 24-card duel has two, so twice the painted pixels.
+		// A 16-card duel has exactly one divider; a 24-card duel has two, so roughly twice the painted
+		// pixels. Not an exact 2x: the grid is Lanczos-downscaled before encode, so the 4px dividers land
+		// on ~2.7px with partial-alpha ringing at the resampled edges, rather than an exact integer ratio.
 		expect(edgeTwo).toBeGreaterThan(0);
-		expect(edgeThree).toBe(2 * edgeTwo);
+		expect(edgeThree).toBeGreaterThan(edgeTwo * 1.8);
+		expect(edgeThree).toBeLessThan(edgeTwo * 2.2);
 	});
 });
 
