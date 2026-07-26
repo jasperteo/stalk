@@ -47,9 +47,11 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
  * and the cursor jumps straight to the newest. Deliberate — it keeps a tick to one fetch, one full
  * validation, and one post per player.
  *
- * @returns The newest eligible (1v1) battle, fully validated, or `undefined` if none qualify.
+ * @returns The newest eligible (1v1) battle, fully validated, plus whether an entry was selected
+ *   but failed full validation — API schema drift, which the caller surfaces as its own outcome
+ *   rather than letting it read as "no new battles".
  */
-function latestBattle(entries: unknown[]): Battle | undefined {
+function latestBattle(entries: unknown[]): { battle: Battle | undefined; drifted: boolean } {
 	let newest: unknown;
 	let newestTime = "";
 
@@ -65,15 +67,17 @@ function latestBattle(entries: unknown[]): Battle | undefined {
 	const result = v.safeParse(BattleSchema, newest);
 
 	if (result.success) {
-		return result.output;
+		return { battle: result.output, drifted: false };
 	}
 
 	// A defined `newest` failing here means the API's shape drifted, not just "no new battles".
-	if (newest !== undefined) {
+	const drifted = newest !== undefined;
+
+	if (drifted) {
 		log.warn("Newest eligible battle failed schema validation:", v.flatten(result.issues));
 	}
 
-	return undefined;
+	return { battle: undefined, drifted };
 }
 
 export { fetchBattlelog, latestBattle };
