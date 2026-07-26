@@ -1,0 +1,51 @@
+/** Origin only — never the path, since e.g. a Discord webhook URL's path is itself the credential. */
+function safeOrigin(url: string): string {
+	try {
+		return new URL(url).origin;
+	} catch {
+		return "unknown origin";
+	}
+}
+
+/**
+ * Sends one request with an abort timeout, returning the response for the caller to judge.
+ *
+ * Transport rejections are re-thrown without their `cause`: Deno embeds the full request URL there,
+ * and for a Discord webhook the URL's path *is* the credential. `label` and the origin keep the
+ * message diagnostic without carrying secrets.
+ */
+async function sendRequest(
+	url: string,
+	label: string,
+	init: RequestInit,
+	timeoutMs: number
+): Promise<Response> {
+	try {
+		return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+	} catch (error) {
+		const reason = error instanceof Error ? error.name : "unknown error";
+		throw new Error(`${label} request failed (${reason}) for ${safeOrigin(url)}`);
+	}
+}
+
+/**
+ * `sendRequest`, plus the shared non-ok policy: throw an error carrying the status and a short body
+ * slice. The body is always consumed, so a failed response never pins its connection.
+ */
+async function fetchOk(
+	url: string,
+	label: string,
+	init: RequestInit,
+	timeoutMs: number
+): Promise<Response> {
+	const response = await sendRequest(url, label, init, timeoutMs);
+
+	if (!response.ok) {
+		const body = await response.text();
+		throw new Error(`${label} ${String(response.status)}: ${body.slice(0, 200)}`);
+	}
+
+	return response;
+}
+
+export { fetchOk, sendRequest };
