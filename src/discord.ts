@@ -317,9 +317,9 @@ async function postWebhook(webhookUrl: string, request: RequestInit) {
 /**
  * Posts a single battle to the webhook. `battle.team[0]` is always the tracked player (2v2 is
  * filtered out upstream). Multipart when the deck images render — fetch derives the boundary from
- * the FormData body, so no manual Content-Type — otherwise the JSON text fallback. A payload Discord
- * rejects outright (see PAYLOAD_REJECTED) retries once with the text-only fallback instead of
- * failing the whole tick and re-posting the identical oversized request every minute.
+ * the FormData body, so no manual Content-Type — otherwise the JSON text fallback. A payload
+ * Discord rejects outright (see PAYLOAD_REJECTED) retries once with the text-only fallback instead
+ * of failing the whole tick and re-posting the identical oversized request every minute.
  */
 async function notifyBattle(webhookUrl: string, battle: Battle) {
 	const me = battle.team[0];

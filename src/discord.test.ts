@@ -158,9 +158,7 @@ describe("notifyBattle", () => {
 	});
 
 	test("does not retry a 502, since Discord may have already accepted the message", async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValueOnce(new Response("x".repeat(300), { status: 502 }));
+		const fetchMock = vi.fn().mockResolvedValueOnce(new Response("x".repeat(300), { status: 502 }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 502");

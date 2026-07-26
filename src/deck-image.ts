@@ -71,11 +71,11 @@ const GRID_COMPRESSION = 6;
 /**
  * Max width of the shipped grid, in px. Compose still happens at native resolution (1080 px for 4
  * columns) and only the finished grid is scaled down, so this is a single high-quality Lanczos pass
- * rather than per-tile blur — the "tiles composite at native resolution" rule is untouched.
- * Discord renders embed images a few hundred px wide, so 720 still leaves retina headroom while
- * cutting encode CPU ~37% and bytes ~47% against native. Net CPU saving, not a cost: PNG deflate
- * dominates this pipeline and scales with pixel count, so the encode work removed exceeds the
- * scaling pass added.
+ * rather than per-tile blur — the "tiles composite at native resolution" rule is untouched. Discord
+ * renders embed images a few hundred px wide, so 720 still leaves retina headroom while cutting
+ * encode CPU ~37% and bytes ~47% against native. Net CPU saving, not a cost: PNG deflate dominates
+ * this pipeline and scales with pixel count, so the encode work removed exceeds the scaling pass
+ * added.
  */
 const MAX_GRID_WIDTH = 720;
 /**
