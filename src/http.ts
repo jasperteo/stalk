@@ -27,29 +27,9 @@ async function sendRequest(
 
 		// Deliberately no `cause`: Deno embeds the full request URL in a fetch rejection's cause,
 		// which for a Discord webhook is the credential. Do not "restore" it for diagnostics.
-		// eslint-disable-next-line preserve-caught-error
+		// oxlint-disable-next-line preserve-caught-error
 		throw new Error(`${label} request failed (${reason}) for ${safeOrigin(url)}`);
 	}
 }
 
-/**
- * `sendRequest`, plus the shared non-ok policy: throw an error carrying the status and a short body
- * slice. The body is always consumed, so a failed response never pins its connection.
- */
-async function fetchOk(
-	url: string,
-	label: string,
-	init: RequestInit,
-	timeoutMs: number
-): Promise<Response> {
-	const response = await sendRequest(url, label, init, timeoutMs);
-
-	if (!response.ok) {
-		const body = await response.text();
-		throw new Error(`${label} ${String(response.status)}: ${body.slice(0, 200)}`);
-	}
-
-	return response;
-}
-
-export { fetchOk, sendRequest };
+export { sendRequest };
