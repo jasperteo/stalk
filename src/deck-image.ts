@@ -227,10 +227,28 @@ type Region = {
  * are already in JS memory, so a round-trip into libvips and back would just add a native call plus
  * two buffer copies per tile. Returns a `Buffer` so it feeds `OverlayOptions.input` without a
  * cast.
+ *
+ * Zero-fills (`Buffer.alloc`, not `allocUnsafe`): `subarray` clamps silently on a short row, so an
+ * out-of-bounds region would otherwise leave uninitialized heap bytes in the tail of a row instead
+ * of failing loudly. The guard below is expected to make that path unreachable, but the zero-fill is
+ * cheap insurance against a future caller that doesn't have `scanArtBounds`'s invariants.
  */
 function cropRaw({ data, width }: RawImage, region: Region): Buffer {
+	if (
+		region.left < 0 ||
+		region.top < 0 ||
+		region.width < 0 ||
+		region.height < 0 ||
+		region.left + region.width > width ||
+		(region.top + region.height) * width * BYTES_PER_PIXEL > data.length
+	) {
+		throw new Error(
+			`Crop region ${String(region.left)},${String(region.top)} ${String(region.width)}x${String(region.height)} exceeds the ${String(width)}px-wide source bitmap`
+		);
+	}
+
 	const rowBytes = region.width * BYTES_PER_PIXEL;
-	const cropped = Buffer.allocUnsafe(region.height * rowBytes);
+	const cropped = Buffer.alloc(region.height * rowBytes);
 
 	for (let y = 0; y < region.height; y++) {
 		const start = ((region.top + y) * width + region.left) * BYTES_PER_PIXEL;
