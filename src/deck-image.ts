@@ -313,6 +313,15 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 	};
 }
 
+/**
+ * Fetches a fallback card icon and resizes it to fit inside the cell before decoding. `CELL_WIDTH`/
+ * `CELL_HEIGHT` are the upper bound of every *local* icon's trimmed size (`deno task measure`); the
+ * CDN path has no such guarantee (a brand-new card's art may simply be bigger), and the overlay math
+ * in `composeDeckGrid` assumes every tile fits its cell — an oversized tile pushes `left`/`top`
+ * negative there, which sharp clips silently instead of erroring. `fit: "inside"` preserves aspect
+ * ratio; `withoutEnlargement` leaves already-small art untouched, so a normal fallback (which does
+ * fit) is unaffected.
+ */
 async function fetchTile(url: string): Promise<Tile> {
 	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
 
@@ -320,7 +329,22 @@ async function fetchTile(url: string): Promise<Tile> {
 		throw new Error(`Card icon ${String(response.status)} for ${url}`);
 	}
 
-	return trimToArt(new Uint8Array(await response.arrayBuffer()));
+	const fetched = new Uint8Array(await response.arrayBuffer());
+	const sharp = await loadSharp();
+	const { width, height } = await sharp(fetched).metadata();
+
+	if (width > CELL_WIDTH || height > CELL_HEIGHT) {
+		log.warn(
+			`CDN icon ${hl.strong(`${String(width)}x${String(height)}`)} exceeds the ${hl.strong(`${String(CELL_WIDTH)}x${String(CELL_HEIGHT)}`)} cell for ${url}; shrinking to fit`
+		);
+	}
+
+	const { data } = await sharp(fetched)
+		.resize({ width: CELL_WIDTH, height: CELL_HEIGHT, fit: "inside", withoutEnlargement: true })
+		.png()
+		.toUint8Array();
+
+	return trimToArt(data);
 }
 
 /**
