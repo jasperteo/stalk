@@ -1,18 +1,11 @@
-/** Origin only — never the path, since e.g. a Discord webhook URL's path is itself the credential. */
-function safeOrigin(url: string): string {
-	try {
-		return new URL(url).origin;
-	} catch {
-		return "unknown origin";
-	}
-}
-
 /**
  * Sends one request with an abort timeout, returning the response for the caller to judge.
  *
- * Transport rejections are re-thrown without their `cause`: Deno embeds the full request URL there,
- * and for a Discord webhook the URL's path _is_ the credential. `label` and the origin keep the
- * message diagnostic without carrying secrets.
+ * Transport rejections are re-thrown with the original attached as `cause`, so the log keeps the
+ * full diagnostic — Deno puts the underlying failure and the request URL there. That URL includes a
+ * Discord webhook's path, which is a bearer credential, so anything with read access to the logs
+ * can post to the channel. Deliberate call by the maintainer: on a single-operator deploy the
+ * diagnostic is worth more than the exposure. Revisit if log access ever widens.
  */
 async function sendRequest(
 	url: string,
@@ -28,10 +21,7 @@ async function sendRequest(
 		// `Error.prototype` (where `instanceof` succeeds).
 		const reason = Error.isError(error) ? error.name : "unknown error";
 
-		// Deliberately no `cause`: Deno embeds the full request URL in a fetch rejection's cause,
-		// which for a Discord webhook is the credential. Do not "restore" it for diagnostics.
-		// oxlint-disable-next-line preserve-caught-error
-		throw new Error(`${label} request failed (${reason}) for ${safeOrigin(url)}`);
+		throw new Error(`${label} request failed (${reason}) for ${url}`, { cause: error });
 	}
 }
 
