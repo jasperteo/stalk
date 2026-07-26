@@ -3,8 +3,24 @@ import { describe, expect, test, vi } from "vitest";
 import { sendRequest } from "@/http.ts";
 
 describe("sendRequest", () => {
-	test("labels a rejecting fetch and preserves the original error as cause", async () => {
-		const transportError = new TypeError("network error");
+	test("applies an abort timeout while passing the caller's init through", async () => {
+		const fetchMock = vi.fn((_url: string | URL, _init?: RequestInit) =>
+			Promise.resolve(new Response("ok"))
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		await sendRequest("https://example.com/x", { method: "POST", headers: { A: "1" } }, 1000);
+
+		const init = fetchMock.mock.calls[0]?.[1];
+		// The timeout is the whole reason this helper exists — a request without one stalls the cron
+		// tick, so this assertion is the module's actual contract.
+		expect(init?.signal).toBeInstanceOf(AbortSignal);
+		expect(init?.method).toBe("POST");
+		expect(init?.headers).toEqual({ A: "1" });
+	});
+
+	test("lets a transport rejection through untouched, cause chain intact", async () => {
+		const transportError = new TypeError("fetch failed", { cause: new Error("dns error") });
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(() => Promise.reject(transportError))
@@ -12,21 +28,13 @@ describe("sendRequest", () => {
 
 		let caught: unknown;
 
-		await sendRequest("https://example.com/webhooks/123/token", "Test API", {}, 1000).catch(
-			(error: unknown) => {
-				caught = error;
-			}
-		);
+		await sendRequest("https://example.com/x", {}, 1000).catch((error: unknown) => {
+			caught = error;
+		});
 
-		expect(caught).toBeInstanceOf(Error);
-		const message = (caught as Error).message;
-		// The label and the failure's constructor name are what make a log line diagnosable without
-		// opening the cause.
-		expect(message).toContain("Test API");
-		expect(message).toContain("TypeError");
-		expect(message).toContain("https://example.com/webhooks/123/token");
-		// The original is kept intact, by deliberate maintainer decision — see sendRequest's JSDoc.
-		// The request URL this carries includes the webhook path, which is a bearer credential.
-		expect((caught as Error).cause).toBe(transportError);
+		// Not re-wrapped: callers and `poll`'s log.error see Deno's original error, which carries the
+		// transport failure and request URL in its cause. See sendRequest's JSDoc.
+		expect(caught).toBe(transportError);
+		expect((caught as Error).cause).toBeInstanceOf(Error);
 	});
 });

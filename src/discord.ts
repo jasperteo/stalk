@@ -346,7 +346,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		log.error("Deck image render failed, posting text-only fallback:", error);
 	}
 
-	let response = await sendRequest(webhookUrl, "Discord webhook", request, WEBHOOK_TIMEOUT_MS);
+	let response = await sendRequest(webhookUrl, request, WEBHOOK_TIMEOUT_MS);
 
 	// Only retry when Discord rejected the image payload itself — see PAYLOAD_REJECTED.
 	if (!response.ok && isImage && PAYLOAD_REJECTED.has(response.status)) {
@@ -356,7 +356,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 			`Discord rejected the deck image (${hl.strong(String(response.status))}), retrying text-only: ${rejected.slice(0, 200)}`
 		);
 
-		response = await sendRequest(webhookUrl, "Discord webhook", fallback, WEBHOOK_TIMEOUT_MS);
+		response = await sendRequest(webhookUrl, fallback, WEBHOOK_TIMEOUT_MS);
 	}
 
 	if (!response.ok) {

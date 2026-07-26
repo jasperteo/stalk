@@ -23,7 +23,6 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
 
 	const response = await sendRequest(
 		url,
-		"Clash Royale API",
 		{
 			headers: {
 				Authorization: `Bearer ${token}`,
