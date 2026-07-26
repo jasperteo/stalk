@@ -79,8 +79,17 @@ function formatCardName(card: Card) {
 	return `${prefix}${card.name}`;
 }
 
+/**
+ * An empty array must fall back the same way as an absent one: `[].join(" · ")` returns `""`, not a
+ * nullish value, so `?? "—"` never fires on it — and this is already the text-only fallback path,
+ * so Discord's 400 on a zero-length embed field value has nothing further to fall back to.
+ */
 function formatDeck(cards: Card[] | undefined) {
-	return cards?.map((card) => formatCardName(card)).join(" · ") ?? "—";
+	if (cards === undefined || cards.length === 0) {
+		return "—";
+	}
+
+	return cards.map((card) => formatCardName(card)).join(" · ");
 }
 
 /**
