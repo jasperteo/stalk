@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { notifyBattle } from "@/discord.ts";
 import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
-import { rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
+import { driftedBattle, rawBattle, WEBHOOK } from "@/testing/fixtures.ts";
 import { spyMemoryKv } from "@/testing/kv.ts";
 
 vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn() }));
@@ -232,17 +232,12 @@ describe("main with multiple targets", () => {
 		const { tick } = await importMain();
 		const { log } = await import("@/log.ts");
 
-		const drifted = rawBattle({
-			battleTime: "20240115T143022.000Z",
-			team: [rawPlayer({ cards: [rawCard({ iconUrls: { medium: "not-a-url" } })] })],
-		});
-
 		vi.stubGlobal(
 			"fetch",
 			battlelogFetchByTag({
 				[TAG]: [rawBattle({ battleTime: "20240101T000000.000Z" })],
 				[TAG_B]: [rawBattle({ battleTime: "20240102T000000.000Z" })],
-				[TAG_C]: [drifted],
+				[TAG_C]: [driftedBattle()],
 			})
 		);
 		await tick();
