@@ -23,7 +23,10 @@ async function sendRequest(
 	try {
 		return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 	} catch (error) {
-		const reason = error instanceof Error ? error.name : "unknown error";
+		// `Error.isError` rather than `instanceof`: it brands-checks, so it stays correct for an error
+		// crossing a realm boundary (where `instanceof` fails) and rejects a plain object wearing
+		// `Error.prototype` (where `instanceof` succeeds).
+		const reason = Error.isError(error) ? error.name : "unknown error";
 
 		// Deliberately no `cause`: Deno embeds the full request URL in a fetch rejection's cause,
 		// which for a Discord webhook is the credential. Do not "restore" it for diagnostics.
