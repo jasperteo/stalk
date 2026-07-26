@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { notifyBattle } from "@/discord.ts";
 import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
-import { rawBattle, WEBHOOK } from "@/testing/fixtures.ts";
+import { rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
 import { spyMemoryKv } from "@/testing/kv.ts";
 
 vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn() }));
@@ -215,5 +215,39 @@ describe("main with multiple targets", () => {
 		expect(log.info).toHaveBeenCalledWith(expect.stringContaining("2 targets"));
 		expect(log.info).toHaveBeenCalledWith(expect.stringContaining("posted 1"));
 		expect(log.info).toHaveBeenCalledWith(expect.stringContaining("failed 1"));
+	});
+
+	test("a drifted battle shows up as its own tally outcome, not folded into skipped", async () => {
+		const TAG_C = "#DEF456";
+		const WEBHOOK_C = "https://discord.com/api/webhooks/3/ccc";
+		vi.stubEnv(
+			TARGETS_VAR,
+			JSON.stringify([
+				{ tag: TAG, webhook: WEBHOOK },
+				{ tag: TAG_B, webhook: WEBHOOK_B },
+				{ tag: TAG_C, webhook: WEBHOOK_C },
+			])
+		);
+
+		const { tick } = await importMain();
+		const { log } = await import("@/log.ts");
+
+		const drifted = rawBattle({
+			battleTime: "20240115T143022.000Z",
+			team: [rawPlayer({ cards: [rawCard({ iconUrls: { medium: "not-a-url" } })] })],
+		});
+
+		vi.stubGlobal(
+			"fetch",
+			battlelogFetchByTag({
+				[TAG]: [rawBattle({ battleTime: "20240101T000000.000Z" })],
+				[TAG_B]: [rawBattle({ battleTime: "20240102T000000.000Z" })],
+				[TAG_C]: [drifted],
+			})
+		);
+		await tick();
+
+		expect(log.info).toHaveBeenCalledWith(expect.stringContaining("3 targets"));
+		expect(log.info).toHaveBeenCalledWith(expect.stringContaining("drifted 1"));
 	});
 });

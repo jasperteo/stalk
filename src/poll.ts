@@ -24,7 +24,7 @@ const lastBattleKey = (tag: string) => [LAST_BATTLE_PREFIX, tag] as const;
 const CURSOR_TTL_MS = Temporal.Duration.from({ days: 30 }).total("milliseconds");
 
 /** Per-target results of a poll, tallied into the cron tick's summary log line, in display order. */
-const POLL_OUTCOMES = ["posted", "seeded", "skipped", "failed"] as const;
+const POLL_OUTCOMES = ["posted", "seeded", "skipped", "drifted", "failed"] as const;
 type PollOutcome = (typeof POLL_OUTCOMES)[number];
 
 async function poll(target: Target, token: string): Promise<PollOutcome> {
@@ -35,10 +35,12 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 
 		// The newest eligible battle is the only candidate: a tick posts at most one. Anything
 		// between the cursor and it is skipped by design, not retried later.
-		const latest = latestBattle(entries);
+		const { battle: latest, drifted } = latestBattle(entries);
 
 		if (latest === undefined) {
-			return "skipped";
+			// Drift must not read as a quiet tick: the cursor stays put and the battle retries once the
+			// schema catches up, but the tally has to show why nothing posted.
+			return drifted ? "drifted" : "skipped";
 		}
 
 		const key = lastBattleKey(tag);

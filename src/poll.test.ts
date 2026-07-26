@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { notifyBattle } from "@/discord.ts";
 import type { Target } from "@/schema.ts";
-import { rawBattle, WEBHOOK } from "@/testing/fixtures.ts";
+import { rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
 import { spyMemoryKv } from "@/testing/kv.ts";
 
 vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn() }));
@@ -134,6 +134,20 @@ describe("poll", () => {
 		vi.stubGlobal("fetch", battlelogFetch([]));
 
 		expect(await poll(TARGET, TOKEN)).toBe("skipped");
+
+		expect(notifyBattle).not.toHaveBeenCalled();
+		expect(await listCursors()).toEqual({});
+	});
+
+	test("reports drift without notifying or writing a cursor when the newest eligible entry fails schema validation", async () => {
+		const { poll, listCursors } = await importPoll();
+		const drifted = rawBattle({
+			battleTime: "20240115T143022.000Z",
+			team: [rawPlayer({ cards: [rawCard({ iconUrls: { medium: "not-a-url" } })] })],
+		});
+		vi.stubGlobal("fetch", battlelogFetch([drifted]));
+
+		expect(await poll(TARGET, TOKEN)).toBe("drifted");
 
 		expect(notifyBattle).not.toHaveBeenCalled();
 		expect(await listCursors()).toEqual({});

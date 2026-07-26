@@ -12,13 +12,19 @@ function battle(battleTime: string, teamSize = 1) {
 
 describe("latestBattle", () => {
 	test("returns undefined for an empty log", () => {
-		expect(latestBattle([])).toBeUndefined();
+		const result = latestBattle([]);
+
+		expect(result.battle).toBeUndefined();
+		expect(result.drifted).toBe(false);
 	});
 
 	test("returns undefined when every entry is ineligible or malformed", () => {
 		const entries = [battle("20240101T000000.000Z", 2), "garbage", {}, 42];
 
-		expect(latestBattle(entries)).toBeUndefined();
+		const result = latestBattle(entries);
+
+		expect(result.battle).toBeUndefined();
+		expect(result.drifted).toBe(false);
 		expect(log.warn).not.toHaveBeenCalled();
 	});
 
@@ -28,14 +34,14 @@ describe("latestBattle", () => {
 
 		const entries = [older, newer, "garbage"];
 
-		expect(latestBattle(entries)?.battleTime).toBe("2024-01-15T14:30:22.000Z");
+		expect(latestBattle(entries).battle?.battleTime).toBe("2024-01-15T14:30:22.000Z");
 	});
 
 	test("ignores a 2v2 entry even if it is chronologically newest", () => {
 		const eligible = battle("20240101T000000.000Z");
 		const twoVsTwo = battle("20240201T000000.000Z", 2);
 
-		expect(latestBattle([eligible, twoVsTwo])?.battleTime).toBe("2024-01-01T00:00:00.000Z");
+		expect(latestBattle([eligible, twoVsTwo]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
 	});
 
 	test("returns undefined when the newest eligible entry fails full schema validation", () => {
@@ -45,7 +51,10 @@ describe("latestBattle", () => {
 		});
 		const older = battle("20240101T000000.000Z");
 
-		expect(latestBattle([older, newest])).toBeUndefined();
+		const result = latestBattle([older, newest]);
+
+		expect(result.battle).toBeUndefined();
+		expect(result.drifted).toBe(true);
 		expect(log.warn).toHaveBeenCalledWith(
 			expect.stringContaining("failed schema validation"),
 			expect.anything()
