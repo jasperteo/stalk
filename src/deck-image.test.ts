@@ -515,35 +515,44 @@ describe("renderDeckGrid byte budget", () => {
 	// or DECK_CACHE_BYTES itself ever changes.
 	const duel = (id: number) => Array.from({ length: 24 }, (_, i) => card({ id: id * 100 + i }));
 
-	test("evicts once the byte budget is exceeded, and the evicted deck re-renders on request", async () => {
-		const render = await freshRenderDeckGrid(HEADROOM_TARGETS);
+	// Real (unmocked) sharp renders enough 24-tile decks to fill DECK_CACHE_BYTES — genuine CPU-bound
+	// work with no shortcut, so the default 5s test timeout is too tight on a slower/shared CI runner
+	// even though it comfortably passes on a fast local machine.
+	const EVICTION_TEST_TIMEOUT_MS = 15_000;
 
-		readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
+	test(
+		"evicts once the byte budget is exceeded, and the evicted deck re-renders on request",
+		async () => {
+			const render = await freshRenderDeckGrid(HEADROOM_TARGETS);
 
-		const first = await render(duel(0));
-		const perDeck = first.length;
-		// The most decks that fit at or under budget, deck 0 included.
-		const capacity = Math.floor(DECK_CACHE_BYTES / perDeck);
+			readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
 
-		for (let id = 1; id < capacity; id++) {
-			await render(duel(id));
-		}
+			const first = await render(duel(0));
+			const perDeck = first.length;
+			// The most decks that fit at or under budget, deck 0 included.
+			const capacity = Math.floor(DECK_CACHE_BYTES / perDeck);
 
-		const readsBeforeOverflow = readFileMock.mock.calls.length;
+			for (let id = 1; id < capacity; id++) {
+				await render(duel(id));
+			}
 
-		// One more deck pushes the running total past DECK_CACHE_BYTES; the oldest entry (deck 0, never
-		// re-touched since its insert) is evicted to bring it back under budget.
-		await render(duel(capacity));
+			const readsBeforeOverflow = readFileMock.mock.calls.length;
 
-		expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeOverflow);
+			// One more deck pushes the running total past DECK_CACHE_BYTES; the oldest entry (deck 0, never
+			// re-touched since its insert) is evicted to bring it back under budget.
+			await render(duel(capacity));
 
-		const readsBeforeRerender = readFileMock.mock.calls.length;
-		const refreshed = await render(duel(0));
+			expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeOverflow);
 
-		// Evicted for bytes, not recency: re-rendering deck 0 is a fresh render (new reads, new bytes).
-		expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeRerender);
-		expect(refreshed).not.toBe(first);
-	});
+			const readsBeforeRerender = readFileMock.mock.calls.length;
+			const refreshed = await render(duel(0));
+
+			// Evicted for bytes, not recency: re-rendering deck 0 is a fresh render (new reads, new bytes).
+			expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeRerender);
+			expect(refreshed).not.toBe(first);
+		},
+		EVICTION_TEST_TIMEOUT_MS
+	);
 
 	test("serves a deck still within budget from cache", async () => {
 		const render = await freshRenderDeckGrid(HEADROOM_TARGETS);
