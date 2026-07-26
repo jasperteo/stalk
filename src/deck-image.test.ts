@@ -91,7 +91,7 @@ async function insetFixture(
 		}
 	}
 
-	return rawToPng(raw, width, height);
+	return await rawToPng(raw, width, height);
 }
 
 /**
