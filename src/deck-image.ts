@@ -230,8 +230,8 @@ type Region = {
  *
  * Zero-fills (`Buffer.alloc`, not `allocUnsafe`): `subarray` clamps silently on a short row, so an
  * out-of-bounds region would otherwise leave uninitialized heap bytes in the tail of a row instead
- * of failing loudly. The guard below is expected to make that path unreachable, but the zero-fill is
- * cheap insurance against a future caller that doesn't have `scanArtBounds`'s invariants.
+ * of failing loudly. The guard below is expected to make that path unreachable, but the zero-fill
+ * is cheap insurance against a future caller that doesn't have `scanArtBounds`'s invariants.
  */
 function cropRaw({ data, width }: RawImage, region: Region): Buffer {
 	if (
@@ -315,12 +315,12 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 
 /**
  * Fetches a fallback card icon and resizes it to fit inside the cell before decoding. `CELL_WIDTH`/
- * `CELL_HEIGHT` are the upper bound of every *local* icon's trimmed size (`deno task measure`); the
- * CDN path has no such guarantee (a brand-new card's art may simply be bigger), and the overlay math
- * in `composeDeckGrid` assumes every tile fits its cell — an oversized tile pushes `left`/`top`
- * negative there, which sharp clips silently instead of erroring. `fit: "inside"` preserves aspect
- * ratio; `withoutEnlargement` leaves already-small art untouched, so a normal fallback (which does
- * fit) is unaffected.
+ * `CELL_HEIGHT` are the upper bound of every _local_ icon's trimmed size (`deno task measure`); the
+ * CDN path has no such guarantee (a brand-new card's art may simply be bigger), and the overlay
+ * math in `composeDeckGrid` assumes every tile fits its cell — an oversized tile pushes
+ * `left`/`top` negative there, which sharp clips silently instead of erroring. `fit: "inside"`
+ * preserves aspect ratio; `withoutEnlargement` leaves already-small art untouched, so a normal
+ * fallback (which does fit) is unaffected.
  */
 async function fetchTile(url: string): Promise<Tile> {
 	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
@@ -535,5 +535,6 @@ export {
 	MAX_GRID_WIDTH,
 	renderDeckGrid,
 	scanArtBounds,
+	trimToArt,
 };
 export type { RawImage };
