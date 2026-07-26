@@ -4,7 +4,6 @@ import { format as formatBytes } from "@std/fmt/bytes";
 import { format as formatDuration } from "@std/fmt/duration";
 import type { SharpConstructor } from "sharp";
 
-import { config } from "@/env.ts";
 import { hl, log } from "@/log.ts";
 import type { Card } from "@/schema.ts";
 
@@ -84,12 +83,20 @@ const MAX_GRID_WIDTH = 720;
  */
 const ICON_TIMEOUT_MS = 10_000;
 /**
- * How many finished grids the LRU keeps, sized from the live target count so growing TARGETS keeps
- * each tracked player's decks warm plus headroom for one-shot opponent decks. Secondary guard
- * against unbounded entry count for pathologically tiny grids — DECK_CACHE_BYTES is the primary
- * bound.
+ * Secondary entry-count guard on the deck cache, alongside the byte budget. Defaults to a value
+ * that is sane with no configuration at all (offline scripts, tests); `main.ts` raises it from the
+ * live target count at startup, so the renderer never reads app config itself.
  */
-const DECK_CACHE_LIMIT = 3 * (config?.targets.length ?? 0) + 10;
+let deckCacheLimit = 10;
+
+/**
+ * Raises the entry-count guard, called once from the composition root. Sized from the target count
+ * so growing TARGETS keeps each tracked player's decks warm plus headroom for opponent decks.
+ */
+function configureDeckCache(targetCount: number) {
+	deckCacheLimit = 3 * targetCount + 10;
+}
+
 /**
  * Memory ceiling for finished grids, in bytes. Entry size varies several-fold between a ladder deck
  * and a 24-card duel, and the old entry-count cap also grew with TARGETS — so a byte budget is the
@@ -157,7 +164,7 @@ const deckCacheSizes = new Map<string, number>();
  * total together, so `deckCacheBytes` stays exactly the sum of `deckCacheSizes`.
  */
 function evictDeckCache(): void {
-	while (deckCacheBytes > DECK_CACHE_BYTES || deckCache.size > DECK_CACHE_LIMIT) {
+	while (deckCacheBytes > DECK_CACHE_BYTES || deckCache.size > deckCacheLimit) {
 		const oldest = deckCache.keys().next().value;
 
 		if (oldest === undefined) {
@@ -572,6 +579,7 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 export {
 	CELL_HEIGHT,
 	CELL_WIDTH,
+	configureDeckCache,
 	DECK_CACHE_BYTES,
 	decodeToRaw,
 	IMAGES_DIR,
