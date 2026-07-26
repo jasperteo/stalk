@@ -85,9 +85,18 @@ const MAX_GRID_WIDTH = 720;
 const ICON_TIMEOUT_MS = 10_000;
 /**
  * How many finished grids the LRU keeps, sized from the live target count so growing TARGETS keeps
- * each tracked player's decks warm plus headroom for one-shot opponent decks.
+ * each tracked player's decks warm plus headroom for one-shot opponent decks. Secondary guard
+ * against unbounded entry count for pathologically tiny grids — DECK_CACHE_BYTES is the primary
+ * bound.
  */
 const DECK_CACHE_LIMIT = 3 * (config?.targets.length ?? 0) + 10;
+/**
+ * Memory ceiling for finished grids, in bytes. Entry size varies several-fold between a ladder deck
+ * and a 24-card duel, and the old entry-count cap also grew with TARGETS — so a byte budget is the
+ * only bound that actually caps isolate memory. A typical 8-card grid is 0.68 MiB, so 12 MiB holds
+ * roughly 17 ladder decks, or about 6 full 24-card duels in the worst case.
+ */
+const DECK_CACHE_BYTES = 12 * 1024 * 1024;
 /** Cards in a Clash Royale deck. A duel stacks 2 or 3 decks, so `cards.length` is 16 or 24. */
 const DECK_SIZE = 8;
 /** Rows one 8-card deck block occupies in the 4-column grid. */
@@ -137,6 +146,34 @@ type Tile = {
  * safe because callers only wrap them in a `File`, never mutate them.
  */
 const deckCache = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
+/** Running total of resolved grid bytes in `deckCache`; promises count as 0 until they resolve. */
+let deckCacheBytes = 0;
+/** Resolved size per cache key, so eviction can subtract exactly what it removes. */
+const deckCacheSizes = new Map<string, number>();
+
+/**
+ * Evicts from the front of `deckCache` (oldest / least-recently-used) until both the byte budget
+ * and the entry-count guard are satisfied. Always deletes from both maps and decrements the running
+ * total together, so `deckCacheBytes` stays exactly the sum of `deckCacheSizes`.
+ */
+function evictDeckCache(): void {
+	while (deckCacheBytes > DECK_CACHE_BYTES || deckCache.size > DECK_CACHE_LIMIT) {
+		const oldest = deckCache.keys().next().value;
+
+		if (oldest === undefined) {
+			break;
+		}
+
+		deckCache.delete(oldest);
+
+		const size = deckCacheSizes.get(oldest);
+
+		if (size !== undefined) {
+			deckCacheSizes.delete(oldest);
+			deckCacheBytes -= size;
+		}
+	}
+}
 
 /**
  * Local-art filename suffix per `evolutionLevel` (1 = Evolution, 2 = Hero); ordinary cards use the
@@ -497,17 +534,11 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 
 	if (cached !== undefined) {
 		// Maps iterate in insertion order, so re-inserting moves this deck out of eviction's way.
+		// deckCacheSizes is left alone here — it is only ever consulted by key, never by order, so
+		// it does not need to track deckCache's insertion order.
 		deckCache.delete(key);
 		deckCache.set(key, cached);
 		return cached;
-	}
-
-	if (deckCache.size >= DECK_CACHE_LIMIT) {
-		const oldest = deckCache.keys().next().value;
-
-		if (oldest !== undefined) {
-			deckCache.delete(oldest);
-		}
 	}
 
 	// Cached before the first await, so concurrent renders of the same deck dedupe on this promise.
@@ -515,12 +546,23 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	deckCache.set(key, pending);
 
 	try {
-		return await pending;
+		const png = await pending;
+
+		// Account on resolution — a pending promise has no size yet. Only if this entry is still the
+		// cached one; an eviction during the render means it is no longer ours to account for.
+		if (deckCache.get(key) === pending) {
+			deckCacheSizes.set(key, png.length);
+			deckCacheBytes += png.length;
+			evictDeckCache();
+		}
+
+		return png;
 	} catch (error) {
-		// Only evict if this is still our entry: an eviction during the render may have replaced it,
-		// and deleting blindly would drop a healthy newer promise.
+		// Keep plan 012's identity check — an eviction during the render may have replaced this
+		// entry, and deleting blindly would drop a healthy newer promise. Both maps, together.
 		if (deckCache.get(key) === pending) {
 			deckCache.delete(key);
+			deckCacheSizes.delete(key);
 		}
 
 		throw error;
@@ -530,6 +572,7 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 export {
 	CELL_HEIGHT,
 	CELL_WIDTH,
+	DECK_CACHE_BYTES,
 	decodeToRaw,
 	IMAGES_DIR,
 	MAX_GRID_WIDTH,

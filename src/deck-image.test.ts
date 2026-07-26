@@ -6,12 +6,13 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	CELL_HEIGHT,
 	CELL_WIDTH,
+	DECK_CACHE_BYTES,
 	decodeToRaw,
 	MAX_GRID_WIDTH,
 	renderDeckGrid,
 	trimToArt,
 } from "@/deck-image.ts";
-import { TOKEN_VAR } from "@/env.ts";
+import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
 import type { Card } from "@/schema.ts";
 
 vi.mock("@/log.ts");
@@ -103,6 +104,39 @@ const { data: oversizedData } = await sharp({
 	.png()
 	.toUint8Array();
 const OVERSIZED_FIXTURE = new Uint8Array(oversizedData);
+
+/**
+ * A deterministic pseudo-random `[0, 1)` value for call index `n` — `Math.random` would make the
+ * byte-budget tests' render count flaky across runs. The classic "sine hash": high-frequency, good
+ * enough spread for a non-cryptographic fixture, no bitwise ops (int32 wraparound isn't meaningful
+ * here — only the fractional spread is).
+ */
+function pseudoRandom(n: number): number {
+	const x = Math.sin(n) * 43_758.545;
+	return x - Math.floor(x);
+}
+
+/**
+ * A full-cell (`CELL_WIDTH`×`CELL_HEIGHT`), high-entropy PNG for the byte-budget tests below.
+ * Unlike `FIXTURE` (a solid color, which compresses to well under a kilobyte regardless of deck
+ * size), per-pixel noise is close to incompressible, so a composed grid built from it lands in the
+ * hundreds of KB — few enough renders to cross `DECK_CACHE_BYTES` that the tests stay fast.
+ */
+const noisyRaw = Buffer.alloc(CELL_WIDTH * CELL_HEIGHT * 4);
+
+for (let i = 0; i < noisyRaw.length; i += 4) {
+	noisyRaw[i] = Math.floor(pseudoRandom(i) * 256);
+	noisyRaw[i + 1] = Math.floor(pseudoRandom(i + 1) * 256);
+	noisyRaw[i + 2] = Math.floor(pseudoRandom(i + 2) * 256);
+	noisyRaw[i + 3] = 255;
+}
+
+const { data: noisyData } = await sharp(noisyRaw, {
+	raw: { width: CELL_WIDTH, height: CELL_HEIGHT, channels: 4 },
+})
+	.png()
+	.toUint8Array();
+const NOISY_FIXTURE = new Uint8Array(noisyData);
 
 /**
  * Spies `Deno.readFile` — the module's primary tile source (the local `images/` mirror) — to serve
@@ -458,6 +492,80 @@ describe("renderDeckGrid LRU", () => {
 	// to pass without ever exercising the interleaving. The guard itself (`deckCache.get(key) ===
 	// pending`) is exercised on every ordinary failing render in the suite (e.g. "recovers on the next
 	// render after a failed fallback" above), just not on the specific replaced-entry branch.
+});
+
+/**
+ * Byte-budget tests need their own module instance too, plus a `DECK_CACHE_LIMIT` well above what
+ * these tests fill (a valid token and 20 targets pushes it to 3 * 20 + 10 = 70), so entry-count
+ * eviction never fires here — that guard is already covered by "renderDeckGrid LRU" above. These
+ * tests isolate the byte budget (`DECK_CACHE_BYTES`) as the one doing the evicting.
+ */
+async function freshRenderDeckGridWithHeadroom() {
+	vi.stubEnv(TOKEN_VAR, "test-token");
+	vi.stubEnv(
+		TARGETS_VAR,
+		JSON.stringify(
+			Array.from({ length: 20 }, (_, i: number) => ({
+				tag: `#T${String(i)}`,
+				webhook: `https://discord.com/api/webhooks/${String(i)}/x`,
+			}))
+		)
+	);
+	vi.resetModules();
+	const { renderDeckGrid: render } = await import("@/deck-image.ts");
+	return render;
+}
+
+describe("renderDeckGrid byte budget", () => {
+	// A 24-card duel of NOISY_FIXTURE tiles composes to a few hundred KB, so every deck in a given run
+	// is the same size (same content, only the cache key's ids differ) — `perDeck` below is measured
+	// from the first render rather than hardcoded, so the test stays correct if compression, layout,
+	// or DECK_CACHE_BYTES itself ever changes.
+	const duel = (id: number) => Array.from({ length: 24 }, (_, i) => card({ id: id * 100 + i }));
+
+	test("evicts once the byte budget is exceeded, and the evicted deck re-renders on request", async () => {
+		const render = await freshRenderDeckGridWithHeadroom();
+
+		readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
+
+		const first = await render(duel(0));
+		const perDeck = first.length;
+		// The most decks that fit at or under budget, deck 0 included.
+		const capacity = Math.floor(DECK_CACHE_BYTES / perDeck);
+
+		for (let id = 1; id < capacity; id++) {
+			await render(duel(id));
+		}
+
+		const readsBeforeOverflow = readFileMock.mock.calls.length;
+
+		// One more deck pushes the running total past DECK_CACHE_BYTES; the oldest entry (deck 0, never
+		// re-touched since its insert) is evicted to bring it back under budget.
+		await render(duel(capacity));
+
+		expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeOverflow);
+
+		const readsBeforeRerender = readFileMock.mock.calls.length;
+		const refreshed = await render(duel(0));
+
+		// Evicted for bytes, not recency: re-rendering deck 0 is a fresh render (new reads, new bytes).
+		expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeRerender);
+		expect(refreshed).not.toBe(first);
+	});
+
+	test("serves a deck still within budget from cache", async () => {
+		const render = await freshRenderDeckGridWithHeadroom();
+
+		readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
+
+		const cards = duel(0);
+		const first = await render(cards);
+		const readsAfterFirst = readFileMock.mock.calls.length;
+		const second = await render(cards);
+
+		expect(second).toBe(first);
+		expect(readFileMock.mock.calls.length).toBe(readsAfterFirst);
+	});
 });
 
 describe("trimToArt", () => {
