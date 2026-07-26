@@ -42,6 +42,11 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
 /**
  * Picks the newest battle by timestamp first and validates only that one entry.
  *
+ * Newest-only is the delivery contract, not just a validation shortcut: a tick posts at most one
+ * battle, so a player who finishes several matches between ticks has the intermediate ones skipped
+ * and the cursor jumps straight to the newest. Deliberate — it keeps a tick to one fetch, one full
+ * validation, and one post per player.
+ *
  * @returns The newest eligible (1v1) battle, fully validated, or `undefined` if none qualify.
  */
 function latestBattle(entries: unknown[]): Battle | undefined {

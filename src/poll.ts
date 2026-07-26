@@ -32,6 +32,9 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 
 	try {
 		const entries = await fetchBattlelog(tag, token);
+
+		// The newest eligible battle is the only candidate: a tick posts at most one. Anything
+		// between the cursor and it is skipped by design, not retried later.
 		const latest = latestBattle(entries);
 
 		if (latest === undefined) {
@@ -60,8 +63,9 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 			await notifyBattle(webhook, latest);
 		}
 
-		// Advance the cursor only after a successful post: at-least-once delivery. If the webhook
-		// succeeds but this put throws, the next run re-posts a duplicate rather than drops the battle.
+		// Advance the cursor only after a successful post: at-least-once delivery of the battle this
+		// tick selected (not of every battle played). If the webhook succeeds but this put throws, the
+		// next run re-posts a duplicate rather than drops it.
 		await kv.set(key, latest.battleTime, { expireIn: CURSOR_TTL_MS });
 
 		if (isFirstRun) {
