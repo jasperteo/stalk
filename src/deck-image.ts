@@ -517,7 +517,12 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	try {
 		return await pending;
 	} catch (error) {
-		deckCache.delete(key);
+		// Only evict if this is still our entry: an eviction during the render may have replaced it,
+		// and deleting blindly would drop a healthy newer promise.
+		if (deckCache.get(key) === pending) {
+			deckCache.delete(key);
+		}
+
 		throw error;
 	}
 }
