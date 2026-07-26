@@ -132,6 +132,50 @@ describe("notifyBattle", () => {
 		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 502");
 	});
 
+	test("retries with the text-only fallback when Discord rejects the image payload", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(new Response("too large", { status: 413 }))
+			.mockResolvedValueOnce(new Response());
+		vi.stubGlobal("fetch", fetchMock);
+
+		await notifyBattle(WEBHOOK, makeBattle());
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		// The retry's body is the JSON text fallback, not the multipart FormData the first attempt sent.
+		expect(typeof vi.mocked(fetch).mock.calls[1]?.[1]?.body).toBe("string");
+	});
+
+	test("rejects when the text-only retry also fails", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(new Response("too large", { status: 413 }))
+			.mockResolvedValueOnce(new Response("still bad", { status: 500 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 500");
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	test("does not retry a 502, since Discord may have already accepted the message", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(new Response("x".repeat(300), { status: 502 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 502");
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	test("does not retry a rejected text-only fallback, to avoid retrying itself", async () => {
+		vi.mocked(renderDeckGrid).mockRejectedValue(new Error("icon CDN down"));
+		const fetchMock = vi.fn().mockResolvedValueOnce(new Response("too large", { status: 413 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 413");
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
 	test("does nothing when the battle has no tracked player", async () => {
 		await notifyBattle(WEBHOOK, makeBattle({ team: [] }));
 

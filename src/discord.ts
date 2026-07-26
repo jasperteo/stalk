@@ -1,5 +1,5 @@
 import { renderDeckGrid } from "@/deck-image.ts";
-import { log } from "@/log.ts";
+import { hl, log } from "@/log.ts";
 import type { Battle, Card, Player } from "@/schema.ts";
 
 /** Green */
@@ -299,9 +299,27 @@ async function buildForm(battle: Battle, me: Player) {
 }
 
 /**
+ * Statuses where Discord rejected the payload itself, so the message was definitely not delivered
+ * and retrying with the smaller text-only body cannot double-post. A 5xx or 429 may have been
+ * accepted before the response failed, so those still throw and let the cron tick retry the whole
+ * post instead.
+ */
+const PAYLOAD_REJECTED = new Set([400, 413]);
+
+/** POSTs one prepared request to the webhook, returning the response for the caller to judge. */
+async function postWebhook(webhookUrl: string, request: RequestInit) {
+	return await fetch(webhookUrl, {
+		...request,
+		signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+	});
+}
+
+/**
  * Posts a single battle to the webhook. `battle.team[0]` is always the tracked player (2v2 is
  * filtered out upstream). Multipart when the deck images render — fetch derives the boundary from
- * the FormData body, so no manual Content-Type — otherwise the JSON text fallback.
+ * the FormData body, so no manual Content-Type — otherwise the JSON text fallback. A payload Discord
+ * rejects outright (see PAYLOAD_REJECTED) retries once with the text-only fallback instead of
+ * failing the whole tick and re-posting the identical oversized request every minute.
  */
 async function notifyBattle(webhookUrl: string, battle: Battle) {
 	const me = battle.team[0];
@@ -310,29 +328,41 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		return;
 	}
 
-	let request: RequestInit;
+	const fallback: RequestInit = {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(buildFallbackMessage(battle, me)),
+	};
+
+	let request = fallback;
+	let isImage = false;
 
 	try {
 		request = { method: "POST", body: await buildForm(battle, me) };
+		isImage = true;
 	} catch (error) {
 		log.error("Deck image render failed, posting text-only fallback:", error);
-
-		request = {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(buildFallbackMessage(battle, me)),
-		};
 	}
 
-	const response = await fetch(webhookUrl, {
-		...request,
-		signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-	});
+	let response = await postWebhook(webhookUrl, request);
+
+	// Only retry when Discord rejected the image payload itself — see PAYLOAD_REJECTED.
+	if (!response.ok && isImage && PAYLOAD_REJECTED.has(response.status)) {
+		const rejected = await response.text();
+
+		log.warn(
+			`Discord rejected the deck image (${hl.strong(String(response.status))}), retrying text-only: ${rejected.slice(0, 200)}`
+		);
+
+		response = await postWebhook(webhookUrl, fallback);
+	}
 
 	if (!response.ok) {
 		const body = await response.text();
 		throw new Error(`Discord webhook ${String(response.status)}: ${body.slice(0, 200)}`);
 	}
+
+	await response.body?.cancel();
 }
 
 export { notifyBattle };
