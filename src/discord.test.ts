@@ -64,6 +64,16 @@ function sentFallbackPayload(): Payload {
 	return parseJsonString(init?.body) as Payload;
 }
 
+/** One embed field's value by name, or undefined when the embed didn't carry that field. */
+function fieldValue(payload: Payload, name: string, embed = 0) {
+	return payload.embeds[embed]?.fields?.find((field) => field.name === name)?.value;
+}
+
+/** Every field name on an embed, in order — for asserting which fields were emitted at all. */
+function fieldNames(payload: Payload, embed = 0) {
+	return payload.embeds[embed]?.fields?.map((field) => field.name) ?? [];
+}
+
 beforeEach(() => {
 	vi.mocked(renderDeckGrid).mockResolvedValue(new Uint8Array([1, 2, 3]));
 	vi.stubGlobal(
@@ -121,11 +131,10 @@ describe("notifyBattle", () => {
 
 		expect(init?.headers).toEqual({ "Content-Type": "application/json" });
 
-		const payload = parseJsonString(init?.body) as Payload;
-		const fieldNames = payload.embeds[0]?.fields?.map((field) => field.name);
+		const names = fieldNames(parseJsonString(init?.body) as Payload);
 
-		expect(fieldNames).toContain("Deck");
-		expect(fieldNames).toContain("Opponent Deck");
+		expect(names).toContain("Deck");
+		expect(names).toContain("Opponent Deck");
 		expect(log.error).toHaveBeenCalled();
 	});
 
@@ -203,11 +212,9 @@ describe("notifyBattle", () => {
 				makeBattle({ team: [player({ startingTrophies: 5432, trophyChange: 31 })] })
 			);
 
-			const trophyField = sentPayload().embeds[0]?.fields?.find(
-				(field) => field.name === "Trophies"
-			);
+			const trophies = fieldValue(sentPayload(), "Trophies");
 
-			expect(trophyField?.value).toBe("5,432 → 5,463 (+31)");
+			expect(trophies).toBe("5,432 → 5,463 (+31)");
 		});
 
 		test("renders a negative trophy change with a single minus sign", async () => {
@@ -216,11 +223,9 @@ describe("notifyBattle", () => {
 				makeBattle({ team: [player({ startingTrophies: 5432, trophyChange: -18 })] })
 			);
 
-			const trophyField = sentPayload().embeds[0]?.fields?.find(
-				(field) => field.name === "Trophies"
-			);
+			const trophies = fieldValue(sentPayload(), "Trophies");
 
-			expect(trophyField?.value).toBe("5,432 → 5,414 (-18)");
+			expect(trophies).toBe("5,432 → 5,414 (-18)");
 		});
 
 		test("renders a zero trophy change with no sign", async () => {
@@ -229,29 +234,25 @@ describe("notifyBattle", () => {
 				makeBattle({ team: [player({ startingTrophies: 5432, trophyChange: 0 })] })
 			);
 
-			const trophyField = sentPayload().embeds[0]?.fields?.find(
-				(field) => field.name === "Trophies"
-			);
+			const trophies = fieldValue(sentPayload(), "Trophies");
 
-			expect(trophyField?.value).toBe("5,432 → 5,432 (0)");
+			expect(trophies).toBe("5,432 → 5,432 (0)");
 		});
 
 		test("treats a missing trophyChange as zero", async () => {
 			await notifyBattle(WEBHOOK, makeBattle({ team: [player({ startingTrophies: 5432 })] }));
 
-			const trophyField = sentPayload().embeds[0]?.fields?.find(
-				(field) => field.name === "Trophies"
-			);
+			const trophies = fieldValue(sentPayload(), "Trophies");
 
-			expect(trophyField?.value).toBe("5,432 → 5,432 (0)");
+			expect(trophies).toBe("5,432 → 5,432 (0)");
 		});
 
 		test("omits the Trophies field entirely when startingTrophies is absent", async () => {
 			await notifyBattle(WEBHOOK, makeBattle());
 
-			const fieldNames = sentPayload().embeds[0]?.fields?.map((field) => field.name) ?? [];
+			const names = fieldNames(sentPayload());
 
-			expect(fieldNames).not.toContain("Trophies");
+			expect(names).not.toContain("Trophies");
 		});
 
 		test("labels each embed's fields from its own subject's perspective", async () => {
@@ -264,21 +265,13 @@ describe("notifyBattle", () => {
 			);
 
 			const payload = sentPayload();
-			const myFields = payload.embeds[0]?.fields;
-			const opponentFields = payload.embeds[1]?.fields;
 
-			expect(myFields?.find((field) => field.name === "Trophies")?.value).toBe(
-				"5,000 → 5,010 (+10)"
-			);
-			expect(myFields?.find((field) => field.name === "Opponent Trophies")?.value).toBe(
-				"4,800 → 4,795 (-5)"
-			);
-			expect(opponentFields?.find((field) => field.name === "Trophies")?.value).toBe(
-				"4,800 → 4,795 (-5)"
-			);
-			expect(opponentFields?.find((field) => field.name === "Opponent Trophies")?.value).toBe(
-				"5,000 → 5,010 (+10)"
-			);
+			// Embed 0 is the tracked player's, embed 1 the opponent's — each labels the same pair of
+			// numbers from its own side, so the two embeds' values are mirror images.
+			expect(fieldValue(payload, "Trophies", 0)).toBe("5,000 → 5,010 (+10)");
+			expect(fieldValue(payload, "Opponent Trophies", 0)).toBe("4,800 → 4,795 (-5)");
+			expect(fieldValue(payload, "Trophies", 1)).toBe("4,800 → 4,795 (-5)");
+			expect(fieldValue(payload, "Opponent Trophies", 1)).toBe("5,000 → 5,010 (+10)");
 		});
 	});
 
@@ -347,21 +340,17 @@ describe("notifyBattle", () => {
 				})
 			);
 
-			const deckField = sentFallbackPayload().embeds[0]?.fields?.find(
-				(field) => field.name === "Deck"
-			);
+			const deck = fieldValue(sentFallbackPayload(), "Deck");
 
-			expect(deckField?.value).toBe("Knight · Evo Mega Knight · Hero Ram Rider");
+			expect(deck).toBe("Knight · Evo Mega Knight · Hero Ram Rider");
 		});
 
 		test("renders an em dash for an empty deck", async () => {
 			await notifyBattle(WEBHOOK, makeBattle({ team: [player({ cards: [] })] }));
 
-			const deckField = sentFallbackPayload().embeds[0]?.fields?.find(
-				(field) => field.name === "Deck"
-			);
+			const deck = fieldValue(sentFallbackPayload(), "Deck");
 
-			expect(deckField?.value).toBe("—");
+			expect(deck).toBe("—");
 		});
 
 		test("lists support-card names, comma-separated", async () => {
@@ -379,19 +368,17 @@ describe("notifyBattle", () => {
 				})
 			);
 
-			const field = sentFallbackPayload().embeds[0]?.fields?.find(
-				(field) => field.name === "Tower Troop"
-			);
+			const value = fieldValue(sentFallbackPayload(), "Tower Troop");
 
-			expect(field?.value).toBe("Tower Princess, Cannoneer");
+			expect(value).toBe("Tower Princess, Cannoneer");
 		});
 
 		test("omits the Tower Troop field when there are no support cards", async () => {
 			await notifyBattle(WEBHOOK, makeBattle());
 
-			const fieldNames = sentFallbackPayload().embeds[0]?.fields?.map((field) => field.name) ?? [];
+			const names = fieldNames(sentFallbackPayload());
 
-			expect(fieldNames).not.toContain("Tower Troop");
+			expect(names).not.toContain("Tower Troop");
 		});
 
 		test("includes the spacer field between trophy rows and deck rows when trophies are present", async () => {
@@ -400,10 +387,10 @@ describe("notifyBattle", () => {
 				makeBattle({ team: [player({ startingTrophies: 5000, trophyChange: 10 })] })
 			);
 
-			const fieldNames = sentFallbackPayload().embeds[0]?.fields?.map((field) => field.name) ?? [];
-			const deckIndex = fieldNames.indexOf("Deck");
+			const names = fieldNames(sentFallbackPayload());
+			const deckIndex = names.indexOf("Deck");
 
-			expect(fieldNames[deckIndex - 1]).toBe("​");
+			expect(names[deckIndex - 1]).toBe("​");
 		});
 	});
 

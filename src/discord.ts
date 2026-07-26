@@ -312,6 +312,10 @@ async function buildForm(battle: Battle, me: Player) {
  * and retrying with the smaller text-only body cannot double-post. A 5xx or 429 may have been
  * accepted before the response failed, so those still throw and let the cron tick retry the whole
  * post instead.
+ *
+ * 400 is overloaded — Discord returns it for an oversized attachment _and_ for a malformed embed
+ * body. Only the first is fixed by dropping the image, so a malformed-embed 400 costs one extra
+ * doomed POST before the throw. Worth it to keep oversized payloads self-healing.
  */
 const PAYLOAD_REJECTED = new Set([400, 413]);
 
@@ -337,33 +341,38 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		return;
 	}
 
-	const fallback: RequestInit = {
+	// Built on demand, not up front: the image path is the common case and never sends this, so
+	// eagerly formatting both decks into an embed body would be wasted on almost every post.
+	const textRequest = (): RequestInit => ({
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(buildFallbackMessage(battle, me)),
-	};
+	});
 
-	let request = fallback;
-	let isImage = false;
+	// The one thing that varies; whether an image was sent is `form !== undefined`, so there is no
+	// second flag to keep in step with it.
+	let form: FormData | undefined;
 
 	try {
-		request = { method: "POST", body: await buildForm(battle, me) };
-		isImage = true;
+		form = await buildForm(battle, me);
 	} catch (error) {
 		log.error("Deck image render failed, posting text-only fallback:", error);
 	}
 
-	let response = await postWebhook(webhookUrl, request);
+	let response = await postWebhook(
+		webhookUrl,
+		form === undefined ? textRequest() : { method: "POST", body: form }
+	);
 
 	// Only retry when Discord rejected the image payload itself — see PAYLOAD_REJECTED.
-	if (!response.ok && isImage && PAYLOAD_REJECTED.has(response.status)) {
+	if (!response.ok && form !== undefined && PAYLOAD_REJECTED.has(response.status)) {
 		const rejected = await response.text();
 
 		log.warn(
 			`Discord rejected the deck image (${hl.strong(String(response.status))}), retrying text-only: ${rejected.slice(0, 200)}`
 		);
 
-		response = await postWebhook(webhookUrl, fallback);
+		response = await postWebhook(webhookUrl, textRequest());
 	}
 
 	if (!response.ok) {
