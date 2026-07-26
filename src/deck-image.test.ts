@@ -1,7 +1,16 @@
+import { Buffer } from "node:buffer";
+
 import sharp from "sharp";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { CELL_HEIGHT, decodeToRaw, MAX_GRID_WIDTH, renderDeckGrid } from "@/deck-image.ts";
+import {
+	CELL_HEIGHT,
+	CELL_WIDTH,
+	decodeToRaw,
+	MAX_GRID_WIDTH,
+	renderDeckGrid,
+	trimToArt,
+} from "@/deck-image.ts";
 import { TOKEN_VAR } from "@/env.ts";
 import type { Card } from "@/schema.ts";
 
@@ -44,6 +53,56 @@ const { data } = await sharp({
 	.png()
 	.toUint8Array();
 const FIXTURE = new Uint8Array(data);
+
+/**
+ * A raw straight-alpha RGBA canvas (`width`×`height`, fully transparent) with an opaque solid-color
+ * rectangle painted at `rect`, encoded to PNG. Unlike `FIXTURE` (fully opaque, so `trimToArt` never
+ * actually crops it), this exercises a real crop: the transparent margin around `rect` gives
+ * `scanArtBounds`/`cropRaw` a genuine region to derive, with bounds the caller controls by
+ * construction (`rect`'s own coordinates), rather than needing to reverse-engineer them from a real
+ * card icon.
+ */
+async function insetFixture(
+	width: number,
+	height: number,
+	rect: { left: number; top: number; width: number; height: number }
+): Promise<Uint8Array> {
+	const raw = Buffer.alloc(width * height * 4);
+
+	for (let y = rect.top; y < rect.top + rect.height; y++) {
+		for (let x = rect.left; x < rect.left + rect.width; x++) {
+			const offset = (y * width + x) * 4;
+			raw[offset] = 200;
+			raw[offset + 1] = 30;
+			raw[offset + 2] = 30;
+			raw[offset + 3] = 255;
+		}
+	}
+
+	const encoded = await sharp(raw, { raw: { width, height, channels: 4 } })
+		.png()
+		.toUint8Array();
+	return new Uint8Array(encoded.data);
+}
+
+/**
+ * A fully-opaque solid-color PNG bigger than the compose cell (`CELL_WIDTH`×`CELL_HEIGHT`) in both
+ * dimensions, standing in for a brand-new card whose CDN art hasn't been downsized to the local
+ * mirror's convention.
+ */
+const OVERSIZED_WIDTH = CELL_WIDTH + 40;
+const OVERSIZED_HEIGHT = CELL_HEIGHT + 60;
+const { data: oversizedData } = await sharp({
+	create: {
+		width: OVERSIZED_WIDTH,
+		height: OVERSIZED_HEIGHT,
+		channels: 4,
+		background: { r: 30, g: 120, b: 200, alpha: 1 },
+	},
+})
+	.png()
+	.toUint8Array();
+const OVERSIZED_FIXTURE = new Uint8Array(oversizedData);
 
 /**
  * Spies `Deno.readFile` — the module's primary tile source (the local `images/` mirror) — to serve
@@ -153,6 +212,30 @@ describe("renderDeckGrid", () => {
 		// The fallback fetches the card's own icon URL, with the render's abort signal attached.
 		expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.clashroyale.com/fresh-release.png");
 		expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+	});
+
+	test("clamps an oversized CDN fallback tile to the cell instead of composing it past the cell bounds", async () => {
+		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
+		fetchMock.mockImplementationOnce(() =>
+			Promise.resolve(new Response(new Uint8Array(OVERSIZED_FIXTURE)))
+		);
+
+		const oversized = card({
+			iconUrls: { medium: "https://api.clashroyale.com/oversized.png" },
+		});
+		const [oversizedPng, normalPng] = await Promise.all([
+			renderDeckGrid([oversized]),
+			renderDeckGrid([card()]),
+		]);
+
+		// The grid's own dimensions are fixed by CELL_WIDTH/CELL_HEIGHT regardless of tile content, so
+		// an unclamped oversized tile wouldn't change them either — what the clamp actually prevents is
+		// the tile's overlay offsets going negative (see composeDeckGrid) and the source being visibly
+		// sliced. A successful render at the expected fixed size is the observable proxy available from
+		// outside the module: `fit: "inside"` + `withoutEnlargement` means a tile that already exceeds
+		// the cell now decodes into a rectangle bounded by CELL_WIDTH×CELL_HEIGHT, which trimToArt (also
+		// exercised directly below) confirms in isolation.
+		await expect(dimensions(oversizedPng)).resolves.toEqual(await dimensions(normalPng));
 	});
 
 	test("rejects without a CDN fallback when the local read fails for any reason but NotFound", async () => {
@@ -364,5 +447,53 @@ describe("renderDeckGrid LRU", () => {
 		expect(second).not.toBe(await render(deck(0))); // sanity: distinct decks, distinct pngs
 		expect(await render(deck(1))).toBe(second); // deck 1 re-rendered, now cached again
 		expect(await render(deck(0))).toBe(first); // deck 0 survived — recency was refreshed
+	});
+
+	// An eviction-identity test (asserting a mid-render eviction doesn't delete a healthy newer
+	// promise under the same key) is deliberately not included here: it needs a render to still be
+	// in flight when its own cache entry is evicted by cap pressure and then replaced by a second
+	// render under the same key, all before the first render's rejection is observed. Nothing in this
+	// module exposes a hook to pause a render mid-flight, so driving that interleaving would mean
+	// racing real promise microtask ordering — inherently flaky, or trivially vacuous if it happened
+	// to pass without ever exercising the interleaving. The guard itself (`deckCache.get(key) ===
+	// pending`) is exercised on every ordinary failing render in the suite (e.g. "recovers on the next
+	// render after a failed fallback" above), just not on the specific replaced-entry branch.
+});
+
+describe("trimToArt", () => {
+	// A 30×40 canvas with an opaque rect whose right edge lands exactly on the canvas's own right
+	// edge (left + width === canvas width) — the boundary `cropRaw`'s bounds guard has to accept
+	// rather than reject. `trimToArt` always keeps the native bottom edge (see its own doc comment),
+	// so the crop's bottom always reaches the canvas height regardless of the rect's own bottom; only
+	// left/top/right are meaningfully "trimmed" here.
+	const CANVAS_WIDTH = 30;
+	const CANVAS_HEIGHT = 40;
+	const RECT = { left: 5, top: 8, width: CANVAS_WIDTH - 5, height: 20 };
+
+	test("crops without throwing when the art touches the right edge of the frame, and the buffer is exactly width*height*4", async () => {
+		const bytes = await insetFixture(CANVAS_WIDTH, CANVAS_HEIGHT, RECT);
+
+		const tile = await trimToArt(bytes);
+
+		// left trims to the rect's own left; width extends to the canvas's right edge (RECT was built
+		// to touch it); height always runs from the rect's top down to the native bottom.
+		expect(tile.width).toBe(CANVAS_WIDTH - RECT.left);
+		expect(tile.height).toBe(CANVAS_HEIGHT - RECT.top);
+		expect(tile.data.length).toBe(tile.width * tile.height * 4);
+	});
+
+	test("produces byte-identical buffers across two renders of the same fixture", async () => {
+		// `Buffer.alloc` zero-fills before the copy loop overwrites it; `Buffer.allocUnsafe` would
+		// reuse whatever heap bytes were previously there. Every row this crop copies is fully
+		// in-bounds (the guard above proved that), so the copy loop already overwrites every byte of
+		// the destination — but that invariant is exactly the one worth pinning down: if a future edit
+		// ever left a row short, allocUnsafe's recycled memory would make the trailing bytes
+		// non-deterministic between calls, where alloc's zero-fill would not.
+		const bytes = await insetFixture(CANVAS_WIDTH, CANVAS_HEIGHT, RECT);
+
+		const first = await trimToArt(bytes);
+		const second = await trimToArt(bytes);
+
+		expect(Buffer.compare(first.data, second.data)).toBe(0);
 	});
 });

@@ -227,10 +227,28 @@ type Region = {
  * are already in JS memory, so a round-trip into libvips and back would just add a native call plus
  * two buffer copies per tile. Returns a `Buffer` so it feeds `OverlayOptions.input` without a
  * cast.
+ *
+ * Zero-fills (`Buffer.alloc`, not `allocUnsafe`): `subarray` clamps silently on a short row, so an
+ * out-of-bounds region would otherwise leave uninitialized heap bytes in the tail of a row instead
+ * of failing loudly. The guard below is expected to make that path unreachable, but the zero-fill
+ * is cheap insurance against a future caller that doesn't have `scanArtBounds`'s invariants.
  */
 function cropRaw({ data, width }: RawImage, region: Region): Buffer {
+	if (
+		region.left < 0 ||
+		region.top < 0 ||
+		region.width < 0 ||
+		region.height < 0 ||
+		region.left + region.width > width ||
+		(region.top + region.height) * width * BYTES_PER_PIXEL > data.length
+	) {
+		throw new Error(
+			`Crop region ${String(region.left)},${String(region.top)} ${String(region.width)}x${String(region.height)} exceeds the ${String(width)}px-wide source bitmap`
+		);
+	}
+
 	const rowBytes = region.width * BYTES_PER_PIXEL;
-	const cropped = Buffer.allocUnsafe(region.height * rowBytes);
+	const cropped = Buffer.alloc(region.height * rowBytes);
 
 	for (let y = 0; y < region.height; y++) {
 		const start = ((region.top + y) * width + region.left) * BYTES_PER_PIXEL;
@@ -295,6 +313,15 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 	};
 }
 
+/**
+ * Fetches a fallback card icon and resizes it to fit inside the cell before decoding. `CELL_WIDTH`/
+ * `CELL_HEIGHT` are the upper bound of every _local_ icon's trimmed size (`deno task measure`); the
+ * CDN path has no such guarantee (a brand-new card's art may simply be bigger), and the overlay
+ * math in `composeDeckGrid` assumes every tile fits its cell — an oversized tile pushes
+ * `left`/`top` negative there, which sharp clips silently instead of erroring. `fit: "inside"`
+ * preserves aspect ratio; `withoutEnlargement` leaves already-small art untouched, so a normal
+ * fallback (which does fit) is unaffected.
+ */
 async function fetchTile(url: string): Promise<Tile> {
 	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
 
@@ -302,7 +329,22 @@ async function fetchTile(url: string): Promise<Tile> {
 		throw new Error(`Card icon ${String(response.status)} for ${url}`);
 	}
 
-	return trimToArt(new Uint8Array(await response.arrayBuffer()));
+	const fetched = new Uint8Array(await response.arrayBuffer());
+	const sharp = await loadSharp();
+	const { width, height } = await sharp(fetched).metadata();
+
+	if (width > CELL_WIDTH || height > CELL_HEIGHT) {
+		log.warn(
+			`CDN icon ${hl.strong(`${String(width)}x${String(height)}`)} exceeds the ${hl.strong(`${String(CELL_WIDTH)}x${String(CELL_HEIGHT)}`)} cell for ${url}; shrinking to fit`
+		);
+	}
+
+	const { data } = await sharp(fetched)
+		.resize({ width: CELL_WIDTH, height: CELL_HEIGHT, fit: "inside", withoutEnlargement: true })
+		.png()
+		.toUint8Array();
+
+	return trimToArt(data);
 }
 
 /**
@@ -475,7 +517,12 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	try {
 		return await pending;
 	} catch (error) {
-		deckCache.delete(key);
+		// Only evict if this is still our entry: an eviction during the render may have replaced it,
+		// and deleting blindly would drop a healthy newer promise.
+		if (deckCache.get(key) === pending) {
+			deckCache.delete(key);
+		}
+
 		throw error;
 	}
 }
@@ -488,5 +535,6 @@ export {
 	MAX_GRID_WIDTH,
 	renderDeckGrid,
 	scanArtBounds,
+	trimToArt,
 };
 export type { RawImage };
