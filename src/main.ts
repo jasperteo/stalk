@@ -63,13 +63,13 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 	// over allSettled.
 	const outcomes = await Promise.all(targets.map((target) => poll(target, token)));
 
-	const tally: Record<PollOutcome, number> = {
-		posted: 0,
-		seeded: 0,
-		skipped: 0,
-		drifted: 0,
-		failed: 0,
-	};
+	// Seeded from POLL_OUTCOMES rather than a hand-written literal, so adding an outcome doesn't
+	// need a matching edit here to keep its count off the tally line.
+	const tally = Object.fromEntries(POLL_OUTCOMES.map((outcome) => [outcome, 0])) as Record<
+		PollOutcome,
+		number
+	>;
+
 	for (const outcome of outcomes) {
 		tally[outcome]++;
 	}
