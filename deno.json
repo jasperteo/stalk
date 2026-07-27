@@ -28,6 +28,8 @@
 
 	"imports": { "@/": "./src/" },
 
+	"exclude": ["**/.claude/worktrees/"],
+
 	"lint": { "rules": { "tags": ["recommended"] }, "exclude": ["**/deno.d.ts"] },
 	"fmt": { "exclude": ["**/*"] },
 
