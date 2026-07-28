@@ -71,12 +71,21 @@ const GRID_COMPRESSION = 6;
  * Max width of the shipped grid, in px. Compose still happens at native resolution (1080 px for 4
  * columns) and only the finished grid is scaled down, so this is a single high-quality Lanczos pass
  * rather than per-tile blur — the "tiles composite at native resolution" rule is untouched. Discord
- * renders embed images a few hundred px wide, so 720 still leaves retina headroom while cutting
- * encode CPU ~37% and bytes ~47% against native. Net CPU saving, not a cost: PNG deflate dominates
- * this pipeline and scales with pixel count, so the encode work removed exceeds the scaling pass
- * added.
+ * renders embed images a few hundred px wide, so 480 still covers that while cutting render time
+ * ~50% and bytes ~74% against native. Net CPU saving, not a cost: PNG deflate dominates this
+ * pipeline and scales with pixel count, so the encode work removed exceeds the scaling pass added.
+ *
+ * Measured on the `deno task preview` deck (median of 5, native → 720 → 480):
+ *
+ * | cards | native (1080 px) | 720 px          | 480 px          |
+ * | ----- | ---------------- | --------------- | --------------- |
+ * | 8     | 1.42 MiB, 36 ms  | 0.76 MiB, 25 ms | 0.37 MiB, 18 ms |
+ * | 16    | 2.84 MiB, 72 ms  | 1.52 MiB, 46 ms | 0.74 MiB, 32 ms |
+ * | 24    | 4.26 MiB, 108 ms | 2.28 MiB, 69 ms | 1.11 MiB, 47 ms |
+ *
+ * Shipped dimensions at 480: 480×353 (8 cards), 480×727 (16), 480×1101 (24).
  */
-const MAX_GRID_WIDTH = 720;
+const MAX_GRID_WIDTH = 480;
 /**
  * Abort a fallback card-icon CDN fetch after this long, so a hung request can't stall the cron
  * tick.
@@ -100,8 +109,8 @@ function configureDeckCache(targetCount: number) {
 /**
  * Memory ceiling for finished grids, in bytes. Entry size varies several-fold between a ladder deck
  * and a 24-card duel, and the old entry-count cap also grew with TARGETS — so a byte budget is the
- * only bound that actually caps isolate memory. A typical 8-card grid is 0.68 MiB, so 12 MiB holds
- * roughly 17 ladder decks, or about 6 full 24-card duels in the worst case.
+ * only bound that actually caps isolate memory. A typical 8-card grid is 0.37 MiB, so 12 MiB holds
+ * roughly 32 ladder decks, or about 10 full 24-card duels in the worst case.
  */
 const DECK_CACHE_BYTES = 12 * 1024 * 1024;
 /** Cards in a Clash Royale deck. A duel stacks 2 or 3 decks, so `cards.length` is 16 or 24. */
