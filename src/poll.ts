@@ -120,8 +120,8 @@ async function listCursors(): Promise<Record<string, unknown>> {
  * Taking the snapshot before the fetches rather than after each one is safe: `Deno.cron` does not
  * overlap ticks, and this cron is the only writer.
  *
- * Poll() catches its own errors and resolves "failed" — no rejection path, hence Promise.all over
- * allSettled. One player's failure can't sink the others.
+ * `poll()` catches its own errors and resolves "failed" — no rejection path, hence `Promise.all`
+ * over `allSettled`. One player's failure can't sink the others.
  */
 async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]> {
 	const cursors = await listCursors();
