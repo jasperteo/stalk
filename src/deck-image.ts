@@ -63,25 +63,41 @@ const ALPHA_THRESHOLD = 8;
  */
 const BYTES_PER_PIXEL = 4;
 /**
- * PNG zlib compressionLevel (0–9) for the shipped grid; lossless, trading encode CPU for upload
- * size.
+ * PNG zlib compressionLevel (0–9) for the shipped grid. 0 is zlib _stored_ — no compression at all,
+ * so the encode is effectively a memcpy and the output is exactly `width × height × 4` plus ~0.2%
+ * PNG framing. Still lossless, and still a PNG: levels 0 and 6 decode to byte-identical pixels, so
+ * nothing about image quality changes.
+ *
+ * Deliberately trading upload size for encode CPU, which is the scarcer resource on Deno Deploy.
+ * Encode-stage medians of 11 on a 4-column grid: an 8-card deck is 2 ms / 0.65 MiB here against 8
+ * ms / 0.35 MiB at level 6, and a 24-card duel 4 ms / 2.02 MiB against 21 ms / 1.05 MiB. Levels 1–6
+ * measured indistinguishable from each other on both axes, so 0 is the only step down that buys
+ * anything — don't reach for 3 expecting a middle ground.
+ *
+ * Raising this again means lowering DECK_CACHE_BYTES to match; the two were changed together.
  */
-const GRID_COMPRESSION = 6;
+const GRID_COMPRESSION = 0;
 /**
  * Max width of the shipped grid, in px. Compose still happens at native resolution (1080 px for 4
  * columns) and only the finished grid is scaled down, so this is a single high-quality Lanczos pass
  * rather than per-tile blur — the "tiles composite at native resolution" rule is untouched. Discord
- * renders embed images a few hundred px wide, so 480 still covers that while cutting render time
- * ~50% and bytes ~74% against native. Net CPU saving, not a cost: PNG deflate dominates this
- * pipeline and scales with pixel count, so the encode work removed exceeds the scaling pass added.
+ * renders embed images a few hundred px wide, so 480 still covers that.
  *
- * Measured on the `deno task preview` deck (median of 5, native → 720 → 480):
+ * At GRID_COMPRESSION 0 this is a bytes decision, not a CPU one. A stored PNG encodes at the same
+ * few milliseconds whatever its size (the whole table below is 2–5 ms), so the downscale neither
+ * pays for itself nor costs anything measurable — what it buys is a 5× smaller upload. It also
+ * keeps a duel inside Discord's ~10 MiB per-message limit: a 24-card grid at native is 10.23 MiB on
+ * its own, and a post carries two.
  *
- * | cards | native (1080 px) | 720 px          | 480 px          |
- * | ----- | ---------------- | --------------- | --------------- |
- * | 8     | 1.42 MiB, 36 ms  | 0.76 MiB, 25 ms | 0.37 MiB, 18 ms |
- * | 16    | 2.84 MiB, 72 ms  | 1.52 MiB, 46 ms | 0.74 MiB, 32 ms |
- * | 24    | 4.26 MiB, 108 ms | 2.28 MiB, 69 ms | 1.11 MiB, 47 ms |
+ * Measured on a 4-column grid (median of 11, compressionLevel 0). Sizes are exact and
+ * deck-independent at level 0 — a stored PNG is just `width × height × 4` plus framing — so unlike
+ * the level-6 figures this replaced, they don't drift with the art:
+ *
+ * | cards | native (1080 px) | 720 px         | 480 px         |
+ * | ----- | ---------------- | -------------- | -------------- |
+ * | 8     | 3.28 MiB, 2 ms   | 1.46 MiB, 2 ms | 0.65 MiB, 2 ms |
+ * | 16    | 6.75 MiB, 3 ms   | 3.00 MiB, 4 ms | 1.33 MiB, 3 ms |
+ * | 24    | 10.23 MiB, 5 ms  | 4.55 MiB, 5 ms | 2.02 MiB, 4 ms |
  *
  * Shipped dimensions at 480: 480×353 (8 cards), 480×727 (16), 480×1101 (24).
  */
@@ -109,10 +125,14 @@ function configureDeckCache(targetCount: number) {
 /**
  * Memory ceiling for finished grids, in bytes. Entry size varies several-fold between a ladder deck
  * and a 24-card duel, and the old entry-count cap also grew with TARGETS — so a byte budget is the
- * only bound that actually caps isolate memory. A typical 8-card grid is 0.37 MiB, so 12 MiB holds
- * roughly 32 ladder decks, or about 10 full 24-card duels in the worst case.
+ * only bound that actually caps isolate memory. A typical 8-card grid is 0.65 MiB, so 22 MiB holds
+ * roughly 33 ladder decks, or about 10 full 24-card duels in the worst case.
+ *
+ * Raised from 12 MiB alongside GRID_COMPRESSION 0, which made every grid ~1.8× bigger. Holding the
+ * budget flat would have cut the cache to ~18 decks and spent the encode CPU straight back on
+ * re-renders, so the two constants move together — don't lower this without raising that.
  */
-const DECK_CACHE_BYTES = 12 * 1024 * 1024;
+const DECK_CACHE_BYTES = 22 * 1024 * 1024;
 /** Cards in a Clash Royale deck. A duel stacks 2 or 3 decks, so `cards.length` is 16 or 24. */
 const DECK_SIZE = 8;
 /** Rows one 8-card deck block occupies in the 4-column grid. */
