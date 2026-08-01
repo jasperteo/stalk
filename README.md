@@ -148,7 +148,8 @@ safe to expose.
 
 Deck grids are composited from the local `images/` mirror rather than fetched per render, cached by
 deck (players repeat decks, so most battles skip rendering entirely), and downscaled once before
-encoding — a shipped 8-card grid is 480×353 and about 0.37 MiB. A CDN fetch is the fallback for a
+encoding — a shipped 8-card grid is 480×353 and about 0.65 MiB, stored uncompressed to keep encode
+CPU down. A CDN fetch is the fallback for a
 card too new to be in the mirror; if rendering fails outright, the battle still posts as a text-only
 embed.
 

@@ -31,8 +31,9 @@ const OUTCOMES = {
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
 
 /**
- * Abort the webhook POST after this long; generous because the multipart body carries a few hundred
- * KB of deck PNGs.
+ * Abort the webhook POST after this long; generous because the multipart body carries the deck PNGs
+ * stored uncompressed (see `GRID_COMPRESSION`) — about 1.3 MiB for a pair of ladder grids, up to ~4
+ * MiB when both sides are 24-card duel decks.
  */
 const WEBHOOK_TIMEOUT_MS = 15_000;
 

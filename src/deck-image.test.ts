@@ -120,9 +120,14 @@ function pseudoRandom(n: number): number {
 
 /**
  * A full-cell (`CELL_WIDTH`×`CELL_HEIGHT`), high-entropy PNG for the byte-budget tests below.
- * Unlike `FIXTURE` (a solid color, which compresses to well under a kilobyte regardless of deck
- * size), per-pixel noise is close to incompressible, so a composed grid built from it lands in the
- * hundreds of KB — few enough renders to cross `DECK_CACHE_BYTES` that the tests stay fast.
+ *
+ * At `GRID_COMPRESSION` 0 a composed grid's size is purely geometric — a stored PNG is `width ×
+ * height × 4` plus framing — so this no longer does what it was written for. Under level 6 it
+ * mattered a lot: `FIXTURE`'s solid color compressed to well under a kilobyte regardless of deck
+ * size, which would have taken thousands of renders to cross `DECK_CACHE_BYTES`, while
+ * near-incompressible noise put a grid in the hundreds of KB. Kept anyway, because it costs only
+ * setup time and it keeps these tests independent of the compression level if it ever moves back
+ * up.
  */
 const noisyRaw = Buffer.alloc(CELL_WIDTH * CELL_HEIGHT * 4);
 
@@ -509,8 +514,8 @@ describe("renderDeckGrid LRU", () => {
 const HEADROOM_TARGETS = 20;
 
 describe("renderDeckGrid byte budget", () => {
-	// A 24-card duel of NOISY_FIXTURE tiles composes to a few hundred KB, so every deck in a given run
-	// is the same size (same content, only the cache key's ids differ) — `perDeck` below is measured
+	// A 24-card duel of NOISY_FIXTURE tiles composes to about 2 MiB, so every deck in a given run is
+	// the same size (same content, only the cache key's ids differ) — `perDeck` below is measured
 	// from the first render rather than hardcoded, so the test stays correct if compression, layout,
 	// or DECK_CACHE_BYTES itself ever changes.
 	const duel = (id: number) => Array.from({ length: 24 }, (_, i) => card({ id: id * 100 + i }));
