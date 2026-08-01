@@ -29,19 +29,31 @@ describe("latestBattle", () => {
 	});
 
 	test("picks the newest eligible (1v1) battle among mixed entries", () => {
-		const older = battle("20240101T000000.000Z");
 		const newer = battle("20240115T143022.000Z");
+		const older = battle("20240101T000000.000Z");
 
-		const entries = [older, newer, "garbage"];
+		const entries = [newer, older, "garbage"];
 
 		expect(latestBattle(entries).battle?.battleTime).toBe("2024-01-15T14:30:22.000Z");
 	});
 
-	test("ignores a 2v2 entry even if it is chronologically newest", () => {
-		const eligible = battle("20240101T000000.000Z");
+	test("skips leading 2v2 and malformed entries to reach the first eligible one", () => {
 		const twoVsTwo = battle("20240201T000000.000Z", 2);
+		const eligible = battle("20240101T000000.000Z");
 
-		expect(latestBattle([eligible, twoVsTwo]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
+		expect(latestBattle([twoVsTwo, "garbage", eligible]).battle?.battleTime).toBe(
+			"2024-01-01T00:00:00.000Z"
+		);
+	});
+
+	// The battlelog arrives newest-first (verified against the live proxy), so selection trusts
+	// position rather than comparing timestamps — pinned here because it is an assumption about an
+	// undocumented API ordering, not a property of the data.
+	test("takes the first eligible entry, not the chronologically newest", () => {
+		const first = battle("20240101T000000.000Z");
+		const outOfOrder = battle("20240201T000000.000Z");
+
+		expect(latestBattle([first, outOfOrder]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
 	});
 
 	test("returns undefined when the newest eligible entry fails full schema validation", () => {
@@ -51,7 +63,7 @@ describe("latestBattle", () => {
 		});
 		const older = battle("20240101T000000.000Z");
 
-		const result = latestBattle([older, newest]);
+		const result = latestBattle([newest, older]);
 
 		expect(result.battle).toBeUndefined();
 		expect(result.drifted).toBe(true);

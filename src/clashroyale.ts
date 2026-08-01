@@ -40,7 +40,14 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
 }
 
 /**
- * Picks the newest battle by timestamp first and validates only that one entry.
+ * Takes the first eligible (1v1) battle and fully validates only that one.
+ *
+ * The battlelog arrives newest-first, so the first eligible entry _is_ the newest one and the scan
+ * stops there — normally after a single entry, instead of running the eligibility schema over all
+ * ~30. That ordering is undocumented by Supercell, so it is an assumption, not a guarantee; it was
+ * verified against the live proxy, and the failure mode if it ever changed is posting an older
+ * battle and advancing the cursor past the newer ones. The scan still walks past leading 2v2s, so
+ * the ordering assumption only buys skipping the tail, never the eligibility filter itself.
  *
  * Newest-only is the delivery contract, not just a validation shortcut: a tick posts at most one
  * battle, so a player who finishes several matches between ticks has the intermediate ones skipped
@@ -52,17 +59,7 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
  *   rather than letting it read as "no new battles".
  */
 function latestBattle(entries: unknown[]): { battle: Battle | undefined; drifted: boolean } {
-	let newest: unknown;
-	let newestTime = "";
-
-	for (const entry of entries) {
-		const battleTime = v.parse(EligibleBattleTimeSchema, entry);
-
-		if (battleTime > newestTime) {
-			newest = entry;
-			newestTime = battleTime;
-		}
-	}
+	const newest = entries.find((entry) => v.parse(EligibleBattleTimeSchema, entry) !== "");
 
 	const result = v.safeParse(BattleSchema, newest);
 

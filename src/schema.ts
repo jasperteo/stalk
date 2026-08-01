@@ -94,7 +94,7 @@ const BattleSchema = v.object({
 /**
  * Cheap eligibility check: reuses BattleSchema's own battleTime rule and requires a single `team`
  * entry (1v1), without the cost of full battle validation. Malformed or 2v2 entries fall back to
- * "", which never wins the newest-battle comparison.
+ * "", the sentinel `latestBattle` reads as "not eligible, keep looking".
  */
 const EligibleBattleTimeSchema = v.fallback(
 	v.pipe(
