@@ -39,37 +39,43 @@ Break one of these and the app misbehaves in a way tests may not catch.
    webhook succeeds but the KV put throws, the next tick re-posts a duplicate rather than dropping
    the battle.
 3. **`poll()` never rejects.** It catches its own errors and resolves a `POLL_OUTCOMES` value, which
-   is why `main.ts` uses `Promise.all` rather than `allSettled`. One player's failure can't sink the
+   is why `pollAll` uses `Promise.all` rather than `allSettled`. One player's failure can't sink the
    others.
-4. **`if (interactive) await quitOnKeypress()` must stay the last statement in `main.ts`.** Its
+4. **A tick reads every cursor in one KV command.** `pollAll` calls `listCursors()` once and hands
+   each `poll()` its own cursor; nothing in the polling path may go back to a per-player `kv.get`.
+   KV reads are the free tier's binding limit (450k/month) and a per-player read at one tick a minute
+   burns ~43.8k of them per player per month. Writes stay per-tag, so concurrent polls never share a
+   value.
+5. **`if (interactive) await quitOnKeypress()` must stay the last statement in `main.ts`.** Its
    top-level await blocks module evaluation until stdin closes, so anything below it never runs
    locally — and Deploy (no TTY, skips the gate) would mask the breakage.
-5. **`renderDeckGrid` uses two sharp pipelines, not one.** sharp always applies `resize` before
+6. **`renderDeckGrid` uses two sharp pipelines, not one.** sharp always applies `resize` before
    `composite` within a single pipeline regardless of chaining order, so the finished grid can only
    be scaled over an already-composed bitmap. Collapsing the two pipelines silently drops every
    overlay from the output.
-6. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
+7. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
    fetch is only a fallback for a card id with no local file. 177 PNGs (285×420): `<id>.png` plus 41
    `-evo` and 14 `-hero` variants, covering all 122 playable cards.
-7. **Everything logs through `src/log.ts`.** It is the only module that may import
+8. **Everything logs through `src/log.ts`.** It is the only module that may import
    `@std/fmt/colors`, so every paint call happens after its `setColorEnabled` gate.
 
 ## Architecture
 
 Cron tick → `config` (from `env.ts`, validated once at module load; `undefined` when the token is
-missing, which logs a heartbeat and skips) → `poll(target, token)` per player concurrently → fetch
+missing, which logs a heartbeat and skips) → `pollAll(targets, token)` → one `listCursors()` read →
+`poll()` per player concurrently → fetch
 battle log → compare newest eligible battle against the KV cursor → post → advance cursor.
 
-| File                 | Role                                                                                                                                                                                                                               |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/main.ts`        | Wiring only. Runs as a script (`deno run`, not `deno serve` — hence no default export). `Deno.serve` binds Hono (`GET /` health, `GET /kv/last-battle` cursor dump); `Deno.cron` drives polling and logs a per-tick outcome tally. |
-| `src/poll.ts`        | The polling domain. Owns the KV handle (private; reads go through `listCursors()`) and the `["lastBattle", tag]` key with its 30-day TTL. Resolves one of `POLL_OUTCOMES`: `posted` / `seeded` / `skipped` / `drifted` / `failed`. |
-| `src/clashroyale.ts` | Battle-log fetch via the RoyaleAPI proxy, with an abort timeout. `latestBattle` takes the first eligible entry (the log arrives newest-first) and fully validates only that one.                                                   |
-| `src/discord.ts`     | Builds and posts the webhook message: content line (result, crowns, HP margin — doubles as the push notification), then one embed per side with deck grid, trophies, and tower-troop thumbnail.                                    |
-| `src/deck-image.ts`  | Composites cards into a bottom-aligned 4-column PNG grid via sharp.                                                                                                                                                                |
-| `src/schema.ts`      | Valibot schemas for the API shapes and both env vars. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`.                                                                                          |
-| `src/env.ts`         | Reads and validates env once at module load; exports `config`.                                                                                                                                                                     |
-| `src/log.ts`         | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette) and `hl` (inline value highlighters).                                                                                         |
+| File                 | Role                                                                                                                                                                                                                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.ts`        | Wiring only. Runs as a script (`deno run`, not `deno serve` — hence no default export). `Deno.serve` binds Hono (`GET /` health, `GET /kv/last-battle` cursor dump); `Deno.cron` drives polling and logs a per-tick outcome tally.                                                                                                  |
+| `src/poll.ts`        | The polling domain. Owns the KV handle (private; reads go through `listCursors()`) and the `["lastBattle", tag]` key with its 30-day TTL. `pollAll` is the tick entry point: one cursor read, then a concurrent `poll()` per target, each resolving one of `POLL_OUTCOMES`: `posted` / `seeded` / `skipped` / `drifted` / `failed`. |
+| `src/clashroyale.ts` | Battle-log fetch via the RoyaleAPI proxy, with an abort timeout. `latestBattle` takes the first eligible entry (the log arrives newest-first) and fully validates only that one.                                                                                                                                                    |
+| `src/discord.ts`     | Builds and posts the webhook message: content line (result, crowns, HP margin — doubles as the push notification), then one embed per side with deck grid, trophies, and tower-troop thumbnail.                                                                                                                                     |
+| `src/deck-image.ts`  | Composites cards into a bottom-aligned 4-column PNG grid via sharp.                                                                                                                                                                                                                                                                 |
+| `src/schema.ts`      | Valibot schemas for the API shapes and both env vars. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`.                                                                                                                                                                                           |
+| `src/env.ts`         | Reads and validates env once at module load; exports `config`.                                                                                                                                                                                                                                                                      |
+| `src/log.ts`         | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette) and `hl` (inline value highlighters).                                                                                                                                                                                          |
 
 Internal imports use the `@/` map with explicit `.ts` extensions.
 
