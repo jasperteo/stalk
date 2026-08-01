@@ -27,7 +27,12 @@ const CURSOR_TTL_MS = Temporal.Duration.from({ days: 30 }).total("milliseconds")
 const POLL_OUTCOMES = ["posted", "seeded", "skipped", "drifted", "failed"] as const;
 type PollOutcome = (typeof POLL_OUTCOMES)[number];
 
-async function poll(target: Target, token: string): Promise<PollOutcome> {
+/**
+ * Polls one target against the cursor `pollAll` read for it this tick. Taking `stored` as an
+ * argument rather than fetching it is what lets a tick cost one KV read instead of one per player —
+ * see `pollAll`. The value arrives raw and unvalidated, exactly as `listCursors` returns it.
+ */
+async function poll(target: Target, token: string, stored: unknown): Promise<PollOutcome> {
 	const { tag, webhook } = target;
 
 	try {
@@ -44,12 +49,13 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 		}
 
 		const key = lastBattleKey(tag);
-		const { value: stored } = await kv.get(key);
 
-		// null (first run) fails the parse too; only a non-null failure is corrupt, so re-seed
-		// like a first run instead of re-posting every tick against a cursor that can never match.
+		// An absent cursor (first run, or expired) arrives as `undefined`: `listCursors` omits the key
+		// entirely rather than yielding a null value. It fails the parse like any other non-cursor, so
+		// only a *present* value that fails is corrupt — re-seed like a first run instead of re-posting
+		// every tick against a cursor that can never match.
 		const cursor = v.safeParse(CursorSchema, stored);
-		if (stored !== null && !cursor.success) {
+		if (stored !== undefined && !cursor.success) {
 			log.warn(`Corrupt lastBattle cursor for ${hl.entity(tag)}; re-seeding without posting`);
 		}
 		const lastSeen = cursor.success ? cursor.output : undefined;
@@ -85,8 +91,9 @@ async function poll(target: Target, token: string): Promise<PollOutcome> {
 }
 
 /**
- * Read-only dump of every stored cursor, keyed by tag, for main.ts's debug route. Values stay raw
- * on purpose — interpreting cursors (validation, first-run vs. corrupt) is poll()'s job.
+ * Read-only dump of every stored cursor, keyed by tag. Serves two callers: `pollAll`, which reads
+ * the whole set once per tick, and main.ts's debug route. Values stay raw on purpose — interpreting
+ * cursors (validation, first-run vs. corrupt) is poll()'s job.
  */
 async function listCursors(): Promise<Record<string, unknown>> {
 	const cursors: Record<string, unknown> = {};
@@ -99,5 +106,28 @@ async function listCursors(): Promise<Record<string, unknown>> {
 	return cursors;
 }
 
-export { listCursors, poll, POLL_OUTCOMES };
+/**
+ * Polls every target for one cron tick — the tick's entry point, so the KV handle stays private to
+ * this module.
+ *
+ * One `list` for the whole set, rather than a `kv.get` per player: KV reads are the free tier's
+ * binding limit (450k/month), and a per-player read at one tick a minute costs ~43.8k of them per
+ * player per month — about 88% of the budget at nine players, and over it at eleven. Reading them
+ * together makes a tick's read cost flat in the number of targets. Writes are untouched: each
+ * player still writes its own `["lastBattle", tag]` key on success, so there is no shared value for
+ * concurrent polls to clobber and invariant 2 is unchanged.
+ *
+ * Taking the snapshot before the fetches rather than after each one is safe: `Deno.cron` does not
+ * overlap ticks, and this cron is the only writer.
+ *
+ * Poll() catches its own errors and resolves "failed" — no rejection path, hence Promise.all over
+ * allSettled. One player's failure can't sink the others.
+ */
+async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]> {
+	const cursors = await listCursors();
+
+	return await Promise.all(targets.map((target) => poll(target, token, cursors[target.tag])));
+}
+
+export { listCursors, POLL_OUTCOMES, pollAll };
 export type { PollOutcome };

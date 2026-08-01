@@ -3,7 +3,7 @@ import { Hono } from "@hono/hono";
 import { configureDeckCache } from "@/deck-image.ts";
 import { config } from "@/env.ts";
 import { hl, levelColor, log } from "@/log.ts";
-import { listCursors, poll, POLL_OUTCOMES } from "@/poll.ts";
+import { listCursors, POLL_OUTCOMES, pollAll } from "@/poll.ts";
 import type { PollOutcome } from "@/poll.ts";
 
 const app = new Hono();
@@ -59,9 +59,9 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 
 	const { token, targets } = config;
 
-	// poll() catches its own errors and resolves "failed" — no rejection path, hence Promise.all
-	// over allSettled.
-	const outcomes = await Promise.all(targets.map((target) => poll(target, token)));
+	// pollAll owns the fan-out (and the tick's single cursor read) so the KV handle stays inside
+	// poll.ts; this stays wiring.
+	const outcomes = await pollAll(targets, token);
 
 	// Seeded from POLL_OUTCOMES rather than a hand-written literal, so adding an outcome doesn't
 	// need a matching edit here to keep its count off the tally line.
