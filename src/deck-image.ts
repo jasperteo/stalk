@@ -13,6 +13,20 @@ import type { Card } from "@/schema.ts";
  * `sharp.cache(false)` disables libvips' own operation cache — the deck LRU is the only cache we
  * want; libvips' would just hold memory.
  *
+ * `sharp.concurrency(1)` collapses libvips' per-pipeline thread pool to a single thread, trading
+ * wall time for total CPU. Parallelism doesn't remove work, it spreads it, and this is a cron job:
+ * nothing is waiting on the render, so wall time is nearly worthless here while CPU time is what
+ * Deploy bills. `loadTile` also runs every tile through `Promise.all` already, so 8–24 pipelines
+ * are in flight at once and each spawning its own pool is pure oversubscription — the app-level
+ * parallelism survives this, only the redundant intra-pipeline threading goes.
+ *
+ * Measured locally (default pool = 5, 20 renders, user+sys across all threads): an 8-card deck goes
+ * 1.14 → 0.84 CPU-seconds and a 24-card duel 3.69 → 2.81, both ~25% less, while per-render wall
+ * time roughly doubles (10 → 17 ms, 28 → 52 ms). Kernel time nearly halves, which is the thread
+ * coordination this removes. `concurrency(2)` is the hedge if that wall cost ever matters: most of
+ * the CPU win for half the latency. Revisit all of this if Deploy ever bills isolate wall time
+ * rather than CPU — the trade inverts.
+ *
  * Only success is memoized: a failed load clears the slot so the next render retries. Caching the
  * rejection instead would let one transient dlopen failure poison every later render for the
  * isolate's lifetime, and silently — `discord.ts` catches a failed render and posts the text-only
@@ -24,6 +38,7 @@ const loadSharp = () =>
 	(sharpModule ??= import("sharp").then(
 		({ default: sharp }) => {
 			sharp.cache(false);
+			sharp.concurrency(1);
 			return sharp;
 		},
 		(error: unknown) => {
