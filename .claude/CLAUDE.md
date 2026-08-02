@@ -135,13 +135,29 @@ excluded from `deno check`/`deno lint` (`deno.json`) and from oxlint's file walk
 ### Dependencies
 
 Runtime deps live in **`package.json`**, not `deno.json` — the `imports` map holds only the `@/`
-alias. JSR packages are declared as npm aliases (`"@hono/hono": "npm:@jsr/hono__hono@^4.12.31"`);
+alias. A JSR-only package is declared as an npm alias (`"@std/fmt": "npm:@jsr/std__fmt@^1.0.10"`);
 Deno resolves the `@jsr` scope natively (no `.npmrc`), and `preferPackageJson` makes `package.json`
 the source of truth. This way both Deno and oxlint/tsgolint (which only understands `node_modules`,
 not Deno's import map) resolve the same specifiers with no separate materialization step. Run
 `deno install` after cloning.
 
-`sharp` is the one plain npm dependency — a native libvips addon shipped via platform-filtered
+**Prefer the npm-native package wherever one exists.** `valibot` and `hono` are deliberately _not_
+`@jsr` aliases, and moving them back to "match `@std/fmt`" is a silent cold-start regression, not a
+consistency fix. JSR publishes transpiled source with the original file layout, so the JSR mirror of
+valibot is 557 separate modules behind a single barrel export — and since its `exports` map has
+exactly one entry, `import * as v` resolves, links and evaluates all 557. The npm package ships a
+pre-built self-contained `dist/index.mjs` instead: one module, same 311 exports. Measured
+module-eval cost **29.8 ms → ~2–4 ms**, which at one cron tick a minute is ~2.5% of the free tier's
+monthly CPU budget.
+
+The rule generalizes by _entry-point shape_, not by registry: bundling only helps a library whose
+entry is a single barrel over its whole surface. `hono` ships unbundled on npm too (372 files, 75
+subpath exports, a 120-byte root entry), so importing it reaches only a couple dozen modules and the
+packaging barely matters — it was moved for consistency, worth ~0.7 ms. `@std/fmt` stays on `@jsr`
+because it has no npm publication at all, and it costs nothing regardless: its four subpath entries
+are already self-contained single files with zero relative imports.
+
+`sharp` is the one dependency with a native component — a libvips addon shipped via platform-filtered
 `optionalDependencies` (Deno Deploy resolves the linux binaries from `deno.lock` at deploy time).
 Two gotchas:
 
