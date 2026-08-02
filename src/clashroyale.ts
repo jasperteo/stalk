@@ -1,4 +1,4 @@
-import * as v from "@valibot/valibot";
+import * as v from "valibot";
 
 import { log } from "@/log.ts";
 import { BattleSchema, EligibleBattleTimeSchema } from "@/schema.ts";

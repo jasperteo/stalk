@@ -2,10 +2,10 @@
 	"name": "stalk",
 	"type": "module",
 	"dependencies": {
-		"@hono/hono": "npm:@jsr/hono__hono@^4.12.31",
 		"@std/fmt": "npm:@jsr/std__fmt@^1.0.10",
-		"@valibot/valibot": "npm:@jsr/valibot__valibot@^1.4.2",
-		"sharp": "^0.35.3"
+		"hono": "^4.12.33",
+		"sharp": "^0.35.3",
+		"valibot": "^1.4.2"
 	},
 	"devDependencies": {
 		"@types/node": "^26.1.1",

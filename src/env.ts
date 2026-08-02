@@ -1,4 +1,4 @@
-import * as v from "@valibot/valibot";
+import * as v from "valibot";
 
 import { hl, log } from "@/log.ts";
 import { TargetsEnvSchema, TokenEnvSchema } from "@/schema.ts";

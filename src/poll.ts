@@ -1,4 +1,4 @@
-import * as v from "@valibot/valibot";
+import * as v from "valibot";
 
 import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
 import { notifyBattle } from "@/discord.ts";

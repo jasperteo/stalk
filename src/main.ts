@@ -1,4 +1,4 @@
-import { Hono } from "@hono/hono";
+import { Hono } from "hono";
 
 import { configureDeckCache } from "@/deck-image.ts";
 import { config } from "@/env.ts";
