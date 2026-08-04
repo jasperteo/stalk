@@ -9,13 +9,16 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: denoland/setup-deno@v2
+      - uses: actions/checkout@v7.0.1
+      - uses: socketdev/action@v1.3.2
         with:
-          deno-version: v2.x
+          mode: firewall-free
+      - uses: denoland/setup-deno@v2.0.5
+        with:
+          deno-version: v2.9.4
           cache: true
       - name: Install dependencies
-        run: deno ci
+        run: sfw deno ci
       - name: Format check
         run: deno task fmt --check
       - name: Lint and typecheck
