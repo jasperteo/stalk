@@ -42,7 +42,7 @@ Look for the algorithmic and architectural wins, not micro-optimizations.
 - N+1 patterns: query/fetch per item inside loops or per list-row rendering; missing batching or dataloader.
 - Wrong complexity: nested scans over the same collection, repeated `find`/`filter` inside hot loops where a Map keyed lookup belongs.
 - Caching gaps: identical expensive computations or fetches repeated per request/render; missing memoization at clear function boundaries; no HTTP/data-layer caching on stable data.
-- Payload size: over-fetching (select \*, full objects where IDs suffice), missing pagination on unbounded lists, large JSON shipped to clients.
+- Payload size: over-fetching (select *, full objects where IDs suffice), missing pagination on unbounded lists, large JSON shipped to clients.
 - Frontend (if applicable): bundle composition (heavyweight deps for trivial use), missing code-splitting on rarely-hit routes, unoptimized images/fonts, client-side fetching for data available at render time, render waterfalls. For React/Next.js, defer to the repo's framework conventions and any installed best-practices guidelines.
 - Backend: synchronous work that belongs in a queue, missing indexes implied by query patterns (flag for verification — don't claim without schema evidence), connection-per-request patterns where pooling exists.
 - Build/CI: slow CI from missing caching, redundant pipeline steps, test suites that could parallelize.
