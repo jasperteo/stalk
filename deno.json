@@ -1,13 +1,13 @@
 {
 	"nodeModulesDir": "auto",
 	"preferPackageJson": true,
+	"minimumDependencyAge": 0,
 
 	"tasks": {
-		"dev": "deno watch -A --tunnel src/main.ts",
-		"deploy": "deno run -A jsr:@deno/deployctl deploy",
+		"dev": "deno run -P --env-file=.env src/main.ts",
 		"test": "vitest",
-		"preview": "deno run -A --env-file=.env scripts/preview.ts",
-		"measure": "deno run -A scripts/measure.ts",
+		"preview": "deno run -P --env-file=.env scripts/preview.ts",
+		"measure": "deno run -P scripts/measure.ts",
 		"sync-types": "deno types > deno.d.ts && deno task fmt",
 		"fmt": "oxfmt",
 		"lint": "oxlint && deno lint && deno check --unstable-tsgo ."
@@ -30,9 +30,23 @@
 
 	"exclude": ["**/.claude/worktrees/"],
 
+	"permissions": {
+		"default": {
+			"env": { "allow": true },
+			"ffi": { "allow": true },
+			"net": { "allow": true },
+			"read": { "allow": true },
+			"write": { "allow": true }
+		}
+	},
+
 	"lint": { "rules": { "tags": ["recommended"] }, "exclude": ["**/deno.d.ts"] },
 	"fmt": { "exclude": ["**/*"] },
 
 	"unstable": ["kv", "cron"],
-	"deploy": { "org": "fi6pv0haybb5d3v4dab39", "app": "stalk" }
+
+	"deploy": {
+		"install": "deno ci --prod",
+		"runtime": { "mode": "dynamic", "entrypoint": "src/main.ts" }
+	}
 }

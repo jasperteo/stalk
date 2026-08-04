@@ -85,27 +85,22 @@ loudly rather than as a silent dashboard.
 deno task dev
 ```
 
-Runs under `deno watch --tunnel` with `.env` loaded, serving `GET /` (health check) and
-`GET /kv/last-battle` (a read-only dump of the stored cursors). `Deno.cron` registers at startup and
-fires on the minute against Deno's local scheduler. Press `q` + Enter to quit — plain `Deno.exit()`
-would only end the module run and leave the watcher supervising an empty process.
+Runs with `.env` loaded, serving `GET /` (health check) and `GET /kv/last-battle` (a read-only dump
+of the stored cursors). `-P` loads the `default` permission set from `deno.json` instead of
+prompting per-permission. `Deno.cron` registers at startup and fires on the minute against Deno's
+local scheduler. Press `q` + Enter to quit.
 
 ### 4. Deploy
 
-Set `CR_API_TOKEN` and `TARGETS` in the Deno Deploy project (dashboard or `deployctl`), then:
-
-```sh
-deno task deploy
-```
-
+Set `CR_API_TOKEN` and `TARGETS` in the Deno Deploy project (dashboard), then connect the project to
+this GitHub repo — Deno Deploy builds and deploys on every push, so there's no local deploy command.
 Deno KV and `Deno.cron` are provisioned automatically — no namespace to create. The `images/` card
-art is uploaded with the deployment; the renderer depends on it in production.
+art is committed to the repo and deployed with it; the renderer depends on it in production.
 
 ## Commands
 
 ```sh
 deno task dev     # Local dev server (q + Enter quits)
-deno task deploy  # Deploy to Deno Deploy
 
 deno task test     # Vitest suite
 deno task preview  # Render a hardcoded deck to scripts/preview.png, for eyeballing layout changes

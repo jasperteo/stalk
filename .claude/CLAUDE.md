@@ -10,8 +10,7 @@ and deployment.
 ## Commands
 
 ```sh
-deno task dev     # Local dev server (deno watch -A --tunnel; q + Enter quits)
-deno task deploy  # Deploy to Deno Deploy (deployctl; org/app pinned in deno.json "deploy")
+deno task dev     # Local dev server (-P loads deno.json's "permissions" set; q + Enter quits)
 
 deno task test     # Vitest suite
 deno task preview  # Render a hardcoded deck to scripts/preview.png (manual, offline)

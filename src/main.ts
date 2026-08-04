@@ -83,9 +83,9 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 });
 
 /**
- * Vite-style quit key: `q` + Enter shuts the server down. `Deno.exit()` isn't enough — under
- * `--watch`/`--watch-hmr` it only ends the module run and leaves the watcher supervising an empty
- * process — so this signals our own pid instead, tearing down the watcher just like Ctrl+C.
+ * Vite-style quit key: `q` + Enter shuts the server down. `Deno.exit()` would skip the graceful
+ * `server.shutdown()` below, so this closes the server first and then signals our own pid, exiting
+ * the same way Ctrl+C would.
  */
 async function quitOnKeypress() {
 	const decoder = new TextDecoder();
