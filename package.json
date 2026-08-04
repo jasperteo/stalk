@@ -2,15 +2,15 @@
 	"name": "stalk",
 	"type": "module",
 	"dependencies": {
-		"@std/fmt": "npm:@jsr/std__fmt@^1.0.10",
-		"hono": "^4.12.33",
+		"@std/fmt": "jsr:^1.0.10",
+		"hono": "^4.13.0",
 		"sharp": "^0.35.3",
 		"valibot": "^1.4.2"
 	},
 	"devDependencies": {
-		"@types/node": "^26.1.1",
-		"oxfmt": "^0.60.0",
-		"oxlint": "^1.75.0",
+		"@types/node": "^26.1.2",
+		"oxfmt": "^0.62.0",
+		"oxlint": "^1.77.0",
 		"oxlint-tsgolint": "^7.0.2001",
 		"vitest": "5.0.0-beta.6"
 	}
