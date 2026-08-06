@@ -12,6 +12,7 @@ import {
 	renderDeckGrid,
 	trimToArt,
 } from "@/deck-image.ts";
+import { log } from "@/log.ts";
 import type { Card } from "@/schema.ts";
 
 vi.mock("@/log.ts");
@@ -274,6 +275,28 @@ describe("renderDeckGrid", () => {
 		await expect(dimensions(oversizedPng)).resolves.toEqual(await dimensions(normalPng));
 	});
 
+	test("trims a CDN fallback icon before checking it against the cell, not after", async () => {
+		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
+
+		// A canvas bigger than the cell (like OVERSIZED_FIXTURE) but padded around art small enough to
+		// need no scaling at all — mirroring the local mirror's 285x420 frame around art that's well
+		// under the 261x405 cell once trimmed. Fitting the raw canvas to the cell first (the bug) would
+		// still warn and shrink; trimming first should do neither.
+		const padded = await insetFixture(OVERSIZED_WIDTH, OVERSIZED_HEIGHT, {
+			left: 40,
+			top: 60,
+			width: TILE_WIDTH,
+			height: TILE_HEIGHT,
+		});
+		fetchMock.mockImplementationOnce(() => Promise.resolve(new Response(new Uint8Array(padded))));
+
+		await renderDeckGrid([
+			card({ iconUrls: { medium: "https://api.clashroyale.com/padded.png" } }),
+		]);
+
+		expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining("shrinking to fit"));
+	});
+
 	test("rejects without a CDN fallback when the local read fails for any reason but NotFound", async () => {
 		const permissionError = new Deno.errors.PermissionDenied("EACCES");
 		readFileMock.mockRejectedValue(permissionError);
@@ -312,19 +335,20 @@ describe("renderDeckGrid", () => {
 		expect(urls).not.toContain("https://api.clashroyale.com/hero-icon.png");
 	});
 
-	test("falls back to medium when an Evo/Hero card has no variant icon", async () => {
+	test("rejects the render when an Evo/Hero card has no variant icon, without fetching medium", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
 
-		await renderDeckGrid([
-			card({
-				evolutionLevel: 1,
-				iconUrls: { medium: "https://api.clashroyale.com/no-variant.png" },
-			}),
-		]);
-
-		expect(fetchMock.mock.calls.map((call) => call[0])).toContain(
-			"https://api.clashroyale.com/no-variant.png"
-		);
+		// medium is the card's un-evolved art — the wrong picture for an Evolution/Hero, so a missing
+		// variant must fail the render rather than silently fetch it.
+		await expect(
+			renderDeckGrid([
+				card({
+					evolutionLevel: 1,
+					iconUrls: { medium: "https://api.clashroyale.com/no-variant.png" },
+				}),
+			])
+		).rejects.toThrow("no evolutionMedium icon");
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	test("rejects the render when the CDN fallback fetch fails", async () => {

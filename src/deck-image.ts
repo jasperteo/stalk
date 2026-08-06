@@ -254,14 +254,30 @@ const EVOLUTION_ICON = {
 } as const satisfies Record<NonNullable<Card["evolutionLevel"]>, keyof Card["iconUrls"]>;
 
 /**
- * CDN art URL for the card as played — the fallback when the local mirror has no file yet. Prefers
- * the evo/hero variant, falling back to the always-present `medium` so it never resolves blank.
+ * CDN art URL for the card as played — the fallback when the local mirror has no file yet.
+ *
+ * Throws when `evolutionLevel` is set but the API lists no matching evo/hero variant, rather than
+ * silently substituting the card's un-evolved `medium` art: that's the wrong picture, not a neutral
+ * placeholder, and letting it through would post an Evolution wearing its base frame with no signal
+ * anything was off. The throw propagates out of `loadTile` and rejects the whole `renderDeckGrid`
+ * call — `discord.ts` already catches that and posts its text-only fallback, so a missing variant
+ * costs the post its images rather than costing one tile its correctness.
  */
 function iconUrl(card: Card): string {
-	const variant = card.evolutionLevel
-		? card.iconUrls[EVOLUTION_ICON[card.evolutionLevel]]
-		: undefined;
-	return variant ?? card.iconUrls.medium;
+	if (!card.evolutionLevel) {
+		return card.iconUrls.medium;
+	}
+
+	const key = EVOLUTION_ICON[card.evolutionLevel];
+	const variant = card.iconUrls[key];
+
+	if (variant === undefined) {
+		throw new Error(
+			`card ${String(card.id)} (${card.name}) played at evolutionLevel ${String(card.evolutionLevel)} but the API lists no ${key} icon`
+		);
+	}
+
+	return variant;
 }
 
 /**
@@ -409,13 +425,20 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 }
 
 /**
- * Fetches a fallback card icon and resizes it to fit inside the cell before decoding. `CELL_WIDTH`/
- * `CELL_HEIGHT` are the upper bound of every _local_ icon's trimmed size (`deno task measure`); the
- * CDN path has no such guarantee (a brand-new card's art may simply be bigger), and the overlay
- * math in `composeDeckGrid` assumes every tile fits its cell — an oversized tile pushes
- * `left`/`top` negative there, which sharp clips silently instead of erroring. `fit: "inside"`
- * preserves aspect ratio; `withoutEnlargement` leaves already-small art untouched, so a normal
- * fallback (which does fit) is unaffected.
+ * Fetches a fallback card icon and trims it exactly like a local one (see `trimToArt`), shrinking
+ * it only if the _trimmed_ tile still overflows the cell.
+ *
+ * Trim first, resize second — never the reverse. `CELL_WIDTH`/`CELL_HEIGHT` bound every local
+ * icon's **trimmed** size (`deno task measure`), not its raw canvas. Fitting the untrimmed canvas
+ * to the cell scales its transparent margin down together with the art, so a tile whose art needed
+ * no scaling at all still comes out visibly smaller than its local-mirror neighbours.
+ *
+ * The clamp still has to exist: the CDN has no size guarantee (a brand-new card's art may simply be
+ * bigger than the cell even once trimmed), and `composeDeckGrid`'s overlay math assumes every tile
+ * fits its cell — an oversized tile pushes `left`/`top` negative there, which sharp clips silently
+ * instead of erroring. `fit: "inside"` preserves aspect ratio; no `withoutEnlargement` guard is
+ * needed here since this branch only runs once the trimmed tile is already confirmed to exceed the
+ * cell, so the resize always shrinks.
  */
 async function fetchTile(url: string): Promise<Tile> {
 	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
@@ -427,24 +450,24 @@ async function fetchTile(url: string): Promise<Tile> {
 	}
 
 	const fetched = new Uint8Array(await response.arrayBuffer());
-	const sharp = await loadSharp();
+	const tile = trimRaw(await decodeToRaw(fetched));
 
-	// One instance for both the header read and the pipeline below — a second `sharp(fetched)` would
-	// parse the same buffer again.
-	const image = sharp(fetched);
-	const { width, height } = await image.metadata();
-
-	if (width > CELL_WIDTH || height > CELL_HEIGHT) {
-		log.warn(
-			`CDN icon ${hl.strong(`${String(width)}x${String(height)}`)} exceeds the ${hl.strong(`${String(CELL_WIDTH)}x${String(CELL_HEIGHT)}`)} cell for ${url}; shrinking to fit`
-		);
+	if (tile.width <= CELL_WIDTH && tile.height <= CELL_HEIGHT) {
+		return tile;
 	}
 
-	// Out as raw RGBA, not PNG: `trimRaw` wants a decoded bitmap, so encoding here would only buy a
-	// deflate pass plus the inflate to undo it. Same rule `cropRaw` follows — stay in raw memory.
-	const { data, info } = await image
-		.resize({ width: CELL_WIDTH, height: CELL_HEIGHT, fit: "inside", withoutEnlargement: true })
-		.ensureAlpha()
+	log.warn(
+		`CDN icon trims to ${hl.strong(`${String(tile.width)}x${String(tile.height)}`)}, past the ${hl.strong(`${String(CELL_WIDTH)}x${String(CELL_HEIGHT)}`)} cell for ${url}; shrinking to fit`
+	);
+
+	// Raw in, raw out: the trimmed tile is already a decoded bitmap and `trimRaw` wants one back, so
+	// encoding here would only buy a deflate pass plus the inflate to undo it. Same rule `cropRaw`
+	// follows — stay in raw memory.
+	const sharp = await loadSharp();
+	const { data, info } = await sharp(tile.data, {
+		raw: { width: tile.width, height: tile.height, channels: BYTES_PER_PIXEL },
+	})
+		.resize({ width: CELL_WIDTH, height: CELL_HEIGHT, fit: "inside" })
 		.raw()
 		.toUint8Array();
 
