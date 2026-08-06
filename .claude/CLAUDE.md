@@ -86,6 +86,11 @@ Internal imports use the `@/` map with explicit `.ts` extensions.
   `skipped`, so it doesn't read as a quiet tick. The cursor stays put and the battle retries once
   the schema catches up.
 - **Deck render fails** — `discord.ts` posts a text-only embed instead.
+- **Evo/Hero card missing its CDN variant art** — `iconUrl` (`deck-image.ts`) throws rather than
+  silently substitute the card's un-evolved `medium` art, which would be the wrong picture, not a
+  neutral fallback. The throw rejects the whole `renderDeckGrid` call, so this is a deck render
+  failure like any other — one missing variant costs the post its images, not one tile its
+  correctness.
 - **Discord rejects the payload (400/413, `PAYLOAD_REJECTED`)** — retries once with the text-only
   body, so an oversized post self-heals. A 5xx/429 still throws: Discord may already have accepted
   it, and retrying could double-post.
