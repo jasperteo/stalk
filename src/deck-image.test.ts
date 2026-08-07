@@ -8,7 +8,7 @@ import {
 	CELL_WIDTH,
 	DECK_CACHE_BYTES,
 	decodeToRaw,
-	MAX_GRID_WIDTH,
+	planGrid,
 	renderDeckGrid,
 	trimToArt,
 } from "@/deck-image.ts";
@@ -183,10 +183,6 @@ async function dimensions(png: Uint8Array) {
 	return { width, height };
 }
 
-// 4 * CELL_WIDTH + 3 * COLUMN_GAP; COLUMN_GAP is module-private, so the derived total is inlined.
-const NATIVE_WIDTH = 1080;
-const scaled = (px: number) => Math.round((px * MAX_GRID_WIDTH) / NATIVE_WIDTH);
-
 describe("renderDeckGrid", () => {
 	test("lays out a 4-column grid at the fixed cell resolution", async () => {
 		const eightCards = Array.from({ length: 8 }, () => card());
@@ -200,11 +196,11 @@ describe("renderDeckGrid", () => {
 
 		// Cell size is fixed (CELL_WIDTH/CELL_HEIGHT), not derived from the tiles in the deck, so even
 		// this small fixture (well under either dimension) composites into a full-size row, and a lone
-		// card still reserves the full 4-column width with trailing cells empty. The composed grid is
-		// downscaled to MAX_GRID_WIDTH before encode, so the shipped dimensions are scaled from the
-		// native CELL_HEIGHT/4-column-width, not equal to them.
-		expect(singleRow.height).toBe(scaled(CELL_HEIGHT));
-		expect(singleRow.width).toBe(MAX_GRID_WIDTH);
+		// card still reserves the full 4-column width with trailing cells empty. Compose happens at
+		// native resolution with no downscale before encode, so the shipped dimensions equal
+		// `planGrid`'s.
+		expect(singleRow.height).toBe(planGrid(1).height);
+		expect(singleRow.width).toBe(planGrid(1).width);
 		// The full deck spans the same 4 columns and adds a second row. Asserted relative to the
 		// single-row render rather than against COLUMN_GAP/ROW_GAP, which are tuning knobs.
 		expect(grid.width).toBe(singleRow.width);
@@ -393,77 +389,33 @@ describe("renderDeckGrid", () => {
 	});
 });
 
-/**
- * Counts opaque pixels down the grid's leftmost column (x = 0). The 20×30 fixture tiles are centred
- * in 261-wide cells, so no card ever reaches x = 0 — the only thing that can paint there is a
- * full-width deck-boundary divider. So this count is 0 for a single deck and scales with the number
- * of divider rules (DIVIDER_THICKNESS px each) for a duel.
- */
-async function leftEdgeOpaquePixels(png: Uint8Array) {
-	const { data, width, height } = await decodeToRaw(png);
-	let count = 0;
+describe("planGrid", () => {
+	// Pure geometry, no sharp — cheap enough to check across many tile counts at once.
 
-	for (let y = 0; y < height; y++) {
-		const alpha = data[y * width * 4 + 3] ?? 0;
-		if (alpha > 0) count++;
-	}
+	test("keeps four columns (constant width) regardless of tile count", () => {
+		const widths = [1, 8, 16, 24].map((tileCount) => planGrid(tileCount).width);
 
-	return count;
-}
-
-describe("renderDeckGrid duel layout", () => {
-	// Distinct ids per card so no two decks collide in the module-level deck cache (see the file
-	// header comment). A duel's cards array is the concatenation of 2 or 3 full 8-card decks.
-	const deck = (blocks: number) => Array.from({ length: blocks * 8 }, () => card());
-
-	test("keeps all four columns (constant width) regardless of deck count", async () => {
-		const [one, two, three] = await Promise.all([
-			renderDeckGrid(deck(1)).then(dimensions),
-			renderDeckGrid(deck(2)).then(dimensions),
-			renderDeckGrid(deck(3)).then(dimensions),
-		]);
-
-		expect(two.width).toBe(one.width);
-		expect(three.width).toBe(one.width);
+		expect(new Set(widths).size).toBe(1);
 	});
 
-	test("inserts a block gap so stacked decks are taller than the same rows run together", async () => {
-		const [one, two, three] = await Promise.all([
-			renderDeckGrid(deck(1)).then(dimensions),
-			renderDeckGrid(deck(2)).then(dimensions),
-			renderDeckGrid(deck(3)).then(dimensions),
-		]);
-
-		// A 16-card duel is two 8-card blocks plus a positive gap between them, so it is strictly
-		// taller than two single decks stacked with no gap would be. This is the assertion that fails
-		// if the block gap is ever dropped (the old continuous grid made two decks SHORTER than
-		// 2×one, because of the negative row overlap at the boundary).
-		expect(two.height).toBeGreaterThan(2 * one.height);
-		expect(three.height).toBeGreaterThan(two.height);
+	test("adds one row per four tiles, rounding up", () => {
+		for (const tileCount of [1, 4, 5, 8, 16, 24]) {
+			expect(planGrid(tileCount).rowTops.length).toBe(Math.ceil(tileCount / 4));
+		}
 	});
 
-	test("draws one divider rule per block boundary and none for a single deck", async () => {
-		const [one, two, three] = await Promise.all([
-			renderDeckGrid(deck(1)),
-			renderDeckGrid(deck(2)),
-			renderDeckGrid(deck(3)),
-		]);
+	test("row tops strictly increase and are evenly spaced, so height grows linearly with row count", () => {
+		for (const tileCount of [1, 4, 5, 8, 16, 24]) {
+			const { rowTops } = planGrid(tileCount);
+			const pitches = rowTops.slice(1).map((top, i) => top - (rowTops[i] ?? 0));
 
-		const [edgeOne, edgeTwo, edgeThree] = await Promise.all([
-			leftEdgeOpaquePixels(one),
-			leftEdgeOpaquePixels(two),
-			leftEdgeOpaquePixels(three),
-		]);
-
-		// No divider on a normal 8-card deck; the leftmost column stays fully transparent — a fully
-		// transparent column stays fully transparent under any resample.
-		expect(edgeOne).toBe(0);
-		// A 16-card duel has exactly one divider; a 24-card duel has two, so roughly twice the painted
-		// pixels. Not an exact 2x: the grid is Lanczos-downscaled before encode, so the 4px dividers land
-		// on ~2.7px with partial-alpha ringing at the resampled edges, rather than an exact integer ratio.
-		expect(edgeTwo).toBeGreaterThan(0);
-		expect(edgeThree).toBeGreaterThan(edgeTwo * 1.8);
-		expect(edgeThree).toBeLessThan(edgeTwo * 2.2);
+			// Every gap between consecutive row tops is the same pitch — no wider gap at any point, which
+			// is what a block-boundary divider used to introduce.
+			expect(new Set(pitches).size).toBeLessThanOrEqual(1);
+			for (const pitch of pitches) {
+				expect(pitch).toBeGreaterThan(0);
+			}
+		}
 	});
 });
 
@@ -476,8 +428,8 @@ describe("renderDeckGrid duel layout", () => {
  * re-render (a re-render re-reads every tile since there is no per-tile cache, but identity is the
  * direct signal).
  *
- * `targetCount` sizes the fresh instance's entry-count guard to `3 * targetCount + 10`: 0 for the
- * bare default of 10, higher when a test needs the entry guard out of the way.
+ * `targetCount` sizes the fresh instance's entry-count guard to `3 * targetCount + 8`: 0 for the
+ * bare default of 8, higher when a test needs the entry guard out of the way.
  */
 async function freshRenderDeckGrid(targetCount = 0) {
 	vi.resetModules();
@@ -487,11 +439,11 @@ async function freshRenderDeckGrid(targetCount = 0) {
 }
 
 describe("renderDeckGrid LRU", () => {
-	// The entry-count guard is `3 * targetCount + 10`, so a target count of 0 caps at the bare
-	// default and 2 raises it to 16 — enough to prove the multiplier is honored, not clamped.
+	// The entry-count guard is `3 * targetCount + 8`, so a target count of 0 caps at the bare
+	// default and 2 raises it to 14 — enough to prove the multiplier is honored, not clamped.
 	test.each([
-		[0, 10],
-		[2, 16],
+		[0, 8],
+		[2, 14],
 	])(
 		"evicts the least-recently-used deck past the cap for %i targets, keeping touched decks warm",
 		async (targetCount, limit) => {
@@ -513,7 +465,12 @@ describe("renderDeckGrid LRU", () => {
 			await render(deck(999));
 
 			const second = await render(deck(1));
-			expect(second).not.toBe(await render(deck(0))); // sanity: distinct decks, distinct pngs
+			// Every deck in this suite renders from the same fixture, so deck 0 and deck 1's PNGs are
+			// byte-identical despite being distinct cache entries — `.not.toBe()` on the raw buffers would
+			// force vitest's equality fallback to walk the full (now native-resolution, multi-MB) content
+			// looking for a difference it will never find. `Object.is` inside a boolean asserts the same
+			// reference-distinctness in O(1).
+			expect(Object.is(second, await render(deck(0)))).toBe(false); // sanity: distinct decks, distinct pngs
 			expect(await render(deck(1))).toBe(second); // deck 1 re-rendered, now cached again
 			expect(await render(deck(0))).toBe(first); // deck 0 survived — recency was refreshed
 		}
@@ -531,18 +488,18 @@ describe("renderDeckGrid LRU", () => {
 });
 
 /**
- * Byte-budget tests pass a target count of 20, putting the entry-count guard at 3 * 20 + 10 = 70 —
+ * Byte-budget tests pass a target count of 20, putting the entry-count guard at 3 * 20 + 8 = 68 —
  * well above what they fill, so entry-count eviction never fires here (it is already covered by
  * "renderDeckGrid LRU" above) and `DECK_CACHE_BYTES` is isolated as the one doing the evicting.
  */
 const HEADROOM_TARGETS = 20;
 
 describe("renderDeckGrid byte budget", () => {
-	// A 24-card duel of NOISY_FIXTURE tiles composes to about 2 MiB, so every deck in a given run is
-	// the same size (same content, only the cache key's ids differ) — `perDeck` below is measured
-	// from the first render rather than hardcoded, so the test stays correct if compression, layout,
-	// or DECK_CACHE_BYTES itself ever changes.
-	const duel = (id: number) => Array.from({ length: 24 }, (_, i) => card({ id: id * 100 + i }));
+	// A big synthetic deck (24 tiles of NOISY_FIXTURE) that fills the byte budget fast, so every deck
+	// in a given run is the same size (same content, only the cache key's ids differ) — `perDeck`
+	// below is measured from the first render rather than hardcoded, so the test stays correct if
+	// compression, layout, or DECK_CACHE_BYTES itself ever changes.
+	const bigDeck = (id: number) => Array.from({ length: 24 }, (_, i) => card({ id: id * 100 + i }));
 
 	// Real (unmocked) sharp renders enough 24-tile decks to fill DECK_CACHE_BYTES — genuine CPU-bound
 	// work with no shortcut, so the default 5s test timeout is too tight on a slower/shared CI runner
@@ -556,29 +513,34 @@ describe("renderDeckGrid byte budget", () => {
 
 			readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
 
-			const first = await render(duel(0));
+			const first = await render(bigDeck(0));
 			const perDeck = first.length;
 			// The most decks that fit at or under budget, deck 0 included.
 			const capacity = Math.floor(DECK_CACHE_BYTES / perDeck);
 
 			for (let id = 1; id < capacity; id++) {
-				await render(duel(id));
+				await render(bigDeck(id));
 			}
 
 			const readsBeforeOverflow = readFileMock.mock.calls.length;
 
 			// One more deck pushes the running total past DECK_CACHE_BYTES; the oldest entry (deck 0, never
 			// re-touched since its insert) is evicted to bring it back under budget.
-			await render(duel(capacity));
+			await render(bigDeck(capacity));
 
 			expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeOverflow);
 
 			const readsBeforeRerender = readFileMock.mock.calls.length;
-			const refreshed = await render(duel(0));
+			const refreshed = await render(bigDeck(0));
 
 			// Evicted for bytes, not recency: re-rendering deck 0 is a fresh render (new reads, new bytes).
 			expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeRerender);
-			expect(refreshed).not.toBe(first);
+			// Every card in this suite renders from NOISY_FIXTURE regardless of id, so the refreshed grid
+			// is byte-identical to the original despite being a distinct render — `.not.toBe()` on the raw
+			// (now native-resolution, ~10 MiB) buffers would force vitest's equality fallback to walk the
+			// full content with no mismatch to short-circuit on. `Object.is` inside a boolean asserts the
+			// same reference-distinctness in O(1) instead of ~14s.
+			expect(Object.is(refreshed, first)).toBe(false);
 		},
 		EVICTION_TEST_TIMEOUT_MS
 	);
@@ -588,7 +550,7 @@ describe("renderDeckGrid byte budget", () => {
 
 		readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
 
-		const cards = duel(0);
+		const cards = bigDeck(0);
 		const first = await render(cards);
 		const readsAfterFirst = readFileMock.mock.calls.length;
 		const second = await render(cards);
