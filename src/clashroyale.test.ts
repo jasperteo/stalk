@@ -2,7 +2,8 @@ import { describe, expect, test, vi } from "vitest";
 
 import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
 import { log } from "@/log.ts";
-import { rawBattle, rawCard, rawPlayer } from "@/testing/fixtures.ts";
+import { DECK_SIZE } from "@/schema.ts";
+import { duelBattle, rawBattle, rawCard, rawPlayer } from "@/testing/fixtures.ts";
 
 vi.mock("@/log.ts");
 
@@ -54,6 +55,37 @@ describe("latestBattle", () => {
 		const outOfOrder = battle("20240201T000000.000Z");
 
 		expect(latestBattle([first, outOfOrder]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
+	});
+
+	test("skips a duel (16 concatenated cards) to reach an ordinary 1v1 further down the log", () => {
+		const duel = duelBattle({ battleTime: "20240201T000000.000Z" });
+		const eligible = battle("20240101T000000.000Z");
+
+		expect(latestBattle([duel, eligible]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
+	});
+
+	test("skips a duel with 24 concatenated cards (3-deck variant) too", () => {
+		const duel = duelBattle({ battleTime: "20240201T000000.000Z" }, 3);
+		const eligible = battle("20240101T000000.000Z");
+
+		expect(latestBattle([duel, eligible]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
+	});
+
+	test("an 8-card deck is still eligible — the duel check must not be off by one", () => {
+		const eightCards = rawBattle({
+			team: [rawPlayer({ cards: Array.from({ length: DECK_SIZE }, () => rawCard()) })],
+		});
+
+		expect(latestBattle([eightCards]).battle).toBeDefined();
+	});
+
+	test("a 9-card deck is already ineligible — one more than a real deck trips the duel check", () => {
+		const nineCards = rawBattle({
+			team: [rawPlayer({ cards: Array.from({ length: DECK_SIZE + 1 }, () => rawCard()) })],
+		});
+		const eligible = battle("20240101T000000.000Z");
+
+		expect(latestBattle([nineCards, eligible]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
 	});
 
 	test("returns undefined when the newest eligible entry fails full schema validation", () => {

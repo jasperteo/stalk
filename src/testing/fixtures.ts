@@ -4,6 +4,8 @@
  * fields they assert on, and parse through `BattleSchema` where a validated `Battle` is needed.
  */
 
+import { DECK_SIZE } from "@/schema.ts";
+
 /** A syntactically valid Discord webhook URL for tests that need one. */
 const WEBHOOK = "https://discord.com/api/webhooks/1/aaa";
 
@@ -53,4 +55,19 @@ function driftedBattle(overrides: Record<string, unknown> = {}) {
 	});
 }
 
-export { BOB, driftedBattle, rawBattle, rawCard, rawPlayer, WEBHOOK };
+/**
+ * A Duel entry: `team[0].cards` holds `deckCount` concatenated 8-card decks (16 or 24 entries)
+ * rather than one, the structural tell `EligibleBattleTimeSchema` rejects on.
+ */
+function duelBattle(overrides: Record<string, unknown> = {}, deckCount = 2) {
+	return rawBattle({
+		team: [
+			rawPlayer({
+				cards: Array.from({ length: deckCount * DECK_SIZE }, () => rawCard()),
+			}),
+		],
+		...overrides,
+	});
+}
+
+export { BOB, driftedBattle, duelBattle, rawBattle, rawCard, rawPlayer, WEBHOOK };

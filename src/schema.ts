@@ -92,15 +92,27 @@ const BattleSchema = v.object({
 });
 
 /**
+ * Cards in one Clash Royale deck. A duel concatenates 2–3 decks into `cards`, so a longer array is
+ * the structural tell — more robust than matching gameMode names.
+ */
+const DECK_SIZE = 8;
+
+/**
  * Cheap eligibility check: reuses BattleSchema's own battleTime rule and requires a single `team`
- * entry (1v1), without the cost of full battle validation. Malformed or 2v2 entries fall back to
- * "", the sentinel `latestBattle` reads as "not eligible, keep looking".
+ * entry (1v1) whose `cards` array is no longer than one deck, without the cost of full battle
+ * validation. A Duel is also a single `team` entry, but each player's `cards` is the concatenation
+ * of 2–3 decks (16 or 24 entries) rather than 8 — that count, not `gameMode.name` (which varies
+ * across duel variants), is what distinguishes it structurally. Malformed, 2v2, and duel entries
+ * all fall back to "", the sentinel `latestBattle` reads as "not eligible, keep looking".
  */
 const EligibleBattleTimeSchema = v.fallback(
 	v.pipe(
 		v.object({
 			battleTime: BattleSchema.entries.battleTime,
-			team: v.pipe(v.array(v.unknown()), v.length(1)),
+			team: v.pipe(
+				v.array(v.object({ cards: v.pipe(v.array(v.unknown()), v.maxLength(DECK_SIZE)) })),
+				v.length(1)
+			),
 		}),
 		v.transform((battle) => battle.battleTime)
 	),
@@ -133,5 +145,12 @@ type Battle = v.InferOutput<typeof BattleSchema>;
 type Target = v.InferOutput<typeof TargetSchema>;
 type Card = v.InferOutput<typeof CardSchema>;
 
-export { BattleSchema, CursorSchema, EligibleBattleTimeSchema, TargetsEnvSchema, TokenEnvSchema };
+export {
+	BattleSchema,
+	CursorSchema,
+	DECK_SIZE,
+	EligibleBattleTimeSchema,
+	TargetsEnvSchema,
+	TokenEnvSchema,
+};
 export type { Battle, Card, Player, Target };
