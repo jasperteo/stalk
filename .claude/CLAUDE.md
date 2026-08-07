@@ -48,14 +48,10 @@ Break one of these and the app misbehaves in a way tests may not catch.
 5. **`if (interactive) await quitOnKeypress()` must stay the last statement in `main.ts`.** Its
    top-level await blocks module evaluation until stdin closes, so anything below it never runs
    locally — and Deploy (no TTY, skips the gate) would mask the breakage.
-6. **`renderDeckGrid` uses two sharp pipelines, not one.** sharp always applies `resize` before
-   `composite` within a single pipeline regardless of chaining order, so the finished grid can only
-   be scaled over an already-composed bitmap. Collapsing the two pipelines silently drops every
-   overlay from the output.
-7. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
+6. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
    fetch is only a fallback for a card id with no local file. 177 PNGs (285×420): `<id>.png` plus 41
    `-evo` and 14 `-hero` variants, covering all 122 playable cards.
-8. **Everything logs through `src/log.ts`.** It is the only module that may import
+7. **Everything logs through `src/log.ts`.** It is the only module that may import
    `@std/fmt/colors`, so every paint call happens after its `setColorEnabled` gate.
 
 ## Architecture
@@ -69,10 +65,10 @@ battle log → compare newest eligible battle against the KV cursor → post →
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/main.ts`        | Wiring only. Runs as a script (`deno run`, not `deno serve` — hence no default export). `Deno.serve` binds Hono (`GET /` health, `GET /kv/last-battle` cursor dump); `Deno.cron` drives polling and logs a per-tick outcome tally.                                                                                                  |
 | `src/poll.ts`        | The polling domain. Owns the KV handle (private; reads go through `listCursors()`) and the `["lastBattle", tag]` key with its 30-day TTL. `pollAll` is the tick entry point: one cursor read, then a concurrent `poll()` per target, each resolving one of `POLL_OUTCOMES`: `posted` / `seeded` / `skipped` / `drifted` / `failed`. |
-| `src/clashroyale.ts` | Battle-log fetch via the RoyaleAPI proxy, with an abort timeout. `latestBattle` takes the first eligible entry (the log arrives newest-first) and fully validates only that one.                                                                                                                                                    |
+| `src/clashroyale.ts` | Battle-log fetch via the RoyaleAPI proxy, with an abort timeout. `latestBattle` takes the first eligible entry (the log arrives newest-first, with 2v2s and Duels excluded) and fully validates only that one.                                                                                                                      |
 | `src/discord.ts`     | Builds and posts the webhook message: content line (result, crowns, HP margin — doubles as the push notification), then one embed per side with deck grid, trophies, and tower-troop thumbnail.                                                                                                                                     |
 | `src/deck-image.ts`  | Composites cards into a bottom-aligned 4-column PNG grid via sharp.                                                                                                                                                                                                                                                                 |
-| `src/schema.ts`      | Valibot schemas for the API shapes and both env vars. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`.                                                                                                                                                                                           |
+| `src/schema.ts`      | Valibot schemas for the API shapes and both env vars. `EligibleBattleTimeSchema` rejects 2v2s and Duels (a Duel concatenates 2–3 decks into one `cards` array) before full validation. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`.                                                          |
 | `src/env.ts`         | Reads and validates env once at module load; exports `config`.                                                                                                                                                                                                                                                                      |
 | `src/log.ts`         | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette) and `hl` (inline value highlighters).                                                                                                                                                                                          |
 
@@ -84,7 +80,9 @@ Internal imports use the `@/` map with explicit `.ts` extensions.
   tick against a cursor that can never match. An expired cursor re-seeds silently.
 - **Schema drift** — the newest entry selected but failing full validation resolves `drifted`, not
   `skipped`, so it doesn't read as a quiet tick. The cursor stays put and the battle retries once
-  the schema catches up.
+  the schema catches up. An entry whose `team[0].cards` is missing or not an array fails the
+  eligibility check during the battlelog scan itself, before anything is selected as newest — that
+  resolves `skipped`, not `drifted`, a small accepted narrowing of drift detection.
 - **Deck render fails** — `discord.ts` posts a text-only embed instead.
 - **Evo/Hero card missing its CDN variant art** — `iconUrl` (`deck-image.ts`) throws rather than
   silently substitute the card's un-evolved `medium` art, which would be the wrong picture, not a
@@ -97,25 +95,26 @@ Internal imports use the `@/` map with explicit `.ts` extensions.
 
 ### Deck rendering notes
 
-The doc comments in `src/deck-image.ts` are the authority on every constant's value and rationale.
-What to know before editing:
+[`docs/deck-rendering.md`](../docs/deck-rendering.md) is the authority on every constant's value and
+rationale — the source now carries only a one-line JSDoc per constant pointing back there. What to
+know before editing:
 
 - **Tiles are never individually resized.** They composite at native resolution into fixed
-  `CELL_WIDTH`×`CELL_HEIGHT` cells (261×405, the upper bound of every trimmed icon per
-  `deno task measure`), so the pre-downscale grid dimensions stay constant across decks. Only the
-  composed grid is scaled, as the last step before encoding (`MAX_GRID_WIDTH`, 480).
-- **Stay in raw memory.** Tiles decode once to raw RGBA; `cropRaw` and `solidRule` slice/build
-  `Buffer`s by memcpy rather than running a second sharp pipeline. They return `Buffer` because
-  `OverlayOptions.input` is typed `Buffer`-only and must feed `.composite()` castless.
-  `toUint8Array()` is the rule only for data _leaving_ sharp.
-- **Duels** concatenate 2 or 3 decks into one `cards` array (16 or 24 entries), rendered as stacked
-  blocks. `COLUMN_GAP`/`ROW_GAP` tune spacing _within_ a block; `DECK_GAP` and `DIVIDER_*` govern
-  block boundaries. Tune the latter via `deno task preview` **on a 16-card deck** — an ordinary
-  8-card deck has no block boundary and never exercises them.
+  `CELL_WIDTH`×`CELL_HEIGHT` cells, so the grid's pixel dimensions stay constant across decks. The
+  composed grid is encoded directly, with no scaling step at all — the grid ships at its native
+  resolution. All grid geometry — width, height, row tops — comes from the pure
+  `planGrid(tileCount)` function, with no sharp involvement, so the layout math is unit-testable
+  without rendering pixels. See [Cell sizing](../docs/deck-rendering.md#cell-sizing) and
+  [Output size](../docs/deck-rendering.md#output-size).
+- **Stay in raw memory.** Tiles decode once to raw RGBA; `cropRaw` slices `Buffer`s by memcpy rather
+  than running a second sharp pipeline — see its doc comment (`src/deck-image.ts`) for why `Buffer`
+  specifically, not `Uint8Array`. `toUint8Array()` is the rule only for data _leaving_ sharp.
 - **One cache only:** an LRU of finished grids keyed by the deck's ordered mirror filenames, bounded
   primarily by `DECK_CACHE_BYTES` and secondarily by an entry-count guard that `main.ts` sizes once
-  at startup via `configureDeckCache` (so the renderer never reads app config). There is no per-tile
-  cache — local reads are covered by the OS page cache.
+  at startup via `configureDeckCache` (so the renderer never reads app config). The byte budget is
+  what binds today; the entry guard is a deliberate hedge for if `GRID_COMPRESSION` is ever raised.
+  There is no per-tile cache — local reads are covered by the OS page cache. See
+  [Deck cache](../docs/deck-rendering.md#deck-cache).
 
 ## Toolchain
 

@@ -25,7 +25,8 @@ grid.
    the post succeeds but the cursor write fails, the next tick re-posts rather than dropping the
    battle — a rare duplicate beats a silent loss.
 
-2v2 battles are ignored, and entries that fail schema validation are skipped. The newest eligible
+2v2 and Duel battles are ignored (a Duel concatenates 2–3 decks into one match, not a single 1v1
+loadout), and entries that fail schema validation are skipped. The newest eligible
 entry is picked by a fast timestamp comparison and only that one is fully validated, so validation
 runs once per log rather than once per entry.
 
@@ -128,25 +129,25 @@ safe to expose.
 
 ## Project layout
 
-| Path                       | Contents                                                                                |
-| -------------------------- | --------------------------------------------------------------------------------------- |
-| `src/main.ts`              | Entry point: HTTP routes, cron registration, per-tick tally                             |
-| `src/poll.ts`              | The polling loop — cursor read/compare/advance, one outcome per player                  |
-| `src/clashroyale.ts`       | Battle-log fetch and newest-eligible-battle selection                                   |
-| `src/discord.ts`           | Webhook message construction and delivery, with a text-only fallback                    |
-| `src/deck-image.ts`        | Deck grids composited from local card art via [sharp](https://sharp.pixelplumbing.com/) |
-| `src/schema.ts`            | Valibot schemas for the API shapes and the env vars                                     |
-| `src/env.ts`, `src/log.ts` | Validated config; leveled, colored console output                                       |
-| `src/*.test.ts`            | Vitest suite, colocated next to each module                                             |
-| `images/`                  | 177 card-art PNGs, keyed by card id (plus `-evo`/`-hero` variants)                      |
-| `scripts/`                 | Offline dev tools behind `deno task preview` / `deno task measure`                      |
+| Path                       | Contents                                                                                                                                                  |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.ts`              | Entry point: HTTP routes, cron registration, per-tick tally                                                                                               |
+| `src/poll.ts`              | The polling loop — cursor read/compare/advance, one outcome per player                                                                                    |
+| `src/clashroyale.ts`       | Battle-log fetch and newest-eligible-battle selection                                                                                                     |
+| `src/discord.ts`           | Webhook message construction and delivery, with a text-only fallback                                                                                      |
+| `src/deck-image.ts`        | Deck grids composited from local card art via [sharp](https://sharp.pixelplumbing.com/); tuning log in [`docs/deck-rendering.md`](docs/deck-rendering.md) |
+| `src/schema.ts`            | Valibot schemas for the API shapes and the env vars                                                                                                       |
+| `src/env.ts`, `src/log.ts` | Validated config; leveled, colored console output                                                                                                         |
+| `src/*.test.ts`            | Vitest suite, colocated next to each module                                                                                                               |
+| `images/`                  | 177 card-art PNGs, keyed by card id (plus `-evo`/`-hero` variants)                                                                                        |
+| `scripts/`                 | Offline dev tools behind `deno task preview` / `deno task measure`                                                                                        |
 
 Deck grids are composited from the local `images/` mirror rather than fetched per render, cached by
-deck (players repeat decks, so most battles skip rendering entirely), and downscaled once before
-encoding — a shipped 8-card grid is 480×353 and about 0.65 MiB, stored uncompressed to keep encode
-CPU down. A CDN fetch is the fallback for a
+deck (players repeat decks, so most battles skip rendering entirely), and shipped at native
+resolution with no downscale step — a shipped 8-card grid is 1080 px wide and about 3.28 MiB, stored
+uncompressed to keep encode CPU down. A CDN fetch is the fallback for a
 card too new to be in the mirror; if rendering fails outright, the battle still posts as a text-only
 embed.
 
 Working on the code? `.claude/CLAUDE.md` documents the toolchain setup, the invariants, and the
-traps.
+traps. `docs/deck-rendering.md` documents every deck-rendering constant's value and rationale.
