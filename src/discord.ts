@@ -37,7 +37,7 @@ const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi
  */
 const WEBHOOK_TIMEOUT_MS = 15_000;
 
-const SPACER_FIELD = { name: "\u200B", value: "\u200B" } as const;
+const SPACER_FIELD = { name: "\u{200B}", value: "\u{200B}" } as const;
 
 /**
  * Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. The
@@ -164,7 +164,7 @@ const TOWER_TROOP_ART: Record<number, string> = {
 function towerThumbnail(player: Player | undefined) {
 	const troop = player?.supportCards[0];
 	if (troop === undefined) {
-		return undefined;
+		return;
 	}
 
 	return { url: TOWER_TROOP_ART[troop.id] ?? troop.iconUrls.medium };
@@ -366,7 +366,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 	);
 
 	// Only retry when Discord rejected the image payload itself — see PAYLOAD_REJECTED.
-	if (!response.ok && form !== undefined && PAYLOAD_REJECTED.has(response.status)) {
+	if (form !== undefined && !response.ok && PAYLOAD_REJECTED.has(response.status)) {
 		const rejected = await response.text();
 
 		log.warn(

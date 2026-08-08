@@ -68,13 +68,13 @@ function latestBattle(entries: unknown[]): { battle: Battle | undefined; drifted
 	}
 
 	// A defined `newest` failing here means the API's shape drifted, not just "no new battles".
-	const drifted = newest !== undefined;
+	const hasDrifted = newest !== undefined;
 
-	if (drifted) {
+	if (hasDrifted) {
 		log.warn("Newest eligible battle failed schema validation:", v.flatten(result.issues));
 	}
 
-	return { battle: undefined, drifted };
+	return { battle: undefined, drifted: hasDrifted };
 }
 
 export { fetchBattlelog, latestBattle };

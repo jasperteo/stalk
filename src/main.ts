@@ -16,7 +16,7 @@ app.get("/kv/last-battle", async (ctx) => ctx.json(await listCursors()));
 
 // Gated on stdin being a TTY: under Deno Deploy or any piped/captured stdin, reading a quit key
 // would just hang on a stream that never yields.
-const interactive = Deno.stdin.isTerminal();
+const isInteractive = Deno.stdin.isTerminal();
 
 const server = Deno.serve({
 	handler: app.fetch,
@@ -24,7 +24,7 @@ const server = Deno.serve({
 		const status = config
 			? `tracking ${String(config.targets.length)} target(s)`
 			: "idle (CR_API_TOKEN not set)";
-		const quit = interactive ? ` — ${hl.strong("q")} + Enter to quit` : "";
+		const quit = isInteractive ? ` — ${hl.strong("q")} + Enter to quit` : "";
 		log.info(
 			`stalk listening on ${hl.value(`http://${hostname}:${String(port)}`)} — ${status}${quit}`
 		);
@@ -99,6 +99,6 @@ async function quitOnKeypress() {
 	}
 }
 
-if (interactive) {
+if (isInteractive) {
 	await quitOnKeypress();
 }

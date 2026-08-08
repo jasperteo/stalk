@@ -98,7 +98,9 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
 async function listCursors(): Promise<Record<string, unknown>> {
 	const cursors: Record<string, unknown> = {};
 
-	for await (const entry of kv.list({ prefix: [LAST_BATTLE_PREFIX] })) {
+	const cursorEntries = kv.list({ prefix: [LAST_BATTLE_PREFIX] });
+
+	for await (const entry of cursorEntries) {
 		const [, tag] = entry.key;
 		cursors[String(tag)] = entry.value;
 	}

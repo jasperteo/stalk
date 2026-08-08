@@ -68,7 +68,7 @@ async function listImages(): Promise<string[]> {
 		}
 	}
 
-	return names.toSorted();
+	return names.toSorted((a, b) => a.localeCompare(b));
 }
 
 const names = Deno.args.length > 0 ? Deno.args : await listImages();
