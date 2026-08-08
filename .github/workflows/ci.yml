@@ -15,7 +15,7 @@ jobs:
           mode: firewall-free
       - uses: denoland/setup-deno@v2.0.5
         with:
-          deno-version: v2.9.4
+          deno-version: v2.9.5
           cache: true
       - name: Install dependencies
         run: sfw deno ci
