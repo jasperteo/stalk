@@ -159,7 +159,7 @@ function localArtReadFile() {
  * called for a fully-local render, and the fallback tests override it per-case.
  */
 function fetchServingFixture() {
-	return vi.fn((_url: string | URL, _init?: RequestInit) =>
+	return vi.fn<(url: string | URL, init?: RequestInit) => Promise<Response>>(() =>
 		Promise.resolve(new Response(new Uint8Array(FIXTURE)))
 	);
 }

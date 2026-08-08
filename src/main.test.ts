@@ -5,7 +5,7 @@ import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
 import { driftedBattle, rawBattle, WEBHOOK } from "@/testing/fixtures.ts";
 import { spyMemoryKv } from "@/testing/kv.ts";
 
-vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn() }));
+vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn<typeof notifyBattle>() }));
 vi.mock("@/log.ts");
 
 const TAG = "#ABC123";
@@ -28,7 +28,7 @@ type FetchHandler = (request: Request) => Promise<Response>;
  * tag with no entry gets a 500, standing in for that player's API being down.
  */
 function battlelogFetchByTag(logs: Record<string, unknown[]>) {
-	return vi.fn((input: string | URL | Request) => {
+	return vi.fn<(input: string | URL | Request) => Promise<Response>>((input) => {
 		const url = String(input instanceof Request ? input.url : input);
 		const tag = Object.keys(logs).find((key) => url.includes(encodeURIComponent(key)));
 

@@ -8,7 +8,7 @@ import { BattleSchema } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
 import { BOB, rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
 
-vi.mock("@/deck-image.ts", () => ({ renderDeckGrid: vi.fn() }));
+vi.mock("@/deck-image.ts", () => ({ renderDeckGrid: vi.fn<typeof renderDeckGrid>() }));
 vi.mock("@/log.ts");
 
 /** A player with the tower HP fields the message's margin line is computed from. */
@@ -149,7 +149,7 @@ describe("notifyBattle", () => {
 
 	test("retries with the text-only fallback when Discord rejects the image payload", async () => {
 		const fetchMock = vi
-			.fn()
+			.fn<typeof fetch>()
 			.mockResolvedValueOnce(new Response("too large", { status: 413 }))
 			.mockResolvedValueOnce(new Response());
 		vi.stubGlobal("fetch", fetchMock);
@@ -163,7 +163,7 @@ describe("notifyBattle", () => {
 
 	test("rejects when the text-only retry also fails", async () => {
 		const fetchMock = vi
-			.fn()
+			.fn<typeof fetch>()
 			.mockResolvedValueOnce(new Response("too large", { status: 413 }))
 			.mockResolvedValueOnce(new Response("still bad", { status: 500 }));
 		vi.stubGlobal("fetch", fetchMock);
@@ -173,7 +173,9 @@ describe("notifyBattle", () => {
 	});
 
 	test("does not retry a 502, since Discord may have already accepted the message", async () => {
-		const fetchMock = vi.fn().mockResolvedValueOnce(new Response("x".repeat(300), { status: 502 }));
+		const fetchMock = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(new Response("x".repeat(300), { status: 502 }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 502");
@@ -182,7 +184,9 @@ describe("notifyBattle", () => {
 
 	test("does not retry a rejected text-only fallback, to avoid retrying itself", async () => {
 		vi.mocked(renderDeckGrid).mockRejectedValue(new Error("icon CDN down"));
-		const fetchMock = vi.fn().mockResolvedValueOnce(new Response("too large", { status: 413 }));
+		const fetchMock = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(new Response("too large", { status: 413 }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 413");

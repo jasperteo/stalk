@@ -5,7 +5,7 @@ import type { Target } from "@/schema.ts";
 import { driftedBattle, rawBattle, WEBHOOK } from "@/testing/fixtures.ts";
 import { spyMemoryKv } from "@/testing/kv.ts";
 
-vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn() }));
+vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn<typeof notifyBattle>() }));
 vi.mock("@/log.ts");
 
 const TAG = "#ABC123";
@@ -13,7 +13,7 @@ const TARGET: Target = { tag: TAG, webhook: WEBHOOK };
 const TOKEN = "test-token";
 
 function battlelogFetch(entries: unknown[]) {
-	return vi.fn(() => Promise.resolve(Response.json(entries)));
+	return vi.fn<() => Promise<Response>>(() => Promise.resolve(Response.json(entries)));
 }
 
 /**
