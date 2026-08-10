@@ -10,7 +10,8 @@
 		"measure": "deno run -P scripts/measure.ts",
 		"sync-types": "deno types > deno.d.ts && deno task fmt",
 		"fmt": "oxfmt",
-		"lint": "oxlint && deno lint && deno check --unstable-tsgo ."
+		"lint": "oxlint && deno lint && deno check --unstable-tsgo .",
+		"lint-agent": "oxlint --format=agent && deno lint && deno check --unstable-tsgo ."
 	},
 
 	"compilerOptions": {

@@ -18,14 +18,15 @@ deno task measure  # Report card icons' transparent margins (no args = every ico
 
 deno task fmt         # oxfmt
 deno task lint        # oxlint && deno lint && deno check --unstable-tsgo .
+deno task lint-agent  # Same three checks, oxlint in --format=agent — prefer this one as an agent
 deno task sync-types  # Regenerate deno.d.ts (run when the Deno version changes)
 ```
 
-**`deno task lint` is the single check command.** Do not run a separate `tsc --noEmit` or a
-standalone `deno check` — the task already chains oxlint (type-aware, via oxlint-tsgolint),
-`deno lint` (Deno-idiom rules), and `deno check --unstable-tsgo`. CI
-(`.github/workflows/ci.yml`) runs `deno ci`, `deno task fmt --check`, `deno task lint`, and
-`deno task test`.
+**`deno task lint` (or its agent-formatted twin `deno task lint-agent`) is the single check
+command.** Do not run a separate `tsc --noEmit` or a standalone `deno check` — the task already
+chains oxlint (type-aware, via oxlint-tsgolint), `deno lint` (Deno-idiom rules), and
+`deno check --unstable-tsgo`. CI (`.github/workflows/ci.yml`) runs `deno ci`,
+`deno task fmt --check`, `deno task lint`, and `deno task test`.
 
 ## Invariants
 
