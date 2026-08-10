@@ -133,7 +133,7 @@ safe to expose.
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/main.ts`              | Entry point: HTTP routes, cron registration, per-tick tally                                                                                               |
 | `src/poll.ts`              | The polling loop — cursor read/compare/advance, one outcome per player                                                                                    |
-| `src/clashroyale.ts`       | Battle-log fetch and newest-eligible-battle selection                                                                                                     |
+| `src/clash-royale.ts`      | Battle-log fetch and newest-eligible-battle selection                                                                                                     |
 | `src/discord.ts`           | Webhook message construction and delivery, with a text-only fallback                                                                                      |
 | `src/deck-image.ts`        | Deck grids composited from local card art via [sharp](https://sharp.pixelplumbing.com/); tuning log in [`docs/deck-rendering.md`](docs/deck-rendering.md) |
 | `src/schema.ts`            | Valibot schemas for the API shapes and the env vars                                                                                                       |
