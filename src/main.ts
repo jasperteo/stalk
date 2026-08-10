@@ -11,28 +11,21 @@ const app = new Hono();
 /** Health check endpoint for Deno Deploy. */
 app.get("/", (ctx) => ctx.json({ status: "ok" }));
 
-/** Read-only view of the lastBattle cursors; no secrets live in KV, so this is safe to expose. */
+/** Read-only cursor dump; no secrets live in KV, so this is safe to expose. */
 app.get("/kv/last-battle", async (ctx) => ctx.json(await listCursors()));
 
-// Gated on stdin being a TTY: under Deno Deploy or any piped/captured stdin, reading a quit key
-// would just hang on a stream that never yields.
-const isInteractive = Deno.stdin.isTerminal();
-
-const server = Deno.serve({
+Deno.serve({
 	handler: app.fetch,
 	onListen: ({ hostname, port }) => {
 		const status = config
 			? `tracking ${String(config.targets.length)} target(s)`
 			: "idle (CR_API_TOKEN not set)";
-		const quit = isInteractive ? ` — ${hl.strong("q")} + Enter to quit` : "";
-		log.info(
-			`stalk listening on ${hl.value(`http://${hostname}:${String(port)}`)} — ${status}${quit}`
-		);
+
+		log.info(`stalk listening on ${hl.value(`http://${hostname}:${String(port)}`)} — ${status}`);
 	},
 });
 
-// Each outcome borrows its corresponding level's badge color, so the tally stays in sync with the
-// badges by construction.
+/** Each outcome borrows its level's badge color, so the tally stays in sync with the badges. */
 const outcomeColor: Record<PollOutcome, (str: string) => string> = {
 	posted: levelColor.ok,
 	seeded: levelColor.info,
@@ -41,17 +34,29 @@ const outcomeColor: Record<PollOutcome, (str: string) => string> = {
 	failed: levelColor.error,
 };
 
-// Runs once at startup, not per tick: sizes the renderer's deck-cache entry-count guard from the
-// live target count so the renderer itself never reads app config.
+/** `posted 1, seeded 0, …` — iterates POLL_OUTCOMES so a new outcome can't go missing. */
+function formatTally(outcomes: PollOutcome[]) {
+	const counts = new Map<PollOutcome, number>();
+
+	for (const outcome of outcomes) {
+		counts.set(outcome, (counts.get(outcome) ?? 0) + 1);
+	}
+
+	return POLL_OUTCOMES.map((outcome) =>
+		outcomeColor[outcome](`${outcome} ${String(counts.get(outcome) ?? 0)}`)
+	).join(", ");
+}
+
+// Once at startup, not per tick: sizes the renderer's deck-cache entry guard from the live target
+// count, so the renderer never reads app config.
 if (config !== undefined) {
 	configureDeckCache(config.targets.length);
 }
 
-// The registration promise only surfaces registration errors and must not be awaited (the job
-// runs for the isolate's lifetime), so it's voided to satisfy no-floating-promises.
+// Voided, not awaited: the registration promise only surfaces registration errors, and the job runs
+// for the isolate's lifetime.
 void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
-	// Still emit a heartbeat so a misconfigured deploy shows up as a loud skipped tick, not a
-	// silent dashboard.
+	// Heartbeat so a misconfigured deploy reads as a loud skipped tick, not a silent dashboard.
 	if (config === undefined) {
 		log.warn("poll-battlelogs: skipped tick — CR_API_TOKEN not set");
 		return;
@@ -59,46 +64,8 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 
 	const { token, targets } = config;
 
-	// pollAll owns the fan-out (and the tick's single cursor read) so the KV handle stays inside
-	// poll.ts; this stays wiring.
+	// pollAll owns the fan-out and the tick's single cursor read; this stays wiring.
 	const outcomes = await pollAll(targets, token);
 
-	// Seeded from POLL_OUTCOMES rather than a hand-written literal, so adding an outcome doesn't
-	// need a matching edit here to keep its count off the tally line.
-	const tally = Object.fromEntries(POLL_OUTCOMES.map((outcome) => [outcome, 0])) as Record<
-		PollOutcome,
-		number
-	>;
-
-	for (const outcome of outcomes) {
-		tally[outcome]++;
-	}
-
-	// One heartbeat line per tick; iterates POLL_OUTCOMES so a new outcome can't go missing.
-	const counts = POLL_OUTCOMES.map((outcome) =>
-		outcomeColor[outcome](`${outcome} ${String(tally[outcome])}`)
-	).join(", ");
-
-	log.info(`poll-battlelogs: ${String(targets.length)} targets — ${counts}`);
+	log.info(`poll-battlelogs: ${String(targets.length)} targets — ${formatTally(outcomes)}`);
 });
-
-/**
- * Vite-style quit key: `q` + Enter shuts the server down. `Deno.exit()` would skip the graceful
- * `server.shutdown()` below, so this closes the server first and then signals our own pid, exiting
- * the same way Ctrl+C would.
- */
-async function quitOnKeypress() {
-	const decoder = new TextDecoder();
-
-	for await (const chunk of Deno.stdin.readable) {
-		if (decoder.decode(chunk).trim().toLowerCase() !== "q") continue;
-
-		log.info("Shutting down");
-		await server.shutdown();
-		Deno.kill(Deno.pid, "SIGINT");
-	}
-}
-
-if (isInteractive) {
-	await quitOnKeypress();
-}

@@ -48,10 +48,6 @@ function battlelogFetchByTag(logs: Record<string, unknown[]>) {
 async function importMain() {
 	const getKv = spyMemoryKv();
 
-	// Pinned rather than assumed: `main.ts` gates a blocking top-level `await quitOnKeypress()` on
-	// this, so a runner whose worker inherits a TTY stdin would hang the import instead of failing.
-	const isTerminal = vi.spyOn(Deno.stdin, "isTerminal").mockReturnValue(false);
-
 	let cronHandler: CronHandler | undefined;
 
 	// `Deno.cron` is overloaded (with and without an options argument), and `mockImplementation`
@@ -65,9 +61,7 @@ async function importMain() {
 	let fetchHandler: FetchHandler | undefined;
 
 	// `Deno.serve` is overloaded like `Deno.cron`, so capture positionally-untyped rest args; main.ts
-	// always calls the option-bag form. The returned handle only exists for the quit key's
-	// `shutdown()`, which never runs here (the `isTerminal` spy above pins stdin as non-terminal),
-	// so a stub suffices.
+	// always calls the option-bag form. The returned handle is unused, so a stub suffices.
 	vi.spyOn(Deno, "serve").mockImplementation((...args: unknown[]) => {
 		const [options] = args as [{ handler: FetchHandler }];
 		fetchHandler = options.handler;
@@ -81,7 +75,7 @@ async function importMain() {
 	if (fetchHandler === undefined) throw new Error("Deno.serve handler was never captured");
 	getKv(); // throws if the spy never captured a KV handle
 
-	return { app: { fetch: fetchHandler }, tick: cronHandler, isTerminal };
+	return { app: { fetch: fetchHandler }, tick: cronHandler };
 }
 
 async function lastBattleCursors(app: Awaited<ReturnType<typeof importMain>>["app"]) {
@@ -105,12 +99,6 @@ describe("main", () => {
 		await tick();
 
 		expect(notifyBattle).not.toHaveBeenCalled();
-	});
-
-	test("does not read stdin when it is not a terminal", async () => {
-		const { isTerminal } = await importMain();
-
-		expect(isTerminal).toHaveBeenCalled();
 	});
 });
 
