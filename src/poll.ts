@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
+import { fetchBattlelog, latestBattle } from "@/clash-royale.ts";
 import { notifyBattle } from "@/discord.ts";
 import { hl, log } from "@/log.ts";
 import { CursorSchema } from "@/schema.ts";

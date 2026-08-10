@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { fetchBattlelog, latestBattle } from "@/clashroyale.ts";
+import { fetchBattlelog, latestBattle } from "@/clash-royale.ts";
 import { log } from "@/log.ts";
 import { DECK_SIZE } from "@/schema.ts";
 import { duelBattle, rawBattle, rawCard, rawPlayer } from "@/testing/fixtures.ts";
