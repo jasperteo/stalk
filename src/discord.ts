@@ -21,6 +21,15 @@ const WEBHOOK_TIMEOUT_MS = 15_000;
 const SPACER_FIELD = { name: "\u{200B}", value: "\u{200B}" } as const;
 
 /**
+ * How much of an error body to echo into a log line. Generous, because a malformed-embed 400 buries
+ * the field that was rejected ~120 chars into a nested `errors` object and that log line is the
+ * only diagnostic for it — but still capped, since a 5xx from the edge proxy in front of Discord
+ * returns a multi-KB HTML page that would otherwise land in the Deploy logs every tick of an
+ * outage.
+ */
+const ERROR_BODY_CHARS = 2000;
+
+/**
  * Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. The
  * `satisfies` guard works like `EVOLUTION_SUFFIX` in deck-image.ts: a new schema level fails to
  * compile rather than fall through to a bare name.
@@ -276,7 +285,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 	if (form !== undefined && !response.ok && PAYLOAD_REJECTED.has(response.status)) {
 		const rejected = await response.text();
 		log.warn(
-			`Discord rejected the deck image (${hl.strong(String(response.status))}), retrying text-only: ${rejected.slice(0, 200)}`
+			`Discord rejected the deck image (${hl.strong(String(response.status))}), retrying text-only: ${rejected.slice(0, ERROR_BODY_CHARS)}`
 		);
 
 		response = await postWebhook(webhookUrl, textRequest());
@@ -284,7 +293,9 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 
 	if (!response.ok) {
 		const body = await response.text();
-		throw new Error(`Discord webhook ${String(response.status)}: ${body.slice(0, 200)}`);
+		throw new Error(
+			`Discord webhook ${String(response.status)}: ${body.slice(0, ERROR_BODY_CHARS)}`
+		);
 	}
 
 	await response.body?.cancel();
