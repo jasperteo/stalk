@@ -43,9 +43,9 @@ const DEBUG = badge("debug", levelColor.debug);
 
 /** Builds one leveled logger from its console method, badge, and optional message tint. */
 const leveled =
-	(write: (...data: unknown[]) => void, badge: string, tint = (message: string) => message) =>
+	(write: (...data: unknown[]) => void, label: string, tint = (message: string) => message) =>
 	(message: string, ...rest: unknown[]) => {
-		write(badge, tint(message), ...rest);
+		write(label, tint(message), ...rest);
 	};
 
 /**
