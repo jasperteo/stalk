@@ -4,11 +4,11 @@ import { describe, expect, test } from "vitest";
 import {
 	BattleSchema,
 	CursorSchema,
-	EligibleBattleTimeSchema,
+	isEligibleBattle,
 	TargetsEnvSchema,
 	TokenEnvSchema,
 } from "@/schema.ts";
-import { rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
+import { duelBattle, rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
 
 describe("BattleSchema", () => {
 	test("normalizes a valid battle", () => {
@@ -83,21 +83,21 @@ describe("CursorSchema", () => {
 	});
 });
 
-describe("EligibleBattleTimeSchema", () => {
-	test("extracts the normalized battleTime from a 1v1 entry", () => {
-		expect(v.parse(EligibleBattleTimeSchema, rawBattle())).toBe("2024-01-15T14:30:22.000Z");
+describe("isEligibleBattle", () => {
+	test("accepts a 1v1 entry", () => {
+		expect(isEligibleBattle(rawBattle())).toBe(true);
 	});
 
-	test("falls back to an empty string for a 2v2 entry", () => {
-		expect(v.parse(EligibleBattleTimeSchema, rawBattle({ team: [rawPlayer(), rawPlayer()] }))).toBe(
-			""
-		);
+	test("rejects a 2v2 entry", () => {
+		expect(isEligibleBattle(rawBattle({ team: [rawPlayer(), rawPlayer()] }))).toBe(false);
 	});
 
-	test("falls back to an empty string for a malformed entry", () => {
-		expect(
-			v.parse(EligibleBattleTimeSchema, { battleTime: "not-a-date", team: [rawPlayer()] })
-		).toBe("");
+	test("rejects a malformed entry", () => {
+		expect(isEligibleBattle({ battleTime: "not-a-date", team: [rawPlayer()] })).toBe(false);
+	});
+
+	test("rejects a duel entry", () => {
+		expect(isEligibleBattle(duelBattle())).toBe(false);
 	});
 });
 

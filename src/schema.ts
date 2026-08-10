@@ -1,11 +1,43 @@
 import * as v from "valibot";
 
 /**
- * Only the fields we actually use are validated. `v.object` strips unknown keys, so the Clash
- * Royale API adding fields will never break parsing.
+ * Valibot schemas for the Clash Royale API shapes and the two env vars. Only the fields we actually
+ * use are declared, and `v.object` strips unknown keys, so the API adding fields never breaks
+ * parsing.
  */
 
+// ══════════════════════════════════════════ PRIMITIVES ═══════════════════════════════════════════
+
 const UrlSchema = v.pipe(v.string(), v.url());
+
+/**
+ * Canonical player tag: uppercase with a leading "#". Config and API tags both normalize here, so
+ * consumers (player lookup, KV cursor keys) can compare them with plain `===`.
+ */
+const TagSchema = v.pipe(
+	v.string(),
+	v.transform((tag) => (tag.startsWith("#") ? tag : `#${tag}`)),
+	v.toUpperCase()
+);
+
+/**
+ * Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that and
+ * rejects invalid dates. Fixing `fractionalSecondDigits` keeps the fixed-width shape KV cursors
+ * store, so plain string comparison stays chronological.
+ */
+const BattleTimeSchema = v.pipe(
+	v.string(),
+	v.rawTransform(({ dataset, addIssue, NEVER }) => {
+		try {
+			return Temporal.Instant.from(dataset.value).toString({ fractionalSecondDigits: 3 });
+		} catch {
+			addIssue({ message: "Invalid battleTime" });
+			return NEVER;
+		}
+	})
+);
+
+// ══════════════════════════════════════════ API SHAPES ═══════════════════════════════════════════
 
 const CardSchema = v.object({
 	/**
@@ -16,9 +48,8 @@ const CardSchema = v.object({
 	name: v.string(),
 	/**
 	 * Evolutions report `evolutionLevel: 1`, Heroes report `2`; ordinary cards omit it. `fallback`
-	 * coerces any other/unknown value to `undefined` so one new card can't fail the battle.
-	 * `optional` must nest _inside_ `fallback`, not outside: a fallback's replacement value must
-	 * match the wrapped schema's output type, and only `optional`'s output includes `undefined`.
+	 * coerces any other/unknown value to `undefined`. `optional` nests inside `fallback`, not
+	 * outside, since a fallback's replacement value must match the wrapped schema's output type.
 	 */
 	evolutionLevel: v.fallback(v.optional(v.picklist([1, 2])), undefined),
 	/**
@@ -32,16 +63,6 @@ const CardSchema = v.object({
 		heroMedium: v.optional(UrlSchema),
 	}),
 });
-
-/**
- * Canonical player tag: uppercase with a leading "#". Config and API tags both normalize here, so
- * consumers (player lookup, KV cursor keys) can compare them with plain `===`.
- */
-const TagSchema = v.pipe(
-	v.string(),
-	v.transform((tag) => (tag.startsWith("#") ? tag : `#${tag}`)),
-	v.toUpperCase()
-);
 
 const PlayerSchema = v.object({
 	tag: TagSchema,
@@ -70,60 +91,49 @@ const PlayerSchema = v.object({
 
 const BattleSchema = v.object({
 	type: v.string(),
-	/**
-	 * Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that and
-	 * rejects invalid dates. Fixing `fractionalSecondDigits` keeps the fixed-width shape KV cursors
-	 * store, so plain string comparison stays chronological.
-	 */
-	battleTime: v.pipe(
-		v.string(),
-		v.rawTransform(({ dataset, addIssue, NEVER }) => {
-			try {
-				return Temporal.Instant.from(dataset.value).toString({ fractionalSecondDigits: 3 });
-			} catch {
-				addIssue({ message: "Invalid battleTime" });
-				return NEVER;
-			}
-		})
-	),
+	battleTime: BattleTimeSchema,
 	gameMode: v.optional(v.object({ name: v.string() })),
 	team: v.array(PlayerSchema),
 	opponent: v.array(PlayerSchema),
 });
 
-/**
- * Cards in one Clash Royale deck. A duel concatenates 2–3 decks into `cards`, so a longer array is
- * the structural tell — more robust than matching gameMode names.
- */
+// ════════════════════════════════════════════ DERIVED ════════════════════════════════════════════
+
+/** Cards in one deck; a Duel concatenates 2–3 decks into `cards`, so a longer array is the tell. */
 const DECK_SIZE = 8;
 
 /**
- * Cheap eligibility check: reuses BattleSchema's own battleTime rule and requires a single `team`
- * entry (1v1) whose `cards` array is no longer than one deck, without the cost of full battle
- * validation. A Duel is also a single `team` entry, but each player's `cards` is the concatenation
- * of 2–3 decks (16 or 24 entries) rather than 8 — that count, not `gameMode.name` (which varies
- * across duel variants), is what distinguishes it structurally. Malformed, 2v2, and duel entries
- * all fall back to "", the sentinel `latestBattle` reads as "not eligible, keep looking".
+ * The cheap 1v1 gate run over the whole battlelog before full validation: exactly one `team` entry
+ * whose `cards` is at most one deck. A Duel is also a single `team` entry, but concatenates 2–3
+ * decks (16 or 24 cards) into `cards` — the card count, not `gameMode.name` (which varies across
+ * duel variants), is the structural tell.
+ *
+ * `team` is declared before `battleTime` deliberately: `v.is` runs valibot with abort-early config
+ * internally, and `v.object` iterates entries in declaration order and breaks on the first issue
+ * under abort-early, so a 2v2 or Duel entry rejects on the cheap structural check without paying
+ * for the `Temporal` parse. A malformed `battleTime` also counts as ineligible, so such an entry is
+ * skipped rather than reported as schema drift.
  */
-const EligibleBattleTimeSchema = v.fallback(
-	v.pipe(
-		v.object({
-			battleTime: BattleSchema.entries.battleTime,
-			team: v.pipe(
-				v.array(v.object({ cards: v.pipe(v.array(v.unknown()), v.maxLength(DECK_SIZE)) })),
-				v.length(1)
-			),
-		}),
-		v.transform((battle) => battle.battleTime)
+const EligibleBattleSchema = v.object({
+	team: v.pipe(
+		v.array(v.object({ cards: v.pipe(v.array(v.unknown()), v.maxLength(DECK_SIZE)) })),
+		v.length(1)
 	),
-	""
-);
+	battleTime: BattleTimeSchema,
+});
+
+/** Whether a raw battlelog entry is a 1v1 worth fully validating. */
+function isEligibleBattle(entry: unknown): boolean {
+	return v.is(EligibleBattleSchema, entry);
+}
 
 /**
- * A stored lastBattle KV cursor. Reuses BattleSchema's own battleTime rule, so parsing it also
- * re-normalizes and validates the stored value instead of trusting a raw `kv.get<string>` cast.
+ * A stored lastBattle KV cursor. Reuses BattleTimeSchema, so parsing it also re-normalizes and
+ * validates the stored value instead of trusting a raw `kv.get<string>` cast.
  */
-const CursorSchema = BattleSchema.entries.battleTime;
+const CursorSchema = BattleTimeSchema;
+
+// ══════════════════════════════════════════════ ENV ══════════════════════════════════════════════
 
 /** CR_API_TOKEN: rejects both an unset env var and an empty string. */
 const TokenEnvSchema = v.pipe(v.string(), v.nonEmpty());
@@ -140,17 +150,24 @@ const TargetSchema = v.object({
  */
 const TargetsEnvSchema = v.pipe(v.string(), v.parseJson(), v.array(TargetSchema));
 
+// ═════════════════════════════════════════════ TYPES ═════════════════════════════════════════════
+
 type Player = v.InferOutput<typeof PlayerSchema>;
 type Battle = v.InferOutput<typeof BattleSchema>;
 type Target = v.InferOutput<typeof TargetSchema>;
 type Card = v.InferOutput<typeof CardSchema>;
+/**
+ * The levels `CardSchema` admits — the key type for the per-level lookup tables in `deck-image.ts`
+ * and `discord.ts`.
+ */
+type EvolutionLevel = NonNullable<Card["evolutionLevel"]>;
 
 export {
 	BattleSchema,
 	CursorSchema,
 	DECK_SIZE,
-	EligibleBattleTimeSchema,
+	isEligibleBattle,
 	TargetsEnvSchema,
 	TokenEnvSchema,
 };
-export type { Battle, Card, Player, Target };
+export type { Battle, Card, EvolutionLevel, Player, Target };
