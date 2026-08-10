@@ -5,7 +5,7 @@ import { format as formatDuration } from "@std/fmt/duration";
 import type { SharpConstructor } from "sharp";
 
 import { hl, log } from "@/log.ts";
-import type { Card } from "@/schema.ts";
+import type { Card, EvolutionLevel } from "@/schema.ts";
 
 /**
  * Composites Clash Royale cards into a bottom-aligned 4-column PNG grid via sharp.
@@ -248,7 +248,7 @@ function cropRaw({ data, width }: RawImage, region: Region): Buffer {
 const EVOLUTION_SUFFIX = {
 	1: "-evo",
 	2: "-hero",
-} as const satisfies Record<NonNullable<Card["evolutionLevel"]>, string>;
+} as const satisfies Record<EvolutionLevel, string>;
 
 /**
  * Which `iconUrls` variant each `evolutionLevel` prefers on the CDN-fallback path; guarded like
@@ -257,7 +257,7 @@ const EVOLUTION_SUFFIX = {
 const EVOLUTION_ICON = {
 	1: "evolutionMedium",
 	2: "heroMedium",
-} as const satisfies Record<NonNullable<Card["evolutionLevel"]>, keyof Card["iconUrls"]>;
+} as const satisfies Record<EvolutionLevel, keyof Card["iconUrls"]>;
 
 /** The local mirror filename for the card as it was played: `<id>`, `<id>-evo`, or `<id>-hero`. */
 function tileName(card: Card): string {

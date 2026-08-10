@@ -1,7 +1,7 @@
 import * as v from "valibot";
 
 import { log } from "@/log.ts";
-import { BattleSchema, EligibleBattleTimeSchema } from "@/schema.ts";
+import { BattleSchema, isEligibleBattle } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
 
 /**
@@ -43,8 +43,8 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
  * Takes the first eligible (1v1) battle and fully validates only that one.
  *
  * The battlelog arrives newest-first, so the first eligible entry _is_ the newest one and the scan
- * stops there — normally after a single entry, instead of running the eligibility schema over all
- * ~30. That ordering is undocumented by Supercell, so it is an assumption, not a guarantee; it was
+ * stops there — normally after a single entry, instead of running `isEligibleBattle` over all ~30.
+ * That ordering is undocumented by Supercell, so it is an assumption, not a guarantee; it was
  * verified against the live proxy, and the failure mode if it ever changed is posting an older
  * battle and advancing the cursor past the newer ones. The scan still walks past leading 2v2s, so
  * the ordering assumption only buys skipping the tail, never the eligibility filter itself.
@@ -59,7 +59,7 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
  *   rather than letting it read as "no new battles".
  */
 function latestBattle(entries: unknown[]): { battle: Battle | undefined; drifted: boolean } {
-	const newest = entries.find((entry) => v.parse(EligibleBattleTimeSchema, entry) !== "");
+	const newest = entries.find((entry) => isEligibleBattle(entry));
 
 	const result = v.safeParse(BattleSchema, newest);
 

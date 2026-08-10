@@ -1,6 +1,6 @@
 import { renderDeckGrid } from "@/deck-image.ts";
 import { hl, log } from "@/log.ts";
-import type { Battle, Card, Player } from "@/schema.ts";
+import type { Battle, Card, EvolutionLevel, Player } from "@/schema.ts";
 
 const OUTCOMES = {
 	[1]: { result: "Victory", verb: "Won", color: 0x00_c9_50 }, // Green
@@ -37,7 +37,7 @@ const ERROR_BODY_CHARS = 2000;
 const EVOLUTION_PREFIX = {
 	1: "Evo ",
 	2: "Hero ",
-} as const satisfies Record<NonNullable<Card["evolutionLevel"]>, string>;
+} as const satisfies Record<EvolutionLevel, string>;
 
 /** Lowest HP among a player's surviving towers (HP > 0); 0 if none survive or there's no player. */
 function weakestSurvivingTowerHp(player: Player | undefined) {
