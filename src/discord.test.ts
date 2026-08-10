@@ -50,7 +50,11 @@ function sentForm(): FormData {
 
 type Payload = {
 	content: string;
-	embeds: { fields?: { name: string; value: string }[]; thumbnail?: { url: string } }[];
+	embeds: {
+		fields?: { name: string; value: string }[];
+		thumbnail?: { url: string };
+		author?: { url: string };
+	}[];
 };
 
 /** The decoded `payload_json` of the first webhook POST. */
@@ -197,6 +201,15 @@ describe("notifyBattle", () => {
 		await notifyBattle(WEBHOOK, makeBattle({ team: [] }));
 
 		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	test("deep-links each embed's author to that side's own battle log", async () => {
+		await notifyBattle(WEBHOOK, makeBattle());
+
+		const payload = sentPayload();
+
+		expect(payload.embeds[0]?.author?.url).toBe("https://royaleapi.com/player/ABC123/battles");
+		expect(payload.embeds[1]?.author?.url).toBe("https://royaleapi.com/player/DEF456/battles");
 	});
 
 	test("drops the second embed and file when there is no opponent", async () => {

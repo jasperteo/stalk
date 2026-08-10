@@ -2,30 +2,11 @@ import { renderDeckGrid } from "@/deck-image.ts";
 import { hl, log } from "@/log.ts";
 import type { Battle, Card, Player } from "@/schema.ts";
 
-/** Green */
-const COLOR_WIN = 0x00_c9_50;
-/** Red */
-const COLOR_LOSS = 0xe7_00_0b;
-/** Yellow */
-const COLOR_DRAW = 0xff_df_20;
-
 const OUTCOMES = {
-	[1]: {
-		result: "Victory",
-		verb: "Won",
-		color: COLOR_WIN,
-	},
-	[-1]: {
-		result: "Defeat",
-		verb: "Lost",
-		color: COLOR_LOSS,
-	},
-	[0]: {
-		result: "Draw",
-		/** No verb: `battleContext` keys the absent HP-margin line off this being undefined. */
-		verb: undefined,
-		color: COLOR_DRAW,
-	},
+	[1]: { result: "Victory", verb: "Won", color: 0x00_c9_50 }, // Green
+	[-1]: { result: "Defeat", verb: "Lost", color: 0xe7_00_0b }, // Red
+	// No verb: `battleContext` keys the absent HP-margin line off this being undefined.
+	[0]: { result: "Draw", verb: undefined, color: 0xff_df_20 }, // Yellow
 } as const;
 
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
@@ -49,54 +30,33 @@ const EVOLUTION_PREFIX = {
 	2: "Hero ",
 } as const satisfies Record<NonNullable<Card["evolutionLevel"]>, string>;
 
-/**
- * Lowest HP among a player's surviving towers (HP > 0) — the one closest to falling next. Destroyed
- * towers (backfilled to 0) are skipped.
- *
- * @returns 0 when no towers survive, or when there is no player.
- */
+/** Lowest HP among a player's surviving towers (HP > 0); 0 if none survive or there's no player. */
 function weakestSurvivingTowerHp(player: Player | undefined) {
-	if (player === undefined) {
-		return 0;
-	}
+	const alive = [
+		player?.kingTowerHitPoints ?? 0,
+		...(player?.princessTowersHitPoints ?? []),
+	].filter((hp) => hp > 0);
 
-	let min = Infinity;
-
-	if (player.kingTowerHitPoints > 0) {
-		min = Math.min(min, player.kingTowerHitPoints);
-	}
-
-	for (const hp of player.princessTowersHitPoints) {
-		if (hp > 0) {
-			min = Math.min(min, hp);
-		}
-	}
-
-	return min === Infinity ? 0 : min;
-}
-
-function formatCardName(card: Card) {
-	const prefix = card.evolutionLevel ? EVOLUTION_PREFIX[card.evolutionLevel] : "";
-	return `${prefix}${card.name}`;
+	return alive.length === 0 ? 0 : Math.min(...alive);
 }
 
 /**
  * An empty array must fall back the same way as an absent one: `[].join(" · ")` returns `""`, not a
- * nullish value, so `?? "—"` never fires on it — and this is already the text-only fallback path,
- * so Discord's 400 on a zero-length embed field value has nothing further to fall back to.
+ * nullish value, so `?? "—"` never fires on it.
  */
 function formatDeck(cards: Card[] | undefined) {
 	if (cards === undefined || cards.length === 0) {
 		return "—";
 	}
 
-	return cards.map((card) => formatCardName(card)).join(" · ");
+	return cards
+		.map(
+			(card) => `${card.evolutionLevel ? EVOLUTION_PREFIX[card.evolutionLevel] : ""}${card.name}`
+		)
+		.join(" · ");
 }
 
-/**
- * Trophy progression for a player, e.g. "5,432 → 5,463 (+31)". Dropped entirely on modes without
- * trophies (`startingTrophies` undefined). A missing `trophyChange` counts as 0.
- */
+/** Trophy progression for a player, e.g. "5,432 → 5,463 (+31)". Dropped on modes without trophies. */
 function buildTrophyField(player: Player | undefined, label: string) {
 	if (player?.startingTrophies === undefined) {
 		return;
@@ -114,9 +74,8 @@ function buildTrophyField(player: Player | undefined, label: string) {
 }
 
 /**
- * The pair of inline trophy rows for an embed from `subject`'s point of view: their own progression
- * as "Trophies" and the other player's as "Opponent Trophies". Passing each embed its own subject
- * keeps the opponent's embed labelled from the opponent's side.
+ * The pair of inline trophy rows for an embed from `subject`'s point of view, so the opponent's
+ * embed stays labelled from the opponent's side.
  */
 function buildTrophyFields(subject: Player | undefined, other: Player | undefined) {
 	return [
@@ -133,15 +92,6 @@ function buildSupportField(player: Player | undefined, label: string) {
 	return {
 		name: label,
 		value: player.supportCards.map((card) => card.name).join(", "),
-	};
-}
-
-/** "Match History" author block deep-linking to the player's RoyaleAPI battle log. */
-function buildAuthor(tag: string) {
-	return {
-		name: "Match History",
-		icon_url: ROYALE_API_ICON,
-		url: `https://royaleapi.com/player/${tag.replace("#", "")}/battles`,
 	};
 }
 
@@ -171,16 +121,16 @@ function towerThumbnail(player: Player | undefined) {
 }
 
 /**
- * The battle-wide bits both message shapes (image embeds and text fallback) share: the opponent,
- * the outcome (colour/verb), the content block, and the footer.
+ * The battle-wide bits both message shapes (image embeds and text fallback) share: the outcome, the
+ * content block, and a per-side embed-base builder. `embedBase` takes the player whose embed it is,
+ * because the "Match History" link must deep-link that side's own battle log, not always the
+ * tracked player's.
  */
 function battleContext(battle: Battle, me: Player) {
 	const opponent = battle.opponent[0];
-	const myCrowns = me.crowns;
 	const opponentCrowns = opponent?.crowns ?? 0;
-	const diff = Math.sign(myCrowns - opponentCrowns);
-
-	const outcome = OUTCOMES[diff as 1 | -1 | 0];
+	const diff = Math.sign(me.crowns - opponentCrowns) as keyof typeof OUTCOMES;
+	const outcome = OUTCOMES[diff];
 
 	// HP margin on decisive games only, measured on the winner's side so it stays positive even
 	// when both sides felled a tower (e.g. 2-1).
@@ -190,78 +140,65 @@ function battleContext(battle: Battle, me: Player) {
 		: undefined;
 
 	// Content doubles as the push-notification text, which bare embeds wouldn't provide.
-	const scoreLine = `${me.name}  ${String(myCrowns)} — ${String(opponentCrowns)}  ${opponent?.name ?? "Unknown"}`;
+	const scoreLine = `${me.name}  ${String(me.crowns)} — ${String(opponentCrowns)}  ${opponent?.name ?? "Unknown"}`;
 	const content = [`# ${outcome.result}`, `## ${scoreLine}`, margin].filter(Boolean).join("\n");
 
-	return {
-		opponent,
-		outcome,
-		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
-		content,
-	};
-}
-
-/**
- * A rendered deck grid bundled with the `File` to upload and the `attachment://` reference the
- * embed uses. Discord pairs the two by filename and drops the image on a mismatch, so both derive
- * from the one `filename` here.
- */
-async function renderDeckAttachment(cards: Card[], filename: string) {
-	const png = await renderDeckGrid(cards);
-
-	return {
-		file: new File([png], filename, { type: "image/png" }),
-		image: { url: `attachment://${filename}` },
-	};
-}
-
-type DeckAttachment = Awaited<ReturnType<typeof renderDeckAttachment>>;
-
-/**
- * The image-rich message: one embed per side, each titled with the player's name and carrying that
- * side's trophies, deck grid, and tower-troop thumbnail. The result, crown score, and HP margin
- * live in the message content.
- */
-function buildMessage(
-	battle: Battle,
-	me: Player,
-	myDeck: DeckAttachment,
-	opponentDeck: DeckAttachment | undefined
-) {
-	const { opponent, outcome, footer, content } = battleContext(battle, me);
-
-	// One embed shape for both sides, built from each player's own perspective.
-	const sideEmbed = (player: Player, deck: DeckAttachment, other: Player | undefined) => ({
-		author: buildAuthor(player.tag),
+	const embedBase = (player: Player) => ({
+		author: {
+			name: "Match History",
+			icon_url: ROYALE_API_ICON,
+			url: `https://royaleapi.com/player/${player.tag.replace("#", "")}/battles`,
+		},
 		title: player.name,
 		color: outcome.color,
-		thumbnail: towerThumbnail(player),
-		fields: buildTrophyFields(player, other),
-		image: deck.image,
-		footer,
+		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
 		timestamp: battle.battleTime,
 	});
 
-	const myEmbed = sideEmbed(me, myDeck, opponent);
+	return { me, opponent, content, embedBase };
+}
 
-	// The second embed exists only when the opponent's deck rendered.
-	const opponentEmbed =
-		opponent === undefined || opponentDeck === undefined
-			? undefined
-			: sideEmbed(opponent, opponentDeck, me);
+type BattleContext = ReturnType<typeof battleContext>;
 
-	const embeds = opponentEmbed === undefined ? [myEmbed] : [myEmbed, opponentEmbed];
+/**
+ * Renders both deck grids and packs them with the JSON payload into multipart form data. A missing
+ * opponent (defensive; 1v1s always have one) just drops the second side.
+ */
+async function buildForm({ me, opponent, content, embedBase }: BattleContext) {
+	const sides = [
+		{ player: me, other: opponent, filename: "my-deck.png" },
+		...(opponent === undefined ? [] : [{ player: opponent, other: me, filename: "opp-deck.png" }]),
+	];
 
-	return { content, embeds };
+	// The File and its `attachment://` reference are built together because Discord pairs them by
+	// filename and drops the image on a mismatch.
+	const parts = await Promise.all(
+		sides.map(async ({ player, other, filename }) => ({
+			file: new File([await renderDeckGrid(player.cards)], filename, { type: "image/png" }),
+			embed: {
+				...embedBase(player),
+				thumbnail: towerThumbnail(player),
+				fields: buildTrophyFields(player, other),
+				image: { url: `attachment://${filename}` },
+			},
+		}))
+	);
+
+	const form = new FormData();
+	form.append("payload_json", JSON.stringify({ content, embeds: parts.map((part) => part.embed) }));
+
+	for (const [index, { file }] of parts.entries()) {
+		form.append(`files[${String(index)}]`, file);
+	}
+
+	return form;
 }
 
 /**
  * Text-only single embed, used when deck rendering fails so an image problem never drops the
  * notification. Decks and tower troops become text fields.
  */
-function buildFallbackMessage(battle: Battle, me: Player) {
-	const { opponent, outcome, footer, content } = battleContext(battle, me);
-
+function buildFallbackMessage({ me, opponent, content, embedBase }: BattleContext) {
 	const trophyFields = buildTrophyFields(me, opponent);
 	const fields = [
 		...trophyFields,
@@ -273,39 +210,7 @@ function buildFallbackMessage(battle: Battle, me: Player) {
 		buildSupportField(opponent, "Opponent Tower Troop"),
 	].filter(Boolean);
 
-	const embed = {
-		author: buildAuthor(me.tag),
-		title: me.name,
-		color: outcome.color,
-		fields,
-		footer,
-		timestamp: battle.battleTime,
-	};
-
-	return { content, embeds: [embed] };
-}
-
-/**
- * Renders both deck grids and packs them with the JSON payload into multipart form data. A missing
- * opponent (defensive; 1v1s always have one) just drops the second embed and file.
- */
-async function buildForm(battle: Battle, me: Player) {
-	const opponent = battle.opponent[0];
-	const [myDeck, opponentDeck] = await Promise.all([
-		renderDeckAttachment(me.cards, "my-deck.png"),
-		opponent === undefined ? undefined : renderDeckAttachment(opponent.cards, "opp-deck.png"),
-	]);
-
-	const form = new FormData();
-
-	form.append("payload_json", JSON.stringify(buildMessage(battle, me, myDeck, opponentDeck)));
-	form.append("files[0]", myDeck.file);
-
-	if (opponentDeck !== undefined) {
-		form.append("files[1]", opponentDeck.file);
-	}
-
-	return form;
+	return { content, embeds: [{ ...embedBase(me), fields }] };
 }
 
 /**
@@ -342,12 +247,14 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		return;
 	}
 
+	const ctx = battleContext(battle, me);
+
 	// Built on demand, not up front: the image path is the common case and never sends this, so
 	// eagerly formatting both decks into an embed body would be wasted on almost every post.
 	const textRequest = (): RequestInit => ({
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(buildFallbackMessage(battle, me)),
+		body: JSON.stringify(buildFallbackMessage(ctx)),
 	});
 
 	// The one thing that varies; whether an image was sent is `form !== undefined`, so there is no
@@ -355,7 +262,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 	let form: FormData | undefined;
 
 	try {
-		form = await buildForm(battle, me);
+		form = await buildForm(ctx);
 	} catch (error) {
 		log.error("Deck image render failed, posting text-only fallback:", error);
 	}
@@ -368,7 +275,6 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 	// Only retry when Discord rejected the image payload itself — see PAYLOAD_REJECTED.
 	if (form !== undefined && !response.ok && PAYLOAD_REJECTED.has(response.status)) {
 		const rejected = await response.text();
-
 		log.warn(
 			`Discord rejected the deck image (${hl.strong(String(response.status))}), retrying text-only: ${rejected.slice(0, 200)}`
 		);
