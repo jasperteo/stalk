@@ -68,7 +68,7 @@ function formatDeck(cards: Card[] | undefined) {
 /** Trophy progression for a player, e.g. "5,432 → 5,463 (+31)". Dropped on modes without trophies. */
 function buildTrophyField(player: Player | undefined, label: string) {
 	if (player?.startingTrophies === undefined) {
-		return;
+		return undefined;
 	}
 
 	const change = player.trophyChange ?? 0;
@@ -95,7 +95,7 @@ function buildTrophyFields(subject: Player | undefined, other: Player | undefine
 
 function buildSupportField(player: Player | undefined, label: string) {
 	if (!player?.supportCards.length) {
-		return;
+		return undefined;
 	}
 
 	return {
@@ -123,7 +123,7 @@ const TOWER_TROOP_ART: Record<number, string> = {
 function towerThumbnail(player: Player | undefined) {
 	const troop = player?.supportCards[0];
 	if (troop === undefined) {
-		return;
+		return undefined;
 	}
 
 	return { url: TOWER_TROOP_ART[troop.id] ?? troop.iconUrls.medium };
