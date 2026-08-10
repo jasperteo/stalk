@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 
+import { Lazy } from "@std/async/lazy";
 import { format as formatBytes } from "@std/fmt/bytes";
 import { format as formatDuration } from "@std/fmt/duration";
 import type { SharpConstructor } from "sharp";
@@ -23,24 +24,20 @@ import type { Card, EvolutionLevel } from "@/schema.ts";
  * `sharp.concurrency(1)` collapses each pipeline's thread pool to one thread, trading wall time for
  * total CPU — the metric Deploy bills, and nothing here is waiting on wall time.
  *
- * Memoized on success only: a failed load clears the slot so the next render retries. Caching the
- * rejection would let one transient dlopen failure silently poison every later render for the
- * isolate's lifetime.
+ * `Lazy` is here for its rejection semantics, not just the memo: it clears its state when the
+ * initializer rejects, so the next render retries. Caching the rejection would let one transient
+ * dlopen failure silently poison every later render for the isolate's lifetime.
  */
-let sharpModule: Promise<SharpConstructor> | undefined;
+const sharpModule = new Lazy<SharpConstructor>(async () => {
+	const { default: sharp } = await import("sharp");
 
-const loadSharp = () =>
-	(sharpModule ??= import("sharp").then(
-		({ default: sharp }) => {
-			sharp.cache(false);
-			sharp.concurrency(1);
-			return sharp;
-		},
-		(error: unknown) => {
-			sharpModule = undefined;
-			throw error;
-		}
-	));
+	sharp.cache(false);
+	sharp.concurrency(1);
+
+	return sharp;
+});
+
+const loadSharp = () => sharpModule.get();
 
 // ═══════════════════════════════════════════ CONSTANTS ═══════════════════════════════════════════
 
