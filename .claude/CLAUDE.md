@@ -10,7 +10,7 @@ and deployment.
 ## Commands
 
 ```sh
-deno task dev     # Local dev server (-P loads deno.json's "permissions" set; q + Enter quits)
+deno task dev     # Local dev server (-P loads deno.json's "permissions" set)
 
 deno task test     # Vitest suite
 deno task preview  # Render a hardcoded deck to scripts/preview.png (manual, offline)
@@ -46,13 +46,10 @@ Break one of these and the app misbehaves in a way tests may not catch.
    KV reads are the free tier's binding limit (450k/month) and a per-player read at one tick a minute
    burns ~43.8k of them per player per month. Writes stay per-tag, so concurrent polls never share a
    value.
-5. **`if (interactive) await quitOnKeypress()` must stay the last statement in `main.ts`.** Its
-   top-level await blocks module evaluation until stdin closes, so anything below it never runs
-   locally — and Deploy (no TTY, skips the gate) would mask the breakage.
-6. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
+5. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
    fetch is only a fallback for a card id with no local file. 177 PNGs (285×420): `<id>.png` plus 41
    `-evo` and 14 `-hero` variants, covering all 122 playable cards.
-7. **Everything logs through `src/log.ts`.** It is the only module that may import
+6. **Everything logs through `src/log.ts`.** It is the only module that may import
    `@std/fmt/colors`, so every paint call happens after its `setColorEnabled` gate.
 
 ## Architecture

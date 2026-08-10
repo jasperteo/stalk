@@ -89,7 +89,7 @@ deno task dev
 Runs with `.env` loaded, serving `GET /` (health check) and `GET /kv/last-battle` (a read-only dump
 of the stored cursors). `-P` loads the `default` permission set from `deno.json` instead of
 prompting per-permission. `Deno.cron` registers at startup and fires on the minute against Deno's
-local scheduler. Press `q` + Enter to quit.
+local scheduler.
 
 ### 4. Deploy
 
@@ -101,7 +101,7 @@ art is committed to the repo and deployed with it; the renderer depends on it in
 ## Commands
 
 ```sh
-deno task dev     # Local dev server (q + Enter quits)
+deno task dev     # Local dev server
 
 deno task test     # Vitest suite
 deno task preview  # Render a hardcoded deck to scripts/preview.png, for eyeballing layout changes
