@@ -35,7 +35,14 @@
 		"default": {
 			"env": { "allow": true },
 			"ffi": { "allow": true },
-			"net": { "allow": true },
+			"net": {
+				"allow": [
+					"0.0.0.0:8000",
+					"proxy.royaleapi.dev",
+					"discord.com",
+					"api-assets.clashroyale.com"
+				]
+			},
 			"read": { "allow": true },
 			"write": { "allow": true }
 		}
