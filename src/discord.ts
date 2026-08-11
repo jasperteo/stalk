@@ -176,6 +176,17 @@ function battleContext(battle: Battle, me: Player) {
 type BattleContext = ReturnType<typeof battleContext>;
 
 /**
+ * The one place a webhook body is serialized, so no payload shape can forget
+ * {@link ALLOWED_MENTIONS} — both the multipart `payload_json` part and the text-only fallback go
+ * through here. Adding the field per call site instead would leave a third shape unprotected by
+ * default, which for this particular field means silently re-enabling `@everyone` on a name we
+ * don't control.
+ */
+function payloadJson(message: { content: string; embeds: unknown[] }) {
+	return JSON.stringify({ ...message, allowed_mentions: ALLOWED_MENTIONS });
+}
+
+/**
  * Renders both deck grids and packs them with the JSON payload into multipart form data. A missing
  * opponent (defensive; 1v1s always have one) just drops the second side.
  */
@@ -200,14 +211,7 @@ async function buildForm({ me, opponent, content, embedBase }: BattleContext) {
 	);
 
 	const form = new FormData();
-	form.append(
-		"payload_json",
-		JSON.stringify({
-			content,
-			embeds: parts.map((part) => part.embed),
-			allowed_mentions: ALLOWED_MENTIONS,
-		})
-	);
+	form.append("payload_json", payloadJson({ content, embeds: parts.map((part) => part.embed) }));
 
 	for (const [index, { file }] of parts.entries()) {
 		form.append(`files[${String(index)}]`, file);
@@ -232,7 +236,7 @@ function buildFallbackMessage({ me, opponent, content, embedBase }: BattleContex
 		buildSupportField(opponent, "Opponent Tower Troop"),
 	].filter(Boolean);
 
-	return { content, embeds: [{ ...embedBase(me), fields }], allowed_mentions: ALLOWED_MENTIONS };
+	return { content, embeds: [{ ...embedBase(me), fields }] };
 }
 
 /**
@@ -278,7 +282,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 	const textRequest = (): RequestInit => ({
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(buildFallbackMessage(ctx)),
+		body: payloadJson(buildFallbackMessage(ctx)),
 	});
 
 	// The only state that varies. Whether an image was sent is just `form !== undefined` — no
