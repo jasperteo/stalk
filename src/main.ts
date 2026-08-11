@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 
-import { configureDeckCache } from "@/deck-image.ts";
 import { config } from "@/env.ts";
 import { hl, levelColor, log } from "@/log.ts";
 import { listCursors, POLL_OUTCOMES, pollAll } from "@/poll.ts";
@@ -45,12 +44,6 @@ function formatTally(outcomes: PollOutcome[]) {
 	return POLL_OUTCOMES.map((outcome) =>
 		outcomeColor[outcome](`${outcome} ${String(counts.get(outcome) ?? 0)}`)
 	).join(", ");
-}
-
-// Once at startup, not per tick: sizes the renderer's deck-cache entry guard from the live target
-// count, so the renderer never reads app config.
-if (config !== undefined) {
-	configureDeckCache(config.targets.length);
 }
 
 // Voided, not awaited: the registration promise only surfaces registration errors, and the job runs

@@ -20,7 +20,8 @@ import type { Card, EvolutionLevel } from "@/schema.ts";
 
 /**
  * Lazily imports sharp so its native binding loads on first render, not every isolate cold boot.
- * `sharp.cache(false)` disables libvips' own cache (the deck LRU is the only cache wanted here);
+ * `sharp.cache(false)` disables libvips' own cache: a fresh isolate per tick means it can never
+ * accumulate a useful hit, only hold memory, so no cache is wanted here at all.
  * `sharp.concurrency(1)` collapses each pipeline's thread pool to one thread, trading wall time for
  * total CPU — the metric Deploy bills, and nothing here is waiting on wall time.
  *
@@ -62,25 +63,11 @@ const ALPHA_THRESHOLD = 8;
 const BYTES_PER_PIXEL = 4;
 /**
  * PNG zlib compressionLevel (0–9) for the shipped grid. 0 trades upload size for encode CPU, the
- * scarcer resource on Deploy. Coupled with `DECK_CACHE_BYTES` — raise one, revisit the other.
+ * scarcer resource on Deploy.
  */
 const GRID_COMPRESSION = 0;
 /** Abort a fallback card-icon CDN fetch after this long, so a hung request can't stall the tick. */
 const ICON_TIMEOUT_MS = 10_000;
-/** Floor for `deckCacheLimit`, set to what `DECK_CACHE_BYTES` affords at the current grid size. */
-const DECK_CACHE_MIN_ENTRIES = 8;
-/**
- * Secondary entry-count guard on the deck cache. Doesn't bind today — `DECK_CACHE_BYTES` always
- * evicts first — so the floor above is set to what that byte budget affords rather than left
- * arbitrary, and the two bounds agree instead of one being unreachable. It exists for when
- * `GRID_COMPRESSION` is raised: grids shrink several-fold and entry count becomes the real bound.
- */
-let deckCacheLimit = DECK_CACHE_MIN_ENTRIES;
-/**
- * Memory ceiling for finished grids, in bytes — the only bound that actually caps isolate memory.
- * Coupled with `GRID_COMPRESSION`; see docs/deck-rendering.md#deck-cache.
- */
-const DECK_CACHE_BYTES = 28 * 1024 * 1024;
 
 // ═════════════════════════════════════════════ TYPES ═════════════════════════════════════════════
 
@@ -100,7 +87,7 @@ type Region = {
 };
 
 /**
- * A trimmed icon ready to composite, plus the transparent bottom margin it kept — `composeDeckGrid`
+ * A trimmed icon ready to composite, plus the transparent bottom margin it kept — `renderDeckGrid`
  * uses that padding to know how far the row below may overlap without clipping. `data` is a
  * `Buffer`, produced by `cropRaw`.
  */
@@ -118,13 +105,6 @@ type GridPlan = {
 	/** Top y of each row, native px. */
 	rowTops: number[];
 };
-
-/**
- * One deck-cache slot: the in-flight or finished render, plus the byte size eviction charges for
- * it. Bundling the two means removing a slot can't leave its bytes behind in the running total.
- * `bytes` stays 0 until the render resolves.
- */
-type DeckCacheEntry = { png: Promise<Uint8Array<ArrayBuffer>>; bytes: number };
 
 // ══════════════════════════════════════════ RAW BITMAPS ══════════════════════════════════════════
 
@@ -287,8 +267,8 @@ function iconUrl(card: Card): string {
 
 /**
  * Trims a decoded bitmap's transparent margin on the top and sides but keeps its native bottom
- * edge: every icon shares that baseline, so bottom-aligning on it (`composeDeckGrid`) lines the
- * card frames up. Kept at native resolution, since upscaling would blur.
+ * edge: every icon shares that baseline, so bottom-aligning on it (`renderDeckGrid`) lines the card
+ * frames up. Kept at native resolution, since upscaling would blur.
  */
 function trimRaw(raw: RawImage): Tile {
 	const { width, height } = raw;
@@ -363,7 +343,7 @@ async function fetchTile(url: string): Promise<Tile> {
 /**
  * Loads a card's tile ready to composite, reading from the local mirror. A `NotFound` means the
  * card released after the last mirror sync: warn (the signal to add its art) and fall back to the
- * CDN icon. `cdnFallback` reports whether that fallback ran so `composeDeckGrid` can log it. Any
+ * CDN icon. `cdnFallback` reports whether that fallback ran so `renderDeckGrid` can log it. Any
  * other fetch/decode error propagates and rejects the render.
  */
 async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean }> {
@@ -386,7 +366,7 @@ async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean 
 
 /**
  * Pure grid geometry for a given number of tiles: overall size and each row's top. No I/O —
- * isolated from `composeDeckGrid` so it's unit-testable on its own.
+ * isolated from `renderDeckGrid` so it's unit-testable on its own.
  */
 function planGrid(tileCount: number): GridPlan {
 	const rows = Math.ceil(tileCount / COLUMNS);
@@ -403,10 +383,12 @@ function planGrid(tileCount: number): GridPlan {
 // ════════════════════════════════════════════ COMPOSE ════════════════════════════════════════════
 
 /**
- * The uncached render behind `renderDeckGrid`, run on a cache miss; short decks leave trailing
+ * Renders a deck as a 4-column PNG grid (2 rows for a full 8-card deck); short decks leave trailing
  * cells empty.
+ *
+ * @throws On an empty deck or a tile load/decode failure; the caller posts the text-only fallback.
  */
-async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
+async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	if (cards.length === 0) {
 		throw new Error("No cards to render");
 	}
@@ -476,98 +458,9 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 	return png;
 }
 
-// ═════════════════════════════════════════════ CACHE ═════════════════════════════════════════════
-
-/**
- * Finished grids keyed by the deck's ordered mirror filenames, so a repeated deck skips the render.
- * The only cache here — per-tile reads are covered by the OS page cache. A small LRU: hits
- * re-insert at the back, inserts evict from the front. The cached bytes are shared across posts —
- * safe because callers only wrap them in a `File`, never mutate them.
- */
-const deckCache = new Map<string, DeckCacheEntry>();
-/** Running total of `deckCache`'s resolved bytes; an entry contributes 0 until its render lands. */
-let deckCacheBytes = 0;
-
-/**
- * Evicts from the front of `deckCache` (oldest / least-recently-used) until both the byte budget
- * and the entry-count guard are satisfied. Size travels inside the entry, so removing one can't
- * leave its bytes behind in the running total.
- */
-function evictDeckCache(): void {
-	while (deckCacheBytes > DECK_CACHE_BYTES || deckCache.size > deckCacheLimit) {
-		const oldest = deckCache.entries().next().value;
-
-		if (oldest === undefined) {
-			break;
-		}
-
-		const [key, entry] = oldest;
-
-		deckCache.delete(key);
-		deckCacheBytes -= entry.bytes;
-	}
-}
-
-/**
- * Raises the entry-count guard, called once from the composition root. Sized from the target count
- * so growing TARGETS keeps each tracked player's decks warm plus headroom for opponent decks.
- */
-function configureDeckCache(targetCount: number) {
-	deckCacheLimit = 3 * targetCount + DECK_CACHE_MIN_ENTRIES;
-}
-
-/**
- * Renders a deck as a 4-column PNG grid (2 rows for a full 8-card deck), cached: the result is
- * deterministic from the deck's ordered mirror filenames, so identical decks reuse the finished
- * PNG. A hit refreshes recency; a miss renders, caches the promise, and evicts the
- * least-recently-used deck past the cap.
- *
- * @throws On an empty deck or a tile load/decode failure; the caller posts the text-only fallback.
- *   A failed render evicts itself so it isn't cached.
- */
-async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
-	const key = cards.map((card) => tileName(card)).join("|");
-	const cached = deckCache.get(key);
-
-	if (cached !== undefined) {
-		// Maps iterate in insertion order, so re-inserting moves this deck out of eviction's way.
-		deckCache.delete(key);
-		deckCache.set(key, cached);
-		return cached.png;
-	}
-
-	// Cached before the first await, so concurrent renders of the same deck dedupe on this promise.
-	const entry: DeckCacheEntry = { png: composeDeckGrid(cards), bytes: 0 };
-	deckCache.set(key, entry);
-
-	try {
-		const png = await entry.png;
-
-		// Account on resolution — a pending render has no size yet. Only if this entry is still the
-		// cached one; an eviction during the render means it is no longer ours to account for.
-		if (deckCache.get(key) === entry) {
-			entry.bytes = png.length;
-			deckCacheBytes += png.length;
-			evictDeckCache();
-		}
-
-		return png;
-	} catch (error) {
-		// Identity-checked: an eviction during the render may have replaced this entry, and deleting
-		// blindly would drop a healthy newer one.
-		if (deckCache.get(key) === entry) {
-			deckCache.delete(key);
-		}
-
-		throw error;
-	}
-}
-
 export {
 	CELL_HEIGHT,
 	CELL_WIDTH,
-	configureDeckCache,
-	DECK_CACHE_BYTES,
 	decodeToRaw,
 	IMAGES_DIR,
 	planGrid,

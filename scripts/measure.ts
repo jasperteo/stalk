@@ -3,7 +3,7 @@ import { hl, log } from "@/log.ts";
 
 /**
  * Dev-only measuring tool: reports the transparent margins baked into a card icon, the numbers
- * deck-image.ts's `trimToArt`/`composeDeckGrid` are tuned against. Reads the renderer's own
+ * deck-image.ts's `trimToArt`/`renderDeckGrid` are tuned against. Reads the renderer's own
  * `IMAGES_DIR` (not the CDN), so it measures exactly the directory the renderer reads and stays
  * offline and hermetic enough to run on a whim.
  *

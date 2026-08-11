@@ -6,7 +6,6 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	CELL_HEIGHT,
 	CELL_WIDTH,
-	DECK_CACHE_BYTES,
 	decodeToRaw,
 	planGrid,
 	renderDeckGrid,
@@ -17,11 +16,8 @@ import type { Card } from "@/schema.ts";
 
 vi.mock("@/log.ts");
 
-// `deckCache` in deck-image.ts is module-level and persists for the whole test file, and its keys
-// are the deck's ordered mirror filenames (derived from card id + evolutionLevel) — so every card
-// needs a unique id, otherwise two tests would silently share (or collide on) a cached grid. A
-// monotonic counter hands each `card()` call its own id; tests that render the same deck twice build
-// the array once and reuse it.
+// A monotonic counter hands each `card()` call its own id, so decks built in different tests stay
+// distinguishable. Tests that render the same deck twice build the array once and reuse it.
 let nextId = 1;
 
 function card(overrides: Partial<Card> = {}): Card {
@@ -109,39 +105,6 @@ const OVERSIZED_FIXTURE = await solidPng(OVERSIZED_WIDTH, OVERSIZED_HEIGHT, {
 });
 
 /**
- * A deterministic pseudo-random `[0, 1)` value for call index `n` — `Math.random` would make the
- * byte-budget tests' render count flaky across runs. The classic "sine hash": high-frequency, good
- * enough spread for a non-cryptographic fixture, no bitwise ops (int32 wraparound isn't meaningful
- * here — only the fractional spread is).
- */
-function pseudoRandom(n: number): number {
-	const x = Math.sin(n) * 43_758.545;
-	return x - Math.floor(x);
-}
-
-/**
- * A full-cell (`CELL_WIDTH`×`CELL_HEIGHT`), high-entropy PNG for the byte-budget tests below.
- *
- * At `GRID_COMPRESSION` 0 a composed grid's size is purely geometric — a stored PNG is `width ×
- * height × 4` plus framing — so this no longer does what it was written for. Under level 6 it
- * mattered a lot: `FIXTURE`'s solid color compressed to well under a kilobyte regardless of deck
- * size, which would have taken thousands of renders to cross `DECK_CACHE_BYTES`, while
- * near-incompressible noise put a grid in the hundreds of KB. Kept anyway, because it costs only
- * setup time and it keeps these tests independent of the compression level if it ever moves back
- * up.
- */
-const noisyRaw = Buffer.alloc(CELL_WIDTH * CELL_HEIGHT * 4);
-
-for (let i = 0; i < noisyRaw.length; i += 4) {
-	noisyRaw[i] = Math.floor(pseudoRandom(i) * 256);
-	noisyRaw[i + 1] = Math.floor(pseudoRandom(i + 1) * 256);
-	noisyRaw[i + 2] = Math.floor(pseudoRandom(i + 2) * 256);
-	noisyRaw[i + 3] = 255;
-}
-
-const NOISY_FIXTURE = await rawToPng(noisyRaw, CELL_WIDTH, CELL_HEIGHT);
-
-/**
  * Spies `Deno.readFile` — the module's primary tile source (the local `images/` mirror) — to serve
  * the fixture for every card. Same pattern as main.test.ts spying `Deno.openKv`/`Deno.cron`: vitest
  * runs inside Deno, so `Deno` is the real ambient global. `restoreMocks` puts the genuine
@@ -187,8 +150,8 @@ describe("renderDeckGrid", () => {
 	test("lays out a 4-column grid at the fixed cell resolution", async () => {
 		const eightCards = Array.from({ length: 8 }, () => card());
 
-		// The two renders share no cache entries (distinct ids), so they can overlap — this is the
-		// suite's most expensive test (9 tile decode round-trips).
+		// Nothing shared between the two renders (distinct ids), so they can run concurrently — this is
+		// the suite's most expensive test (9 tile decode round-trips).
 		const [grid, singleRow] = await Promise.all([
 			renderDeckGrid(eightCards).then((png) => dimensions(png)),
 			renderDeckGrid([card()]).then((png) => dimensions(png)),
@@ -263,7 +226,7 @@ describe("renderDeckGrid", () => {
 
 		// The grid's own dimensions are fixed by CELL_WIDTH/CELL_HEIGHT regardless of tile content, so
 		// an unclamped oversized tile wouldn't change them either — what the clamp actually prevents is
-		// the tile's overlay offsets going negative (see composeDeckGrid) and the source being visibly
+		// the tile's overlay offsets going negative (see renderDeckGrid) and the source being visibly
 		// sliced. A successful render at the expected fixed size is the observable proxy available from
 		// outside the module: `fit: "inside"` + `withoutEnlargement` means a tile that already exceeds
 		// the cell now decodes into a rectangle bounded by CELL_WIDTH×CELL_HEIGHT, which trimToArt (also
@@ -354,7 +317,7 @@ describe("renderDeckGrid", () => {
 		await expect(renderDeckGrid([card()])).rejects.toThrow("Card icon 500 for");
 	});
 
-	test("recovers on the next render after a failed fallback (failure is not cached)", async () => {
+	test("recovers on the next render after a failed fallback", async () => {
 		const cards = [card()];
 
 		// Local art is missing throughout, so both renders take the CDN fallback; the first fetch 500s
@@ -364,20 +327,9 @@ describe("renderDeckGrid", () => {
 
 		await expect(renderDeckGrid(cards)).rejects.toThrow("Card icon 500 for");
 
-		// The deck cache evicts the failed entry, so the retry re-runs and renders cleanly.
+		// No module-level state outlives a call, so a failed render has no lasting side effect: the
+		// retry is just another independent render.
 		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Uint8Array);
-	});
-
-	test("does not re-render a deck it has already rendered", async () => {
-		const cards = [card()];
-
-		const first = await renderDeckGrid(cards);
-		const readsAfterFirst = readFileMock.mock.calls.length;
-		const second = await renderDeckGrid(cards);
-
-		// A cache hit returns the same cached bytes and re-reads nothing.
-		expect(second).toBe(first);
-		expect(readFileMock.mock.calls.length).toBe(readsAfterFirst);
 	});
 
 	test("renders separately for a different deck", async () => {
@@ -416,147 +368,6 @@ describe("planGrid", () => {
 				expect(pitch).toBeGreaterThan(0);
 			}
 		}
-	});
-});
-
-/**
- * Cache tests need their own module instance: the static import's deckCache carries entries from
- * the tests above, and there is no reset for a running module's cache short of a fresh instance.
- * `resetModules` only clears the module registry — the `Deno.readFile` spy from `beforeEach` is a
- * global and survives, so the fresh module still reads the fixture. Cache hits return the same
- * resolved Uint8Array instance (the cached promise), so identity distinguishes a hit from a
- * re-render (a re-render re-reads every tile since there is no per-tile cache, but identity is the
- * direct signal).
- *
- * `targetCount` sizes the fresh instance's entry-count guard to `3 * targetCount + 8`: 0 for the
- * bare default of 8, higher when a test needs the entry guard out of the way.
- */
-async function freshRenderDeckGrid(targetCount = 0) {
-	vi.resetModules();
-	const { configureDeckCache, renderDeckGrid: render } = await import("@/deck-image.ts");
-	configureDeckCache(targetCount);
-	return render;
-}
-
-describe("renderDeckGrid LRU", () => {
-	// The entry-count guard is `3 * targetCount + 8`, so a target count of 0 caps at the bare
-	// default and 2 raises it to 14 — enough to prove the multiplier is honored, not clamped.
-	test.each([
-		[0, 8],
-		[2, 14],
-	])(
-		"evicts the least-recently-used deck past the cap for %i targets, keeping touched decks warm",
-		async (targetCount, limit) => {
-			const render = await freshRenderDeckGrid(targetCount);
-			// Keyed by id, so a stable id per logical deck is what makes a re-render a cache hit.
-			const deck = (id: number) => [card({ id })];
-
-			// Fill the cache to its cap. If the multiplier weren't honored on the raised-cap run, deck 1
-			// would already have been evicted by the time this loop finishes.
-			const first = await render(deck(0));
-			for (let id = 1; id < limit; id++) {
-				await render(deck(id));
-			}
-
-			// Touch deck 0 so deck 1 becomes the eviction candidate; a hit is the same instance.
-			expect(await render(deck(0))).toBe(first);
-
-			// One over the cap evicts exactly one deck: the untouched deck 1.
-			await render(deck(999));
-
-			const second = await render(deck(1));
-			// Every deck in this suite renders from the same fixture, so deck 0 and deck 1's PNGs are
-			// byte-identical despite being distinct cache entries — `.not.toBe()` on the raw buffers would
-			// force vitest's equality fallback to walk the full (now native-resolution, multi-MB) content
-			// looking for a difference it will never find. `Object.is` inside a boolean asserts the same
-			// reference-distinctness in O(1).
-			expect(Object.is(second, await render(deck(0)))).toBe(false); // sanity: distinct decks, distinct pngs
-			expect(await render(deck(1))).toBe(second); // deck 1 re-rendered, now cached again
-			expect(await render(deck(0))).toBe(first); // deck 0 survived — recency was refreshed
-		}
-	);
-
-	// An eviction-identity test (asserting a mid-render eviction doesn't delete a healthy newer
-	// promise under the same key) is deliberately not included here: it needs a render to still be
-	// in flight when its own cache entry is evicted by cap pressure and then replaced by a second
-	// render under the same key, all before the first render's rejection is observed. Nothing in this
-	// module exposes a hook to pause a render mid-flight, so driving that interleaving would mean
-	// racing real promise microtask ordering — inherently flaky, or trivially vacuous if it happened
-	// to pass without ever exercising the interleaving. The guard itself (`deckCache.get(key) ===
-	// pending`) is exercised on every ordinary failing render in the suite (e.g. "recovers on the next
-	// render after a failed fallback" above), just not on the specific replaced-entry branch.
-});
-
-/**
- * Byte-budget tests pass a target count of 20, putting the entry-count guard at 3 * 20 + 8 = 68 —
- * well above what they fill, so entry-count eviction never fires here (it is already covered by
- * "renderDeckGrid LRU" above) and `DECK_CACHE_BYTES` is isolated as the one doing the evicting.
- */
-const HEADROOM_TARGETS = 20;
-
-describe("renderDeckGrid byte budget", () => {
-	// A big synthetic deck (24 tiles of NOISY_FIXTURE) that fills the byte budget fast, so every deck
-	// in a given run is the same size (same content, only the cache key's ids differ) — `perDeck`
-	// below is measured from the first render rather than hardcoded, so the test stays correct if
-	// compression, layout, or DECK_CACHE_BYTES itself ever changes.
-	const bigDeck = (id: number) => Array.from({ length: 24 }, (_, i) => card({ id: id * 100 + i }));
-
-	// Real (unmocked) sharp renders enough 24-tile decks to fill DECK_CACHE_BYTES — genuine CPU-bound
-	// work with no shortcut, so the default 5s test timeout is too tight on a slower/shared CI runner
-	// even though it comfortably passes on a fast local machine.
-	const EVICTION_TEST_TIMEOUT_MS = 15_000;
-
-	test(
-		"evicts once the byte budget is exceeded, and the evicted deck re-renders on request",
-		async () => {
-			const render = await freshRenderDeckGrid(HEADROOM_TARGETS);
-
-			readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
-
-			const first = await render(bigDeck(0));
-			const perDeck = first.length;
-			// The most decks that fit at or under budget, deck 0 included.
-			const capacity = Math.floor(DECK_CACHE_BYTES / perDeck);
-
-			for (let id = 1; id < capacity; id++) {
-				await render(bigDeck(id));
-			}
-
-			const readsBeforeOverflow = readFileMock.mock.calls.length;
-
-			// One more deck pushes the running total past DECK_CACHE_BYTES; the oldest entry (deck 0, never
-			// re-touched since its insert) is evicted to bring it back under budget.
-			await render(bigDeck(capacity));
-
-			expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeOverflow);
-
-			const readsBeforeRerender = readFileMock.mock.calls.length;
-			const refreshed = await render(bigDeck(0));
-
-			// Evicted for bytes, not recency: re-rendering deck 0 is a fresh render (new reads, new bytes).
-			expect(readFileMock.mock.calls.length).toBeGreaterThan(readsBeforeRerender);
-			// Every card in this suite renders from NOISY_FIXTURE regardless of id, so the refreshed grid
-			// is byte-identical to the original despite being a distinct render — `.not.toBe()` on the raw
-			// (now native-resolution, ~10 MiB) buffers would force vitest's equality fallback to walk the
-			// full content with no mismatch to short-circuit on. `Object.is` inside a boolean asserts the
-			// same reference-distinctness in O(1) instead of ~14s.
-			expect(Object.is(refreshed, first)).toBe(false);
-		},
-		EVICTION_TEST_TIMEOUT_MS
-	);
-
-	test("serves a deck still within budget from cache", async () => {
-		const render = await freshRenderDeckGrid(HEADROOM_TARGETS);
-
-		readFileMock.mockImplementation(() => Promise.resolve(new Uint8Array(NOISY_FIXTURE)));
-
-		const cards = bigDeck(0);
-		const first = await render(cards);
-		const readsAfterFirst = readFileMock.mock.calls.length;
-		const second = await render(cards);
-
-		expect(second).toBe(first);
-		expect(readFileMock.mock.calls.length).toBe(readsAfterFirst);
 	});
 });
 
