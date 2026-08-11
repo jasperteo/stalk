@@ -235,4 +235,26 @@ describe("pollAll", () => {
 
 		await expect(pollAll(targets, TOKEN)).resolves.toEqual(["failed", "failed"]);
 	});
+
+	// The cursor read runs before any poll(), so it is the one failure that isn't already contained
+	// by poll()'s own catch — and it hits every target at once. It must not reject the tick.
+	test("reports every target failed when the cursor read fails, without seeding any cursor", async () => {
+		const { pollAll, listCursors, kv } = await importPoll();
+		const { log } = await import("@/log.ts");
+
+		vi.spyOn(kv, "list").mockImplementationOnce(() => {
+			throw new Error("kv unavailable");
+		});
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
+
+		const targets: Target[] = ["#AAA111", "#BBB222"].map((tag) => ({ tag, webhook: WEBHOOK }));
+
+		await expect(pollAll(targets, TOKEN)).resolves.toEqual(["failed", "failed"]);
+
+		// Nothing posted, and no cursor was seeded past anyone's newest battle.
+		expect(notifyBattle).not.toHaveBeenCalled();
+		expect(await listCursors()).toEqual({});
+		expect(log.error).toHaveBeenCalled();
+	});
 });

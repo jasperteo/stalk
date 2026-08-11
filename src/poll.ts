@@ -123,7 +123,19 @@ async function listCursors(): Promise<Record<string, unknown>> {
  * a value.
  */
 async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]> {
-	const cursors = await listCursors();
+	let cursors: Record<string, unknown>;
+
+	try {
+		cursors = await listCursors();
+	} catch (error) {
+		// The one error that hits every target at once, so it must not escape as a rejected tick:
+		// main.ts would lose both the tally line and this log. Reporting every target "failed" leaves
+		// every cursor untouched, so the next tick retries. Falling through with an empty map instead
+		// would be far worse — every player would read as a first run and get seeded straight past
+		// their newest battle, with no post.
+		log.error("Cursor read failed; every target skipped this tick:", error);
+		return targets.map((): PollOutcome => "failed");
+	}
 
 	return await Promise.all(targets.map((target) => poll(target, token, cursors[target.tag])));
 }
