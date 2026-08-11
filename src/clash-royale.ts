@@ -13,7 +13,11 @@ const PROXY_BASE = "https://proxy.royaleapi.dev/v1";
 /** Abort the battle-log request after this long, so a hung request can't stall the cron tick. */
 const FETCH_TIMEOUT_MS = 10_000;
 
-/** Fetches a player's raw battle-log entries. Schema validation is deferred to `latestBattle`. */
+/**
+ * Fetches a player's raw battle-log entries. Schema validation is deferred to {@link latestBattle}.
+ *
+ * @throws When the API response isn't ok.
+ */
 async function fetchBattlelog(playerTag: string, token: string): Promise<unknown[]> {
 	const response = await fetch(`${PROXY_BASE}/players/${encodeURIComponent(playerTag)}/battlelog`, {
 		headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },

@@ -49,7 +49,8 @@ const leveled = (
 	tint = false
 ) => {
 	const paint = levelColor[level];
-	// Baked once here — while the `log` literal below evaluates, so after the setColorEnabled gate.
+	// Computed once here, when the `log` object below is built — which happens after the
+	// setColorEnabled gate above runs.
 	const badge = paint(bold(level.padEnd(5)));
 
 	return (message: string, ...rest: unknown[]) => {

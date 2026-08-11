@@ -33,7 +33,7 @@ const outcomeColor: Record<PollOutcome, (str: string) => string> = {
 	failed: levelColor.error,
 };
 
-/** `posted 1, seeded 0, …` — iterates POLL_OUTCOMES so a new outcome can't go missing. */
+/** `posted 1, seeded 0, …` — iterates {@link POLL_OUTCOMES} so a new outcome can't go missing. */
 function formatTally(outcomes: PollOutcome[]) {
 	const counts = new Map<PollOutcome, number>();
 
@@ -49,7 +49,8 @@ function formatTally(outcomes: PollOutcome[]) {
 // Voided, not awaited: the registration promise only surfaces registration errors, and the job runs
 // for the isolate's lifetime.
 void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
-	// Heartbeat so a misconfigured deploy reads as a loud skipped tick, not a silent dashboard.
+	// Heartbeat so a misconfigured deploy shows up as a loud skipped tick in the logs, instead of
+	// failing silently with nothing to see on the dashboard.
 	if (config === undefined) {
 		log.warn("poll-battlelogs: skipped tick — CR_API_TOKEN not set");
 		return;

@@ -26,9 +26,12 @@ type PollOutcome = (typeof POLL_OUTCOMES)[number];
 /**
  * Interprets one raw stored cursor value. Absence — `stored` is `undefined`, meaning first run or
  * an expired cursor — is never corrupt, so it skips the parse straight to `undefined`;
- * `listCursors` omits the key entirely rather than yielding null, which is what makes that check
- * exact. A _present_ value that fails to parse is corrupt: log and return `undefined` so the caller
- * re-seeds instead of re-posting every tick against a cursor that can never match.
+ * {@link listCursors} omits the key entirely rather than yielding null, which is what makes that
+ * check exact. A _present_ value that fails to parse is corrupt: log and return `undefined` so the
+ * caller re-seeds instead of re-posting every tick against a cursor that can never match.
+ *
+ * @returns The parsed cursor, or `undefined` for both "no stored cursor" and "corrupt cursor"
+ *   (already logged) — the caller treats both as first-run.
  */
 function readCursor(stored: unknown, tag: string): string | undefined {
 	if (stored === undefined) {
@@ -45,10 +48,10 @@ function readCursor(stored: unknown, tag: string): string | undefined {
 }
 
 /**
- * Polls one target against the cursor `pollAll` read for it this tick. Taking `stored` as an
+ * Polls one target against the cursor {@link pollAll} read for it this tick. Taking `stored` as an
  * argument rather than fetching it here is what lets a tick cost one KV read instead of one per
- * player — see `pollAll`. Never rejects: every error resolves "failed", which is why `pollAll` uses
- * `Promise.all` rather than `allSettled` — one player's failure can't sink the others.
+ * player — see {@link pollAll}. Never rejects: every error resolves "failed", which is why `pollAll`
+ * uses `Promise.all` rather than `allSettled` — one player's failure can't sink the others.
  */
 async function poll(target: Target, token: string, stored: unknown): Promise<PollOutcome> {
 	const { tag, webhook } = target;
@@ -94,8 +97,8 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
 
 /**
  * Read-only dump of every stored cursor, keyed by tag. Values stay raw and uninterpreted —
- * `readCursor` is where corrupt-vs-absent gets decided. Used by `pollAll` and main.ts's debug
- * route.
+ * {@link readCursor} is where corrupt-vs-absent gets decided. Used by {@link pollAll} and main.ts's
+ * debug route.
  */
 async function listCursors(): Promise<Record<string, unknown>> {
 	const cursors: Record<string, unknown> = {};

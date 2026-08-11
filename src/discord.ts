@@ -5,7 +5,7 @@ import type { Battle, Card, EvolutionLevel, Player } from "@/schema.ts";
 const OUTCOMES = {
 	[1]: { result: "Victory", verb: "Won", color: 0x00_c9_50 }, // Green
 	[-1]: { result: "Defeat", verb: "Lost", color: 0xe7_00_0b }, // Red
-	// No verb: `battleContext` keys the absent HP-margin line off this being undefined.
+	// No verb: `battleContext` uses this being undefined as the signal to skip the HP-margin line.
 	[0]: { result: "Draw", verb: undefined, color: 0xff_df_20 }, // Yellow
 } as const;
 
@@ -243,8 +243,10 @@ async function postWebhook(webhookUrl: string, request: RequestInit) {
  * Posts a single battle to the webhook. `battle.team[0]` is always the tracked player (2v2 is
  * filtered out upstream). Multipart when the deck images render — fetch derives the boundary from
  * the FormData body, so no manual Content-Type — otherwise the JSON text fallback. A payload
- * Discord rejects outright (see PAYLOAD_REJECTED) retries once with the text-only fallback instead
- * of failing the whole tick and re-posting the identical oversized request every minute.
+ * Discord rejects outright (see {@link PAYLOAD_REJECTED}) retries once with the text-only fallback
+ * instead of failing the whole tick and re-posting the identical oversized request every minute.
+ *
+ * @throws When Discord still rejects the post after that retry (a 5xx/429, or a non-payload 4xx).
  */
 async function notifyBattle(webhookUrl: string, battle: Battle) {
 	const me = battle.team[0];
@@ -263,8 +265,8 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		body: JSON.stringify(buildFallbackMessage(ctx)),
 	});
 
-	// The one thing that varies; whether an image was sent is `form !== undefined`, so there is no
-	// second flag to keep in step with it.
+	// The only state that varies. Whether an image was sent is just `form !== undefined` — no
+	// separate flag to keep in sync with it.
 	let form: FormData | undefined;
 
 	try {

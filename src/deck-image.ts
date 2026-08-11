@@ -23,7 +23,7 @@ import type { Card, EvolutionLevel } from "@/schema.ts";
  * `sharp.cache(false)` disables libvips' own cache: a fresh isolate per tick means it can never
  * accumulate a useful hit, only hold memory, so no cache is wanted here at all.
  * `sharp.concurrency(1)` collapses each pipeline's thread pool to one thread, trading wall time for
- * total CPU — the metric Deploy bills, and nothing here is waiting on wall time.
+ * total CPU. Deploy bills by total CPU, not wall time, so nothing here is lost by that trade.
  *
  * `Lazy` is here for its rejection semantics, not just the memo: it clears its state when the
  * initializer rejects, so the next render retries. Caching the rejection would let one transient
@@ -59,7 +59,7 @@ const COLUMN_GAP = 12;
 const ROW_GAP = -16;
 /** Alpha at or below this counts as transparent when scanning for a card's art bounds. */
 const ALPHA_THRESHOLD = 8;
-/** Stride of the raw bitmaps this module works in — `decodeToRaw` always yields RGBA. */
+/** Stride of the raw bitmaps this module works in — {@link decodeToRaw} always yields RGBA. */
 const BYTES_PER_PIXEL = 4;
 /**
  * PNG zlib compressionLevel (0–9) for the shipped grid. 0 trades upload size for encode CPU, the
@@ -71,7 +71,7 @@ const ICON_TIMEOUT_MS = 10_000;
 
 // ═════════════════════════════════════════════ TYPES ═════════════════════════════════════════════
 
-/** A decoded, row-major RGBA bitmap: the shape `scanArtBounds` walks. */
+/** A decoded, row-major RGBA bitmap: the shape {@link scanArtBounds} walks. */
 type RawImage = {
 	data: Uint8Array;
 	width: number;
@@ -87,9 +87,9 @@ type Region = {
 };
 
 /**
- * A trimmed icon ready to composite, plus the transparent bottom margin it kept — `renderDeckGrid`
- * uses that padding to know how far the row below may overlap without clipping. `data` is a
- * `Buffer`, produced by `cropRaw`.
+ * A trimmed icon ready to composite, plus the transparent bottom margin it kept —
+ * {@link renderDeckGrid} reads that padding to cap how far the row below can overlap before it
+ * clips. `data` is a `Buffer`, produced by {@link cropRaw}.
  */
 type Tile = {
 	data: Buffer;
@@ -119,9 +119,9 @@ async function decodeToRaw(bytes: Uint8Array): Promise<RawImage> {
 }
 
 /**
- * Scans a decoded bitmap for its opaque bounding box (alpha above `ALPHA_THRESHOLD`) via four
- * directional scans — row-major top-down/bottom-up for minY/maxY, then column scans restricted to
- * that row range for minX/maxX — rather than visiting every pixel.
+ * Scans a decoded bitmap for its opaque bounding box (alpha above `ALPHA_THRESHOLD`), without
+ * visiting every pixel. Runs four directional scans: row-major top-down/bottom-up for minY/maxY,
+ * then column scans restricted to that row range for minX/maxX.
  *
  * @returns The opaque bounding box; `maxX === -1` (with `minX === width`, `minY === height`) when
  *   the bitmap is fully transparent — the sentinel callers must handle.
@@ -178,15 +178,18 @@ function scanArtBounds({ data, width, height }: RawImage) {
 
 /**
  * Copies a rectangle out of a raw RGBA bitmap, row by row — a plain memcpy in-process rather than a
- * second `sharp(...).extract()` pipeline. Returns a `Buffer` because `.composite()`'s
- * `OverlayOptions.input` accepts no `Uint8Array` — the `sharp()` constructor does, so this is a
- * `.composite()` constraint, not a sharp-wide one, and it is the only reason `node:buffer` is
- * imported here.
+ * second `sharp(...).extract()` pipeline. Returns a `Buffer`, not a `Uint8Array`, because
+ * `.composite()`'s `OverlayOptions.input` requires one — the `sharp()` constructor itself accepts a
+ * `Uint8Array` fine, so this is a `.composite()`-specific constraint. It's the only reason
+ * `node:buffer` is imported here.
  *
  * Zero-fills via `Buffer.alloc`, not `allocUnsafe`: `subarray` clamps silently on a short row, so
  * an out-of-bounds region would otherwise leave uninitialized heap bytes in the tail of a row
  * instead of failing loudly. The guard below should make that path unreachable, but the zero-fill
- * is cheap insurance against a future caller that doesn't share `scanArtBounds`'s invariants.
+ * is cheap insurance against a future caller that doesn't share {@link scanArtBounds}'s
+ * invariants.
+ *
+ * @throws When `region` falls outside the source bitmap.
  */
 function cropRaw({ data, width }: RawImage, region: Region): Buffer {
 	if (
@@ -227,7 +230,7 @@ const EVOLUTION_SUFFIX = {
 
 /**
  * Which `iconUrls` variant each `evolutionLevel` prefers on the CDN-fallback path; guarded like
- * `EVOLUTION_SUFFIX`.
+ * {@link EVOLUTION_SUFFIX}.
  */
 const EVOLUTION_ICON = {
 	1: "evolutionMedium",
@@ -241,10 +244,11 @@ function tileName(card: Card): string {
 }
 
 /**
- * CDN art URL for the card as played — the fallback when the local mirror has no file yet.
+ * CDN art URL for the card as played — the fallback when the local mirror has no file yet, rather
+ * than silently substituting the wrong (un-evolved) art.
  *
- * Throws when `evolutionLevel` is set but the API lists no matching variant, rather than silently
- * substituting the wrong (un-evolved) art: the throw rejects the whole render, via `loadTile`.
+ * @throws When `evolutionLevel` is set but the API lists no matching variant — rejects the whole
+ *   render, via {@link loadTile}.
  */
 function iconUrl(card: Card): string {
 	if (!card.evolutionLevel) {
@@ -267,8 +271,8 @@ function iconUrl(card: Card): string {
 
 /**
  * Trims a decoded bitmap's transparent margin on the top and sides but keeps its native bottom
- * edge: every icon shares that baseline, so bottom-aligning on it (`renderDeckGrid`) lines the card
- * frames up. Kept at native resolution, since upscaling would blur.
+ * edge: every icon shares that baseline, so bottom-aligning on it ({@link renderDeckGrid}) lines
+ * the card frames up. Kept at native resolution, since upscaling would blur.
  */
 function trimRaw(raw: RawImage): Tile {
 	const { width, height } = raw;
@@ -294,7 +298,7 @@ function trimRaw(raw: RawImage): Tile {
 	};
 }
 
-/** Decodes an encoded icon, then trims it — see `trimRaw`. The local-art path's entry point. */
+/** Decodes an encoded icon, then trims it — see {@link trimRaw}. The local-art path's entry point. */
 async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 	return trimRaw(await decodeToRaw(bytes));
 }
@@ -304,8 +308,10 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
  * _trimmed_ tile still overflows the cell.
  *
  * Trim first, resize second — never the reverse. `CELL_WIDTH`/`CELL_HEIGHT` bound every local
- * icon's **trimmed** size, not its raw canvas: fitting the untrimmed canvas to the cell would scale
- * a tile's transparent margin down together with its art, undersizing it next to its neighbours.
+ * icon's **trimmed** size, not its raw canvas: fitting the untrimmed canvas to the cell would
+ * shrink the tile's transparent margin along with its art, leaving it smaller than its neighbours.
+ *
+ * @throws When the CDN response isn't ok.
  */
 async function fetchTile(url: string): Promise<Tile> {
 	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
@@ -343,8 +349,8 @@ async function fetchTile(url: string): Promise<Tile> {
 /**
  * Loads a card's tile ready to composite, reading from the local mirror. A `NotFound` means the
  * card released after the last mirror sync: warn (the signal to add its art) and fall back to the
- * CDN icon. `cdnFallback` reports whether that fallback ran so `renderDeckGrid` can log it. Any
- * other fetch/decode error propagates and rejects the render.
+ * CDN icon. `cdnFallback` reports whether that fallback ran so {@link renderDeckGrid} can log it.
+ * Any other fetch/decode error propagates and rejects the render.
  */
 async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean }> {
 	try {
@@ -366,7 +372,7 @@ async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean 
 
 /**
  * Pure grid geometry for a given number of tiles: overall size and each row's top. No I/O —
- * isolated from `renderDeckGrid` so it's unit-testable on its own.
+ * isolated from {@link renderDeckGrid} so it's unit-testable on its own.
  */
 function planGrid(tileCount: number): GridPlan {
 	const rows = Math.ceil(tileCount / COLUMNS);
@@ -394,9 +400,9 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	}
 
 	const start = performance.now();
-	// Not raced against `sharpModule.get()`: every tile load awaits it internally (via
-	// `decodeToRaw`), so sharp is already resolved by the time the tiles are and this await comes
-	// off the memo.
+	// Not raced against `sharpModule.get()`: every tile load already awaits it internally (via
+	// `decodeToRaw`), so by the time the tiles resolve, sharp is already loaded and this await just
+	// returns the cached promise.
 	const loaded = await Promise.all(cards.map((card) => loadTile(card)));
 	const sharp = await sharpModule.get();
 

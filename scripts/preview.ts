@@ -13,8 +13,9 @@ import type { Card } from "@/schema.ts";
  * The ids below are real (`cr-cards.json`), chosen to exercise every frame style in one grid: an
  * Evolution (`evolutionLevel: 1`), a Hero (`evolutionLevel: 2`), a champion's hexagonal frame, plus
  * a spread of common/rare/epic frames. `iconUrls.medium` is a throwaway placeholder the `Card` type
- * requires: it's only read on the CDN-fallback path (a card missing from `images/`), which a
- * fully-local deck never reaches, so it needs to be a valid URL but never resolves.
+ * requires. It's only read on the CDN-fallback path (a card missing from `images/`), which a
+ * fully-local deck never reaches — so it just needs to be a valid URL, never one that actually
+ * resolves.
  */
 const DUMMY_ICON = "https://example.invalid/card.png";
 

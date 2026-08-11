@@ -108,13 +108,13 @@ const DECK_SIZE = 8;
  * decks (16 or 24 cards) into `cards` — the card count, not `gameMode.name` (which varies across
  * duel variants), is the structural tell.
  *
- * `team` is declared before `battleTime` deliberately: `v.is` runs valibot with abort-early config
- * internally, and `v.object` iterates entries in declaration order and breaks on the first issue
- * under abort-early, so a 2v2 or Duel entry rejects on the cheap structural check without paying
- * for the `Temporal` parse. A malformed `battleTime` also counts as ineligible, so such an entry is
- * skipped rather than reported as schema drift — which is what makes the ordering (and abort-early
- * itself) purely an optimization: reordering the fields, or a future valibot internals change that
- * stops short-circuiting on the first issue, would cost speed, not correctness.
+ * `team` is declared before `battleTime` deliberately. `v.is` runs valibot with abort-early config
+ * internally, and `v.object` checks entries in declaration order, stopping at the first issue. So a
+ * 2v2 or Duel entry fails the cheap structural check before ever paying for the `Temporal` parse. A
+ * malformed `battleTime` also counts as ineligible, so such an entry is skipped rather than
+ * reported as schema drift — which is what makes the ordering (and abort-early itself) purely an
+ * optimization: reordering the fields, or a future valibot internals change that stops
+ * short-circuiting on the first issue, would cost speed, not correctness.
  */
 const EligibleBattleSchema = v.object({
 	team: v.pipe(
