@@ -31,6 +31,15 @@ const levelColor = {
 const hl = { entity: brightMagenta, value: brightBlue, strong: bold };
 
 /**
+ * How much of an error body to echo into a log line. Generous, because the useful diagnostic — a
+ * Discord malformed-embed detail, or a Clash Royale API error message — can be buried deep inside a
+ * nested JSON body, and that log line is the only record of it. Still capped, since an edge proxy's
+ * 5xx returns a multi-KB HTML page that would otherwise flood the Deploy logs every tick of an
+ * outage.
+ */
+const ERROR_BODY_CHARS = 2000;
+
+/**
  * Builds one leveled logger: a bold, colored, 5-wide badge (so lines align) in front of every
  * message, optionally tinting the message itself in the same color.
  */
@@ -62,4 +71,4 @@ const log = {
 	debug: leveled(console.debug, "debug", true),
 };
 
-export { hl, levelColor, log };
+export { ERROR_BODY_CHARS, hl, levelColor, log };
