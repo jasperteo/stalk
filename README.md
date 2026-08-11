@@ -26,9 +26,13 @@ grid.
    battle — a rare duplicate beats a silent loss.
 
 2v2 and Duel battles are ignored (a Duel concatenates 2–3 decks into one match, not a single 1v1
-loadout), and entries that fail schema validation are skipped. The newest eligible
-entry is picked by a fast timestamp comparison and only that one is fully validated, so validation
-runs once per log rather than once per entry.
+loadout). The log arrives newest-first, so the first entry to pass a cheap 1v1 check — one team
+entry holding at most one deck — is the newest one, and the scan stops there. Only that entry is
+fully validated, so validation runs once per log rather than once per entry.
+
+An entry that fails the cheap check is skipped. If the newest eligible entry then fails full
+validation, that's `drifted` rather than `skipped`: the cursor stays put so the battle retries once
+the schema catches up, instead of the tick reading as a quiet one.
 
 **At most one battle is posted per tick — the newest.** A player who finishes several matches
 between ticks has the intermediate ones skipped; the cursor jumps straight to the newest. That's
@@ -109,6 +113,7 @@ deno task measure  # Report the transparent margins baked into the card icons
 
 deno task fmt         # Format (oxfmt)
 deno task lint        # oxlint && deno lint && deno check
+deno task lint-agent  # Same three checks, oxlint in --format=agent
 deno task sync-types  # Regenerate the vendored deno.d.ts, after a Deno version change
 ```
 
@@ -139,7 +144,7 @@ safe to expose.
 | `src/schema.ts`            | Valibot schemas for the API shapes and the env vars                                                                                                       |
 | `src/env.ts`, `src/log.ts` | Validated config; leveled, colored console output                                                                                                         |
 | `src/*.test.ts`            | Vitest suite, colocated next to each module                                                                                                               |
-| `images/`                  | 177 card-art PNGs, keyed by card id (plus `-evo`/`-hero` variants)                                                                                        |
+| `images/`                  | 180 card-art PNGs, keyed by card id (plus `-evo`/`-hero` variants)                                                                                        |
 | `scripts/`                 | Offline dev tools behind `deno task preview` / `deno task measure`                                                                                        |
 
 Deck grids are composited from the local `images/` mirror rather than fetched per render, cached by

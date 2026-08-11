@@ -47,8 +47,8 @@ Break one of these and the app misbehaves in a way tests may not catch.
    burns ~43.8k of them per player per month. Writes stay per-tag, so concurrent polls never share a
    value.
 5. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
-   fetch is only a fallback for a card id with no local file. 177 PNGs (285×420): `<id>.png` plus 41
-   `-evo` and 14 `-hero` variants, covering all 122 playable cards.
+   fetch is only a fallback for a card id with no local file. 180 PNGs (285×420): `<id>.png` plus 42
+   `-evo` and 16 `-hero` variants, covering all 122 playable cards.
 6. **Everything logs through `src/log.ts`.** It is the only module that may import
    `@std/fmt/colors`, so every paint call happens after its `setColorEnabled` gate.
 
@@ -68,7 +68,7 @@ battle log → compare newest eligible battle against the KV cursor → post →
 | `src/deck-image.ts`   | Composites cards into a bottom-aligned 4-column PNG grid via sharp.                                                                                                                                                                                                                                                                 |
 | `src/schema.ts`       | Valibot schemas for the API shapes and both env vars. `isEligibleBattle` rejects 2v2s and Duels (a Duel concatenates 2–3 decks into one `cards` array) before full validation. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`.                                                                  |
 | `src/env.ts`          | Reads and validates env once at module load; exports `config`.                                                                                                                                                                                                                                                                      |
-| `src/log.ts`          | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette) and `hl` (inline value highlighters).                                                                                                                                                                                          |
+| `src/log.ts`          | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette), `hl` (inline value highlighters), and `ERROR_BODY_CHARS` (upstream error-body truncation cap, shared with `clash-royale.ts`).                                                                                                 |
 
 Internal imports use the `@/` map with explicit `.ts` extensions.
 
@@ -136,27 +136,35 @@ excluded from `deno check`/`deno lint` (`deno.json`) and from oxlint's file walk
 ### Dependencies
 
 Runtime deps live in **`package.json`**, not `deno.json` — the `imports` map holds only the `@/`
-alias. A JSR-only package is declared as an npm alias (`"@std/fmt": "npm:@jsr/std__fmt@^1.0.10"`);
-Deno resolves the `@jsr` scope natively (no `.npmrc`), and `preferPackageJson` makes `package.json`
-the source of truth. This way both Deno and oxlint/tsgolint (which only understands `node_modules`,
-not Deno's import map) resolve the same specifiers with no separate materialization step. Run
-`deno install` after cloning.
+alias. A JSR-only package is declared with a bare `jsr:` specifier (`"@std/async": "jsr:^1.5.0"`,
+`"@std/fmt": "jsr:^1.0.10"`); Deno resolves `jsr:` specifiers natively and materializes them into
+`node_modules/@std/*` (symlinked into `node_modules/.deno`), and `preferPackageJson` makes
+`package.json` the source of truth. This way both Deno and oxlint/tsgolint (which only understands
+`node_modules`, not Deno's import map) resolve the same specifiers with no separate materialization
+step. Run `deno install` after cloning.
 
 **Prefer the npm-native package wherever one exists.** `valibot` and `hono` are deliberately _not_
-`@jsr` aliases, and moving them back to "match `@std/fmt`" is a silent cold-start regression, not a
-consistency fix. JSR publishes transpiled source with the original file layout, so the JSR mirror of
-valibot is 557 separate modules behind a single barrel export — and since its `exports` map has
-exactly one entry, `import * as v` resolves, links and evaluates all 557. The npm package ships a
-pre-built self-contained `dist/index.mjs` instead: one module, same 311 exports. Measured
-module-eval cost **29.8 ms → ~2–4 ms**, which at one cron tick a minute is ~2.5% of the free tier's
-monthly CPU budget.
+declared with `jsr:` specifiers, and moving them back to "match `@std/fmt`" is a silent cold-start
+regression, not a consistency fix. JSR publishes transpiled source with the original file layout,
+so the JSR mirror of valibot is 557 separate modules behind a single barrel export — and since its
+`exports` map has exactly one entry, `import * as v` resolves, links and evaluates all 557. The npm
+package ships a pre-built self-contained `dist/index.mjs` instead: one module, same 311 exports.
+Measured module-eval cost **29.8 ms → ~2–4 ms**, which at one cron tick a minute is ~2.5% of the
+free tier's monthly CPU budget.
 
 The rule generalizes by _entry-point shape_, not by registry: bundling only helps a library whose
 entry is a single barrel over its whole surface. `hono` ships unbundled on npm too (372 files, 75
 subpath exports, a 120-byte root entry), so importing it reaches only a couple dozen modules and the
-packaging barely matters — it was moved for consistency, worth ~0.7 ms. `@std/fmt` stays on `@jsr`
+packaging barely matters — it was moved for consistency, worth ~0.7 ms. `@std/fmt` stays on `jsr:`
 because it has no npm publication at all, and it costs nothing regardless: its four subpath entries
 are already self-contained single files with zero relative imports.
+
+`@std/async` fits the same doctrine with no new reasoning needed — only `Lazy` is used, from
+`deck-image.ts`, and `@std/async/lazy` is the same self-contained shape as `@std/fmt`'s subpath
+entries, not valibot's JSR-mirror barrel: its `lazy.js` has zero runtime imports and defines a
+single class. Its package-level deps (`@std/data-structures`, `@std/assert`, `@std/internal`) land
+in `deno.lock`'s install graph, but nothing imports them, so they never enter the module graph —
+install cost only.
 
 `sharp` is the one dependency with a native component — a libvips addon shipped via platform-filtered
 `optionalDependencies` (Deno Deploy resolves the linux binaries from `deno.lock` at deploy time).
@@ -165,10 +173,10 @@ Two gotchas:
 - **Its ESM entry exports only `default` at runtime.** The named exports its `.d.mts` declares
   (`cache`, `format`, …) do not exist in `dist/index.mjs`. Always go through the default:
   `sharp.cache(false)`, never `import { cache } from "sharp"`.
-- **It is loaded lazily and memoized on success only** (`loadSharp` in `deck-image.ts`). A rejected
-  load clears the slot so the next render retries; caching the rejection (the bare
-  `sharpModule ??= import(…)` shape) would let one transient dlopen failure silently poison every
-  later render for the isolate's lifetime.
+- **It is loaded lazily through a `Lazy<SharpConstructor>`** (`sharpModule` in `deck-image.ts`).
+  `Lazy` was picked for its rejection semantics, not just the memo: it clears its state when the
+  initializer rejects, so the next render retries. Caching the rejection would let one transient
+  dlopen failure silently poison every later render for the isolate's lifetime.
 
 `@types/node` is a devDependency because the oxlint pass needs it for sharp's `Buffer`/`NodeJS.*`
 references (`deno check` doesn't).

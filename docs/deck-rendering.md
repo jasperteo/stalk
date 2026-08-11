@@ -25,8 +25,9 @@ single pipeline above.
 
 ## sharp runtime config
 
-`loadSharp()` imports `sharp` lazily — on first render rather than at every isolate cold boot —
-and memoizes the resolved module. Two calls follow immediately on load:
+`sharpModule`, a `Lazy<SharpConstructor>` from `@std/async`, imports `sharp` lazily — on first
+render rather than at every isolate cold boot — and memoizes the resolved module. Two calls follow
+immediately on load:
 
 - **`sharp.cache(false)`** disables libvips' own operation cache. The deck LRU (see
   [Deck cache](#deck-cache)) is the only cache this module wants; libvips' cache would just hold
@@ -50,8 +51,8 @@ removes. `sharp.concurrency(2)` is the documented hedge if wall time ever starts
 captures most of the CPU win for roughly half the added latency. **Revisit this whole trade if Deno
 Deploy ever bills isolate wall time rather than CPU — the trade inverts.**
 
-Only a _successful_ load is memoized (`sharpModule ??= import(...).then(onSuccess, onFailure)`,
-where the failure branch resets `sharpModule = undefined` before rethrowing). Caching the rejection
+Only a _successful_ load is memoized, which is why `Lazy` is used rather than a bare promise memo:
+it clears its state when the initializer rejects, so the next render retries. Caching the rejection
 instead — the bare `sharpModule ??= import(...)` shape — would let one transient dlopen failure
 poison every later render for the isolate's lifetime, and silently: `discord.ts` catches a failed
 render and posts the text-only fallback, so the symptom would be decks quietly vanishing from every
