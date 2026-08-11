@@ -356,6 +356,7 @@ const oxlintConfig = defineConfig({
 				"vitest/valid-expect": "error",
 				"vitest/valid-expect-in-promise": "error",
 				"vitest/valid-title": "error",
+				"vitest/prefer-import-in-mock": "error",
 				"no-await-in-loop": "off",
 			},
 		},

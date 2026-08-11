@@ -8,8 +8,8 @@ import { BattleSchema } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
 import { BOB, rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
 
-vi.mock("@/deck-image.ts", () => ({ renderDeckGrid: vi.fn<typeof renderDeckGrid>() }));
-vi.mock("@/log.ts");
+vi.mock(import("@/deck-image.ts"), () => ({ renderDeckGrid: vi.fn<typeof renderDeckGrid>() }));
+vi.mock(import("@/log.ts"));
 
 /** A player with the tower HP fields the message's margin line is computed from. */
 function player(overrides: Record<string, unknown> = {}) {

@@ -14,7 +14,7 @@ import {
 import { log } from "@/log.ts";
 import type { Card } from "@/schema.ts";
 
-vi.mock("@/log.ts");
+vi.mock(import("@/log.ts"));
 
 // A monotonic counter hands each `card()` call its own id, so decks built in different tests stay
 // distinguishable. Tests that render the same deck twice build the array once and reuse it.

@@ -5,8 +5,8 @@ import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
 import { driftedBattle, rawBattle, WEBHOOK } from "@/testing/fixtures.ts";
 import { spyMemoryKv } from "@/testing/kv.ts";
 
-vi.mock("@/discord.ts", () => ({ notifyBattle: vi.fn<typeof notifyBattle>() }));
-vi.mock("@/log.ts");
+vi.mock(import("@/discord.ts"), () => ({ notifyBattle: vi.fn<typeof notifyBattle>() }));
+vi.mock(import("@/log.ts"));
 
 const TAG = "#ABC123";
 

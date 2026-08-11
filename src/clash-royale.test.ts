@@ -5,7 +5,7 @@ import { log } from "@/log.ts";
 import { DECK_SIZE } from "@/schema.ts";
 import { duelBattle, rawBattle, rawCard, rawPlayer } from "@/testing/fixtures.ts";
 
-vi.mock("@/log.ts");
+vi.mock(import("@/log.ts"));
 
 function battle(battleTime: string, teamSize = 1) {
 	return rawBattle({ battleTime, team: Array.from({ length: teamSize }, () => rawPlayer()) });

@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
 import { WEBHOOK } from "@/testing/fixtures.ts";
 
-vi.mock("@/log.ts");
+vi.mock(import("@/log.ts"));
 
 // `vi.stubEnv` mutates `process.env`, which Deno's node-compat live-backs with the real env — so
 // env.ts's `Deno.env.get` sees the stub, and `unstubEnvs` in vitest.config.ts restores the
