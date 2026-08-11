@@ -1,5 +1,5 @@
 import { renderDeckGrid } from "@/deck-image.ts";
-import { hl, log } from "@/log.ts";
+import { ERROR_BODY_CHARS, hl, log } from "@/log.ts";
 import type { Battle, Card, EvolutionLevel, Player } from "@/schema.ts";
 
 const OUTCOMES = {
@@ -11,6 +11,10 @@ const OUTCOMES = {
 
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
 
+/** Deep link to a player's RoyaleAPI battle log; the site's URLs carry the tag without its "#". */
+const matchHistoryUrl = (tag: string) =>
+	`https://royaleapi.com/player/${tag.replace("#", "")}/battles`;
+
 /**
  * Abort the webhook POST after this long; generous because the multipart body carries the deck PNGs
  * stored uncompressed (see `GRID_COMPRESSION`) — about 6.6 MiB for the pair of grids a post
@@ -19,15 +23,6 @@ const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi
 const WEBHOOK_TIMEOUT_MS = 15_000;
 
 const SPACER_FIELD = { name: "\u{200B}", value: "\u{200B}" } as const;
-
-/**
- * How much of an error body to echo into a log line. Generous, because a malformed-embed 400 buries
- * the field that was rejected ~120 chars into a nested `errors` object and that log line is the
- * only diagnostic for it — but still capped, since a 5xx from the edge proxy in front of Discord
- * returns a multi-KB HTML page that would otherwise land in the Deploy logs every tick of an
- * outage.
- */
-const ERROR_BODY_CHARS = 2000;
 
 /**
  * Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. The
@@ -152,15 +147,17 @@ function battleContext(battle: Battle, me: Player) {
 	const scoreLine = `${me.name}  ${String(me.crowns)} — ${String(opponentCrowns)}  ${opponent?.name ?? "Unknown"}`;
 	const content = [`# ${outcome.result}`, `## ${scoreLine}`, margin].filter(Boolean).join("\n");
 
+	const footer = { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type };
+
 	const embedBase = (player: Player) => ({
 		author: {
 			name: "Match History",
 			icon_url: ROYALE_API_ICON,
-			url: `https://royaleapi.com/player/${player.tag.replace("#", "")}/battles`,
+			url: matchHistoryUrl(player.tag),
 		},
 		title: player.name,
 		color: outcome.color,
-		footer: { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type },
+		footer,
 		timestamp: battle.battleTime,
 	});
 
