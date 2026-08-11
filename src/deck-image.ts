@@ -37,8 +37,6 @@ const sharpModule = new Lazy<SharpConstructor>(async () => {
 	return sharp;
 });
 
-const loadSharp = () => sharpModule.get();
-
 // ═══════════════════════════════════════════ CONSTANTS ═══════════════════════════════════════════
 
 /**
@@ -135,7 +133,7 @@ type DeckCacheEntry = { png: Promise<Uint8Array<ArrayBuffer>>; bytes: number };
  * `scripts/measure.ts`, so its margin numbers come from the renderer's own decode.
  */
 async function decodeToRaw(bytes: Uint8Array): Promise<RawImage> {
-	const sharp = await loadSharp();
+	const sharp = await sharpModule.get();
 	const { data, info } = await sharp(bytes).ensureAlpha().raw().toUint8Array();
 	return { data, width: info.width, height: info.height };
 }
@@ -351,7 +349,7 @@ async function fetchTile(url: string): Promise<Tile> {
 
 	// Raw in, raw out, like cropRaw: the trimmed tile is already decoded, so encoding here would
 	// only buy a deflate pass plus the inflate to undo it.
-	const sharp = await loadSharp();
+	const sharp = await sharpModule.get();
 	const { data, info } = await sharp(tile.data, {
 		raw: { width: tile.width, height: tile.height, channels: BYTES_PER_PIXEL },
 	})
@@ -414,10 +412,11 @@ async function composeDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> 
 	}
 
 	const start = performance.now();
-	// Not raced against `loadSharp()`: every tile load awaits it internally (via `decodeToRaw`), so
-	// sharp is already resolved by the time the tiles are and this await comes off the memo.
+	// Not raced against `sharpModule.get()`: every tile load awaits it internally (via
+	// `decodeToRaw`), so sharp is already resolved by the time the tiles are and this await comes
+	// off the memo.
 	const loaded = await Promise.all(cards.map((card) => loadTile(card)));
-	const sharp = await loadSharp();
+	const sharp = await sharpModule.get();
 
 	let fallbacks = 0;
 	const tiles: Tile[] = [];
