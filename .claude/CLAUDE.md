@@ -38,9 +38,12 @@ Break one of these and the app misbehaves in a way tests may not catch.
 2. **The cursor advances only after a successful post** (`poll.ts`). At-least-once delivery: if the
    webhook succeeds but the KV put throws, the next tick re-posts a duplicate rather than dropping
    the battle.
-3. **`poll()` never rejects.** It catches its own errors and resolves a `POLL_OUTCOMES` value, which
-   is why `pollAll` uses `Promise.all` rather than `allSettled`. One player's failure can't sink the
-   others.
+3. **Neither `poll()` nor `pollAll()` ever rejects.** `poll()` catches its own errors and resolves a
+   `POLL_OUTCOMES` value, which is why `pollAll` uses `Promise.all` rather than `allSettled` — one
+   player's failure can't sink the others. `pollAll` additionally catches the cursor read, the one
+   failure that precedes every poll, reporting every target `failed`. `main.ts`'s cron handler
+   awaits `pollAll` with no catch of its own, so an `await` added to `pollAll` outside that try
+   reintroduces a rejected tick and loses the tally line.
 4. **A tick reads every cursor in one KV command.** `pollAll` calls `listCursors()` once and hands
    each `poll()` its own cursor; nothing in the polling path may go back to a per-player `kv.get`.
    KV reads are the free tier's binding limit (450k/month) and a per-player read at one tick a minute
@@ -51,6 +54,10 @@ Break one of these and the app misbehaves in a way tests may not catch.
    `-evo` and 16 `-hero` variants, covering all 122 playable cards.
 6. **Everything logs through `src/log.ts`.** It is the only module that may import
    `@std/fmt/colors`, so every paint call happens after its `setColorEnabled` gate.
+7. **Every webhook body serializes through `payloadJson` (`discord.ts`).** It is what attaches
+   `allowed_mentions: { parse: [] }`, and `content` carries an opponent display name chosen by a
+   stranger. A new payload shape that calls `JSON.stringify` directly re-enables `@everyone` parsing
+   on that name, and the existing tests only cover the two shapes that exist today.
 
 ## Architecture
 
@@ -83,6 +90,9 @@ Internal imports use the `@/` map with explicit `.ts` extensions.
 
 - **Corrupt KV cursor** — logs a warning and re-seeds like a first run, rather than re-posting every
   tick against a cursor that can never match. An expired cursor re-seeds silently.
+- **Cursor read fails** — the tick reports every target `failed` and polls nobody. Falling through
+  with an empty map would be far worse: every player would read as a first run and get seeded past
+  their newest battle without a post.
 - **Schema drift** — the newest entry selected but failing full validation resolves `drifted`, not
   `skipped`, so it doesn't read as a quiet tick. The cursor stays put and the battle retries once
   the schema catches up. An entry whose `team[0].cards` is missing or not an array fails the
@@ -202,7 +212,8 @@ non-DOM global set — it says nothing about the underlying runtime. Discovery i
 - `src/testing/kv.ts` — `spyMemoryKv()`, the shared `Deno.openKv` spy. Redirects a module's
   top-level `await Deno.openKv()` to a fresh `:memory:` store and closes it in an `afterEach`.
 - `src/testing/fixtures.ts` — raw (pre-validation) API shapes: `rawCard`/`rawPlayer`/`rawBattle`
-  factories plus shared constants, so a test overriding one field doesn't restate the rest.
+  factories, so a test overriding one field doesn't restate the rest; the prebuilt `driftedBattle`
+  and `duelBattle` entries for the two rejection paths; and the `BOB`/`WEBHOOK` constants.
 - `src/__mocks__/log.ts` — manual mock auto-applied by a factory-less
   `vi.mock(import("@/log.ts"))`; `vitest/prefer-import-in-mock` enforces that form over a path
   string everywhere. One canonical copy of the export surface: a new export from `log.ts` means one
@@ -227,6 +238,7 @@ dependency`. Use `scripts/` (its `*.png` output is gitignored) and delete the pr
   fine.
 - **Exports gathered at the bottom** of each module: plain declarations in the body, then one sorted
   `export { … }` plus a separate `export type { … }`. No inline `export` on declarations.
-- oxlint runs the `typescript`, `unicorn`, and `oxc` plugins with type-aware checking;
-  `correctness` defaults to `warn` with specific rules (the `no-unsafe-*`/promise family) raised to
-  `error`.
+- oxlint runs the `typescript`, `unicorn`, and `oxc` plugins with type-aware checking
+  (`options: { typeAware: true, typeCheck: true }`). Categories are set globally —
+  `correctness: "error"`, `perf: "warn"` — on top of a long explicit rule list; `**/*.test.ts` adds
+  the `vitest` plugin via an override.

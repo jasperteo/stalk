@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 const vitestConfig = defineConfig({
 	test: {
-		// All tests live in src/; scoping discovery there skips walking images/ (177 PNGs) and scripts/.
+		// All tests live in src/; scoping discovery there skips walking images/ (180 PNGs) and scripts/.
 		dir: "./src",
 		environment: "node",
 		// No test in this suite uses `.concurrent`: several tests mutate real shared
