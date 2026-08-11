@@ -147,12 +147,12 @@ safe to expose.
 | `images/`                  | 180 card-art PNGs, keyed by card id (plus `-evo`/`-hero` variants)                                                                                        |
 | `scripts/`                 | Offline dev tools behind `deno task preview` / `deno task measure`                                                                                        |
 
-Deck grids are composited from the local `images/` mirror rather than fetched per render, cached by
-deck (players repeat decks, so most battles skip rendering entirely), and shipped at native
-resolution with no downscale step — a shipped 8-card grid is 1080 px wide and about 3.28 MiB, stored
-uncompressed to keep encode CPU down. A CDN fetch is the fallback for a
-card too new to be in the mirror; if rendering fails outright, the battle still posts as a text-only
-embed.
+Deck grids are composited from the local `images/` mirror rather than fetched per render, and
+shipped at native resolution with no downscale step — a shipped 8-card grid is 1080 px wide and
+about 3.28 MiB, stored uncompressed to keep encode CPU down. Nothing is cached between renders:
+Deno Deploy gives the app a fresh isolate every tick, so there is no state for a cache to live in.
+A CDN fetch is the fallback for a card too new to be in the mirror; if rendering fails outright, the
+battle still posts as a text-only embed.
 
 Working on the code? `.claude/CLAUDE.md` documents the toolchain setup, the invariants, and the
 traps. `docs/deck-rendering.md` documents every deck-rendering constant's value and rationale.

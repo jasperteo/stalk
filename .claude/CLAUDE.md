@@ -54,6 +54,13 @@ Break one of these and the app misbehaves in a way tests may not catch.
 
 ## Architecture
 
+Deno Deploy gives the app a fresh isolate per cron tick — `Deno.serve`'s `onListen` callback logs on
+every tick in production, and `onListen` only fires when the listener binds, once per module
+evaluation — so no module-level state survives from one tick to the next. This is the premise behind
+the valibot bundling argument in [Dependencies](#dependencies) (module eval cost is paid every tick,
+not once) and the reason `src/deck-image.ts` keeps no render cache (see [Deck rendering
+notes](#deck-rendering-notes) and [the deck-rendering doc](../docs/deck-rendering.md#no-cache)).
+
 Cron tick → `config` (from `env.ts`, validated once at module load; `undefined` when the token is
 missing, which logs a heartbeat and skips) → `pollAll(targets, token)` → one `listCursors()` read →
 `poll()` per player concurrently → fetch
@@ -107,12 +114,12 @@ know before editing:
 - **Stay in raw memory.** Tiles decode once to raw RGBA; `cropRaw` slices `Buffer`s by memcpy rather
   than running a second sharp pipeline — see its doc comment (`src/deck-image.ts`) for why `Buffer`
   specifically, not `Uint8Array`. `toUint8Array()` is the rule only for data _leaving_ sharp.
-- **One cache only:** an LRU of finished grids keyed by the deck's ordered mirror filenames, bounded
-  primarily by `DECK_CACHE_BYTES` and secondarily by an entry-count guard that `main.ts` sizes once
-  at startup via `configureDeckCache` (so the renderer never reads app config). The byte budget is
-  what binds today; the entry guard is a deliberate hedge for if `GRID_COMPRESSION` is ever raised.
-  There is no per-tile cache — local reads are covered by the OS page cache. See
-  [Deck cache](../docs/deck-rendering.md#deck-cache).
+- **No cache.** `renderDeckGrid` renders straight through every call; an earlier LRU keyed by the
+  deck's ordered mirror filenames was deleted because the fresh-isolate-per-tick fact above means
+  cross-tick reuse — its whole premise — can't happen. See
+  [No cache](../docs/deck-rendering.md#no-cache) for the ceiling on same-tick reuse and the cheap
+  fallback (in-flight dedupe) if that ever turns out to matter. There is no per-tile cache — local
+  reads are covered by the OS page cache.
 
 ## Toolchain
 

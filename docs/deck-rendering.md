@@ -10,7 +10,7 @@ here. Organized by topic, not declaration order.
 
 ## Single pipeline
 
-`composeDeckGrid` composes and encodes in one sharp pipeline: a `create` canvas, all tile overlays,
+`renderDeckGrid` composes and encodes in one sharp pipeline: a `create` canvas, all tile overlays,
 and `.png(...)`, in a single `sharp({ create }).composite(overlays).png(...)` call — no resize
 stage, no intermediate raw-bitmap round trip. That's only possible because the grid now ships at
 native resolution (1080 px wide for 4 columns): there's nothing left to scale after compositing.
@@ -29,9 +29,10 @@ single pipeline above.
 render rather than at every isolate cold boot — and memoizes the resolved module. Two calls follow
 immediately on load:
 
-- **`sharp.cache(false)`** disables libvips' own operation cache. The deck LRU (see
-  [Deck cache](#deck-cache)) is the only cache this module wants; libvips' cache would just hold
-  memory redundantly.
+- **`sharp.cache(false)`** disables libvips' own operation cache. This module keeps no cache of its
+  own either (see [No cache](#no-cache)) — Deno Deploy gives the app a fresh isolate per cron tick,
+  so libvips' cache can never accumulate a hit across renders that matter; it would only hold memory
+  it never reuses.
 - **`sharp.concurrency(1)`** collapses libvips' per-pipeline thread pool to a single thread, trading
   wall time for total CPU. This is a cron job — nothing is waiting synchronously on one render, so
   wall time is nearly worthless while CPU time is what Deno Deploy bills. `loadTile` already runs
@@ -80,7 +81,7 @@ the row below, tightening the two rows together instead of leaving dead space un
 cards. There's a floor around **-20** — past that, hexagon and champion frames (which sit lower in
 their canvas than most cards) start to clip into the row below.
 
-`composeDeckGrid` also warns at render time when a specific tile's `bottomPadding` is smaller than
+`renderDeckGrid` also warns at render time when a specific tile's `bottomPadding` is smaller than
 `-ROW_GAP` — that's exactly the clipping condition the -20 floor exists to avoid, caught per-tile
 rather than only in aggregate.
 
@@ -106,8 +107,6 @@ lopsided case for level 0 than it used to be when a resize sat between compose a
 that stage shrank the pixel count before deflate ever ran, narrowing the gap between the two
 levels. With nothing shrinking the pixel count anymore, level 0 is an unambiguous win on the CPU
 axis Deno Deploy actually bills.
-
-**Moves together with `DECK_CACHE_BYTES`** — see [Constants that move together](#constants-that-move-together).
 
 ## Output size
 
@@ -135,45 +134,39 @@ which shaved a further 1.2 ms by skipping the raw-bitmap round trip out of sharp
 
 This is a deliberate CPU-for-bytes trade, not a free win. Shipping at native resolution costs
 roughly 5× the upload bytes per grid (3.28 MiB vs 0.65 MiB) — about 6.6 MiB per post, since a post
-carries two grids, one per side — and 5× the cache memory per cached grid (see
-[Deck cache](#deck-cache)). Discord renders embed images at a few hundred px wide regardless, so
-none of the extra resolution is actually visible; the trade only pays off because CPU, not upload
-bytes, is what Deno Deploy bills.
+carries two grids, one per side. With no cache in this module (see [No cache](#no-cache)) there's no
+cache-memory side of that cost anymore either — the trade is purely encode CPU against upload
+bytes, which only strengthens the case for native resolution: less CPU, and the extra bytes buy
+nothing visible, since Discord renders embed images at a few hundred px wide regardless.
 
-## Deck cache
+## No cache
 
-`renderDeckGrid` caches finished grids in an LRU keyed by the deck's ordered mirror filenames, so a
-repeated deck (players repeat decks constantly) skips rendering entirely. It's the only cache in
-this module — per-tile local reads are already covered by the OS page cache.
+`renderDeckGrid` renders straight through, every call, with nothing memoized. An earlier version
+kept an LRU of finished grids keyed by the deck's ordered mirror filenames, on the theory that
+players repeat decks constantly. That theory was true across ticks and irrelevant within one:
+**Deno Deploy gives this app a fresh isolate per cron tick**, so no module-level state survives from
+one tick to the next regardless of what this module does — see
+[Architecture](../.claude/CLAUDE.md#architecture) for the `onListen` evidence behind that. A cache
+built to skip re-rendering repeated decks was paying upkeep against reuse that could never happen.
 
-`DECK_CACHE_BYTES = 28 * 1024 * 1024` (28 MiB) is a **byte** budget. Duels are filtered out before
-rendering (`src/schema.ts` rejects any entry whose `team[0].cards` has more than 8 entries), so
-every cached grid is now the same size: an 8-card grid is 3.28 MiB at native resolution (see
-[Output size](#output-size)), and 28 MiB holds roughly **8 grids** — four posts' worth, since a post
-carries two grids, one per side. Entry size no longer varies several-fold the way it did when duel
-grids (up to 24 cards) shared the cache, so entry count is now a much better proxy for cache memory
-than it used to be.
+Within a single tick, the ceiling on renders is `2 * targets`: invariant 1 caps a tick at one post
+per player, and each post renders exactly two grids, one per side. (The `PAYLOAD_REJECTED` retry in
+`discord.ts` posts `buildFallbackMessage`'s text-only body, which carries no images and renders
+nothing, so it never adds to this.) The only way a cache could ever hit inside that ceiling is an
+intra-tick duplicate — two tracked players landing in the same battle, or a true mirror match —
+which saves at most two renders, worth roughly 84 ms of CPU at the ~42 ms/render figure in the
+[sharp runtime config](#sharp-runtime-config) benchmarks, on the rare ticks where it happens at all.
+That's a few percent of what the valibot bundling described in `.claude/CLAUDE.md` saves on _every_
+tick, for the cost of an LRU, its eviction policy, `configureDeckCache`'s wiring into `main.ts`, and
+the tests covering all of it. Not worth carrying.
 
-There's also a secondary **entry-count guard**, `deckCacheLimit`, defaulting to
-`DECK_CACHE_MIN_ENTRIES = 8` so it's sane with no configuration at all (offline scripts, tests). `8`
-isn't arbitrary — it's exactly what `DECK_CACHE_BYTES` affords at the current grid size (see the
-roughly-8-grids figure above), so the byte budget and the entry-count floor agree instead of one
-being permanently unreachable. `configureDeckCache(targetCount)`, called once from the composition
-root (`main.ts`), raises it to `3 * targetCount + 8` — sized so that growing the tracked-player list
-(`TARGETS`) keeps each player's own decks warm plus headroom for opponents' decks, without the
-renderer needing to read app config directly.
-
-At the current grid size the byte budget is what actually binds — it evicts before the entry count
-ever reaches the floor. The entry guard is a deliberate hedge, not a leftover: it's there for when
-`GRID_COMPRESSION` is raised off `0` (see [Encoding](#encoding)), which shrinks every cached grid
-several-fold — the same 8-card grid drops from 3.28 MiB at level 0 to 1.42 MiB at level 6 — and at
-that point entry count, not bytes, becomes the real bound. That's why `deckCacheLimit`'s floor moves
-together with `GRID_COMPRESSION`; see [Constants that move together](#constants-that-move-together).
-
-Eviction (`evictDeckCache`) removes from the front of the map (oldest / least-recently-used) until
-_both_ the byte budget and the entry-count guard are satisfied.
-
-**Moves together with `GRID_COMPRESSION`** — see [Constants that move together](#constants-that-move-together).
+If head-to-head battles between tracked players ever turn out to be common enough to matter, the
+right fix is not this LRU back again — it's a bare `Map<string, Promise<Uint8Array<ArrayBuffer>>>`
+keyed the same way, populated before awaiting and read by the second caller within the same tick,
+discarded with the isolate at tick end. That's in-flight _dedupe_, not a _cache_: it collapses two
+concurrent renders of the same deck into one, which is the only shape of reuse a
+fresh-isolate-per-tick world can ever pay back. About 10 lines, no eviction policy, no byte budget,
+nothing to tune.
 
 ## CDN fallback
 
@@ -192,7 +185,7 @@ was fit against was empty padding. Trimming first means the resize (when it happ
 acts on real art, matching how every local tile is sized.
 
 The clamp still has to exist even though it rarely fires: the CDN has no size guarantee (a
-brand-new card's art may simply be bigger than the cell even once trimmed), and `composeDeckGrid`'s
+brand-new card's art may simply be bigger than the cell even once trimmed), and `renderDeckGrid`'s
 overlay math assumes every tile fits inside its cell — an oversized tile pushes the computed
 `left`/`top` negative, which sharp clips silently instead of raising an error. `fit: "inside"`
 preserves aspect ratio; no `withoutEnlargement` guard is needed on this resize because the branch
@@ -207,31 +200,3 @@ anything was off — not a neutral placeholder. The throw propagates out of `loa
 the whole `renderDeckGrid` call; `discord.ts` already catches a failed render and posts the
 text-only fallback, so a missing variant costs the post its images (same as any other render
 failure), not one tile its correctness.
-
-## Constants that move together
-
-These were tuned as units, not independently. Changing one half without the other reintroduces the
-problem the pair was tuned to solve:
-
-- **`GRID_COMPRESSION` ↔ `DECK_CACHE_BYTES`.** Raising compression (moving off level 0) means
-  lowering the cache byte budget to match, and vice versa — smaller encoded grids mean more of them
-  fit in the same budget. These were changed together historically: dropping `GRID_COMPRESSION` to
-  0 made every grid roughly **1.8×** bigger, so `DECK_CACHE_BYTES` rose from **12 MiB to 22 MiB** in
-  the same change. Holding the budget flat while dropping compression would have cut effective cache
-  capacity to roughly 18 decks and spent the saved encode CPU straight back on cache-miss
-  re-renders — the exact cost the compression change was trying to avoid.
-
-  `DECK_CACHE_BYTES` moved again, for a related reason, when the grid stopped being scaled down
-  before shipping (see [Output size](#output-size)): removing that stage made every cached grid
-  **5×** bigger (0.65 MiB → 3.28 MiB), so `DECK_CACHE_BYTES` rose again, from **22 MiB to 28 MiB**.
-  Unlike the first bump, nothing on the `GRID_COMPRESSION` side offset this one, so effective cache
-  capacity dropped hard, from roughly 33 decks to roughly 8 — an accepted cost of shipping full
-  resolution, not an oversight.
-
-- **`GRID_COMPRESSION` ↔ `DECK_CACHE_MIN_ENTRIES`.** The entry-count floor (see
-  [Deck cache](#deck-cache)) is set to what `DECK_CACHE_BYTES` affords at the current grid size, so
-  it doesn't bind today — the byte budget always evicts first. Raising `GRID_COMPRESSION` shrinks
-  every cached grid several-fold, which raises the true entry ceiling well past 8; leaving
-  `DECK_CACHE_MIN_ENTRIES` at 8 in that world would silently strand most of the freed byte budget
-  unused. The floor needs to move with compression, even though its own value doesn't appear in the
-  compression math directly.
