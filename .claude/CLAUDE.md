@@ -203,8 +203,10 @@ non-DOM global set — it says nothing about the underlying runtime. Discovery i
   top-level `await Deno.openKv()` to a fresh `:memory:` store and closes it in an `afterEach`.
 - `src/testing/fixtures.ts` — raw (pre-validation) API shapes: `rawCard`/`rawPlayer`/`rawBattle`
   factories plus shared constants, so a test overriding one field doesn't restate the rest.
-- `src/__mocks__/log.ts` — manual mock auto-applied by a bare `vi.mock("@/log.ts")`. One canonical
-  copy of the export surface: a new export from `log.ts` means one edit here, not one per test file.
+- `src/__mocks__/log.ts` — manual mock auto-applied by a factory-less
+  `vi.mock(import("@/log.ts"))`; `vitest/prefer-import-in-mock` enforces that form over a path
+  string everywhere. One canonical copy of the export surface: a new export from `log.ts` means one
+  edit here, not one per test file.
 - `src/deck-image.test.ts` — the default tile fixture is **fully opaque**, so most tests exercise
   `trimToArt`/`cropRaw` with the crop equal to the whole frame. `describe("trimToArt")` covers a
   real crop via `insetFixture`. What stays uncovered is real card art, so verify crop changes
