@@ -121,6 +121,11 @@ async function listCursors(): Promise<Record<string, unknown>> {
  * player per month. Reading them together keeps a tick's read cost flat in the target count. Writes
  * are untouched — each player still writes its own key on success, so concurrent polls never share
  * a value.
+ *
+ * Never rejects, which is what lets main.ts's cron handler await it with no catch of its own and
+ * still reach its tally line. {@link poll} contains each target's own errors; the cursor read — the
+ * one failure that precedes every poll — is contained here. Any `await` added to this function
+ * outside that try reintroduces a rejected tick and silently costs the tally.
  */
 async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]> {
 	let cursors: Record<string, unknown>;
@@ -133,7 +138,7 @@ async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]>
 		// every cursor untouched, so the next tick retries. Falling through with an empty map instead
 		// would be far worse — every player would read as a first run and get seeded straight past
 		// their newest battle, with no post.
-		log.error("Cursor read failed; every target skipped this tick:", error);
+		log.error("Cursor read failed; every target failed this tick:", error);
 		return targets.map((): PollOutcome => "failed");
 	}
 

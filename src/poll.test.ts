@@ -12,6 +12,9 @@ const TAG = "#ABC123";
 const TARGET: Target = { tag: TAG, webhook: WEBHOOK };
 const TOKEN = "test-token";
 
+/** Targets sharing one webhook — only the tags vary in the fan-out tests. */
+const targetsFor = (...tags: string[]): Target[] => tags.map((tag) => ({ tag, webhook: WEBHOOK }));
+
 function battlelogFetch(entries: unknown[]) {
 	return vi.fn<() => Promise<Response>>(() => Promise.resolve(Response.json(entries)));
 }
@@ -211,10 +214,7 @@ describe("pollAll", () => {
 
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
 
-		const targets: Target[] = ["#AAA111", "#BBB222", "#CCC333"].map((tag) => ({
-			tag,
-			webhook: WEBHOOK,
-		}));
+		const targets = targetsFor("#AAA111", "#BBB222", "#CCC333");
 
 		expect(await pollAll(targets, TOKEN)).toEqual(["seeded", "seeded", "seeded"]);
 
@@ -231,7 +231,7 @@ describe("pollAll", () => {
 			vi.fn(() => Promise.resolve(new Response("down", { status: 500 })))
 		);
 
-		const targets: Target[] = ["#AAA111", "#BBB222"].map((tag) => ({ tag, webhook: WEBHOOK }));
+		const targets = targetsFor("#AAA111", "#BBB222");
 
 		await expect(pollAll(targets, TOKEN)).resolves.toEqual(["failed", "failed"]);
 	});
@@ -240,6 +240,8 @@ describe("pollAll", () => {
 	// by poll()'s own catch — and it hits every target at once. It must not reject the tick.
 	test("reports every target failed when the cursor read fails, without seeding any cursor", async () => {
 		const { pollAll, listCursors, kv } = await importPoll();
+		// importPoll()'s vi.resetModules() re-evaluates the manual `@/log.ts` mock, so it hands out a
+		// fresh `log` each time; re-import here to get the instance poll.ts is actually bound to.
 		const { log } = await import("@/log.ts");
 
 		vi.spyOn(kv, "list").mockImplementationOnce(() => {
@@ -248,7 +250,7 @@ describe("pollAll", () => {
 
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
 
-		const targets: Target[] = ["#AAA111", "#BBB222"].map((tag) => ({ tag, webhook: WEBHOOK }));
+		const targets = targetsFor("#AAA111", "#BBB222");
 
 		await expect(pollAll(targets, TOKEN)).resolves.toEqual(["failed", "failed"]);
 
