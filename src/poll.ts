@@ -9,7 +9,7 @@ import type { Target } from "@/schema.ts";
 /** One KV handle for the isolate's lifetime; Deno.openKv() opens the Deploy-managed store. */
 const kv = await Deno.openKv();
 
-/** Cursor keys are `[CURSOR_PREFIX, tag]`, namespaced per tag so multiple players share one KV. */
+/** Cursor keys are `["lastBattle", tag]`, namespaced per tag so multiple players share one KV. */
 const CURSOR_PREFIX = "lastBattle";
 
 /**
@@ -24,12 +24,13 @@ const POLL_OUTCOMES = ["posted", "seeded", "skipped", "drifted", "failed"] as co
 type PollOutcome = (typeof POLL_OUTCOMES)[number];
 
 /**
- * Interprets one raw stored cursor value. `undefined` means absent — first run, or expired;
- * `listCursors` omits the key entirely rather than yielding null — which is never corrupt, so it
- * skips the parse. A _present_ value that fails to parse is corrupt: log and return `undefined` so
- * the caller re-seeds instead of re-posting every tick against a cursor that can never match.
+ * Interprets one raw stored cursor value. Absence — `stored` is `undefined`, meaning first run or
+ * an expired cursor — is never corrupt, so it skips the parse straight to `undefined`;
+ * `listCursors` omits the key entirely rather than yielding null, which is what makes that check
+ * exact. A _present_ value that fails to parse is corrupt: log and return `undefined` so the caller
+ * re-seeds instead of re-posting every tick against a cursor that can never match.
  */
-function readCursor(tag: string, stored: unknown): string | undefined {
+function readCursor(stored: unknown, tag: string): string | undefined {
 	if (stored === undefined) {
 		return undefined;
 	}
@@ -61,7 +62,7 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
 			return drifted ? "drifted" : "skipped";
 		}
 
-		const lastSeen = readCursor(tag, stored);
+		const lastSeen = readCursor(stored, tag);
 
 		if (battle.battleTime === lastSeen) {
 			return "skipped";
