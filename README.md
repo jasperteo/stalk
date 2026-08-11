@@ -95,6 +95,24 @@ of the stored cursors). `-P` loads the `default` permission set from `deno.json`
 prompting per-permission. `Deno.cron` registers at startup and fires on the minute against Deno's
 local scheduler.
 
+That permission set's `net.allow` list is the one entry worth knowing about, since a host missing
+from it stops the dev server on a permission prompt rather than failing fast. Where each entry comes
+from:
+
+| Host                         | Source                                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `0.0.0.0:8000`               | `Deno.serve`'s default bind — `src/main.ts` sets no port                                 |
+| `proxy.royaleapi.dev`        | `PROXY_BASE` in `src/clash-royale.ts`                                                    |
+| `discord.com`                | the `webhook` host in your `TARGETS`                                                     |
+| `api-assets.clashroyale.com` | the host inside the API's `iconUrls`, fetched by the CDN fallback in `src/deck-image.ts` |
+
+Two caveats. `TARGETS` only validates that the webhook is a URL, so a webhook on `ptb.discord.com`,
+`canary.discord.com`, or `discordapp.com` needs its host added by hand. And this is a dev-only
+convenience — Deno Deploy never loads it, `deno task test` runs without `-P`, and `ffi` is open in
+the same set (sharp's libvips addon needs it, and native code runs outside Deno's permission
+system). Treat the list as a tripwire that catches an unnoticed new outbound host, not as a security
+boundary.
+
 ### 4. Deploy
 
 Set `CR_API_TOKEN` and `TARGETS` in the Deno Deploy project (dashboard), then connect the project to
@@ -117,8 +135,8 @@ deno task lint-agent  # Same three checks, oxlint in --format=agent
 deno task sync-types  # Regenerate the vendored deno.d.ts, after a Deno version change
 ```
 
-`deno task lint` covers linting _and_ typechecking — there's no separate `tsc` step. CI runs format,
-lint, and test on every push and PR.
+`deno task lint` covers linting _and_ typechecking — there's no separate `tsc` step. CI runs install,
+format check, lint, and test on every pull request and every push to `main`.
 
 ## Configuration reference
 
@@ -144,6 +162,8 @@ safe to expose.
 | `src/schema.ts`            | Valibot schemas for the API shapes and the env vars                                                                                                       |
 | `src/env.ts`, `src/log.ts` | Validated config; leveled, colored console output                                                                                                         |
 | `src/*.test.ts`            | Vitest suite, colocated next to each module                                                                                                               |
+| `src/testing/`             | Shared test helpers: the in-memory KV spy and the raw API fixtures                                                                                        |
+| `src/__mocks__/`           | Manual module mocks picked up by factory-less `vi.mock` (currently `log.ts`)                                                                              |
 | `images/`                  | 180 card-art PNGs, keyed by card id (plus `-evo`/`-hero` variants)                                                                                        |
 | `scripts/`                 | Offline dev tools behind `deno task preview` / `deno task measure`                                                                                        |
 
