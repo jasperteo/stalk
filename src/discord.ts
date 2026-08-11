@@ -25,6 +25,15 @@ const WEBHOOK_TIMEOUT_MS = 15_000;
 const SPACER_FIELD = { name: "\u{200B}", value: "\u{200B}" } as const;
 
 /**
+ * Suppresses every mention Discord would otherwise parse out of `content`. Absent this field
+ * Discord's default is to parse all of them — users, roles, `@everyone`/`@here` — and `content`
+ * carries the opponent's display name, which is free text chosen by a stranger the matchmaker
+ * picked. This app never intends to mention anyone, so an empty `parse` list costs nothing and
+ * stops the ping behavior from depending on an upstream name filter we don't control.
+ */
+const ALLOWED_MENTIONS = { parse: [] } as const;
+
+/**
  * Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. The
  * `satisfies` guard works like `EVOLUTION_SUFFIX` in deck-image.ts: a new schema level fails to
  * compile rather than fall through to a bare name.
@@ -191,7 +200,14 @@ async function buildForm({ me, opponent, content, embedBase }: BattleContext) {
 	);
 
 	const form = new FormData();
-	form.append("payload_json", JSON.stringify({ content, embeds: parts.map((part) => part.embed) }));
+	form.append(
+		"payload_json",
+		JSON.stringify({
+			content,
+			embeds: parts.map((part) => part.embed),
+			allowed_mentions: ALLOWED_MENTIONS,
+		})
+	);
 
 	for (const [index, { file }] of parts.entries()) {
 		form.append(`files[${String(index)}]`, file);
@@ -216,7 +232,7 @@ function buildFallbackMessage({ me, opponent, content, embedBase }: BattleContex
 		buildSupportField(opponent, "Opponent Tower Troop"),
 	].filter(Boolean);
 
-	return { content, embeds: [{ ...embedBase(me), fields }] };
+	return { content, embeds: [{ ...embedBase(me), fields }], allowed_mentions: ALLOWED_MENTIONS };
 }
 
 /**

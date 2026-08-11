@@ -50,6 +50,7 @@ function sentForm(): FormData {
 
 type Payload = {
 	content: string;
+	allowed_mentions?: { parse: string[] };
 	embeds: {
 		fields?: { name: string; value: string }[];
 		thumbnail?: { url: string };
@@ -448,6 +449,34 @@ describe("notifyBattle", () => {
 			);
 
 			expect(sentPayload().content).toBe("# Draw\n## Alice  1 — 1  Bob");
+		});
+	});
+
+	describe("mention suppression", () => {
+		test("suppresses mentions on the multipart payload", async () => {
+			await notifyBattle(WEBHOOK, makeBattle());
+
+			expect(sentPayload().allowed_mentions).toEqual({ parse: [] });
+		});
+
+		test("suppresses mentions on the text-only fallback payload", async () => {
+			vi.mocked(renderDeckGrid).mockRejectedValue(new Error("icon CDN down"));
+
+			await notifyBattle(WEBHOOK, makeBattle());
+
+			expect(sentFallbackPayload().allowed_mentions).toEqual({ parse: [] });
+		});
+
+		test("carries a mention-shaped opponent name verbatim without enabling it to ping", async () => {
+			await notifyBattle(
+				WEBHOOK,
+				makeBattle({ opponent: [player({ ...BOB, name: "@everyone <@123456789012345678>" })] })
+			);
+
+			const payload = sentPayload();
+
+			expect(payload.content).toContain("@everyone <@123456789012345678>");
+			expect(payload.allowed_mentions).toEqual({ parse: [] });
 		});
 	});
 });
