@@ -45,8 +45,9 @@ function rawBattle(overrides: Record<string, unknown> = {}) {
 /**
  * A battle that passes the cheap eligibility check but fails full `BattleSchema` validation — the
  * API-schema-drift case, which `latestBattle` reports and `poll` surfaces as the "drifted" outcome.
- * A non-URL `iconUrls.medium` is the drift: eligibility only reads `type`/`battleTime`, so this
- * entry still wins selection and only then fails.
+ * A non-URL `iconUrls.medium` is the drift: eligibility only reads `team[].cards` (count, not
+ * contents) and `battleTime`, never `iconUrls`, so this entry still wins selection and only then
+ * fails.
  */
 function driftedBattle(overrides: Record<string, unknown> = {}) {
 	return rawBattle({
@@ -57,7 +58,8 @@ function driftedBattle(overrides: Record<string, unknown> = {}) {
 
 /**
  * A Duel entry: `team[0].cards` holds `deckCount` concatenated 8-card decks (16 or 24 entries)
- * rather than one, the structural tell `EligibleBattleTimeSchema` rejects on.
+ * rather than one, the structural tell `isEligibleBattle` (backed by `EligibleBattleSchema`)
+ * rejects on.
  */
 function duelBattle(overrides: Record<string, unknown> = {}, deckCount = 2) {
 	return rawBattle({
