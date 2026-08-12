@@ -339,6 +339,7 @@ const oxlintConfig = defineConfig({
 			files: ["**/*.test.ts"],
 			plugins: ["vitest"],
 			rules: {
+				// recommended
 				"vitest/expect-expect": "error",
 				"vitest/no-commented-out-tests": "error",
 				"vitest/no-conditional-expect": "error",
@@ -356,7 +357,10 @@ const oxlintConfig = defineConfig({
 				"vitest/valid-expect": "error",
 				"vitest/valid-expect-in-promise": "error",
 				"vitest/valid-title": "error",
+				// additional
+				"vitest/hoisted-apis-on-top": "error",
 				"vitest/prefer-import-in-mock": "error",
+				"vitest/prefer-importing-vitest-globals": "error",
 			},
 		},
 	],
