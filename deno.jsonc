@@ -5,13 +5,13 @@
 
 	"tasks": {
 		"dev": "deno run -P --env-file=.env src/main.ts",
+		"fmt": "oxfmt",
+		"lint": "oxlint && deno lint && deno check --unstable-tsgo .",
+		"lint-agent": "oxlint --format=agent && deno lint && deno check --unstable-tsgo .",
 		"test": "vitest",
 		"preview": "deno run -P --env-file=.env scripts/preview.ts",
 		"measure": "deno run -P scripts/measure.ts",
-		"sync-types": "deno types > deno.d.ts && deno task fmt",
-		"fmt": "oxfmt",
-		"lint": "oxlint && deno lint && deno check --unstable-tsgo .",
-		"lint-agent": "oxlint --format=agent && deno lint && deno check --unstable-tsgo ."
+		"sync-types": "deno types > deno.d.ts",
 	},
 
 	"compilerOptions": {
@@ -24,7 +24,7 @@
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedIndexedAccess": true,
 		"noUnusedLocals": true,
-		"noUnusedParameters": true
+		"noUnusedParameters": true,
 	},
 
 	"imports": { "@/": "./src/" },
@@ -40,12 +40,12 @@
 					"0.0.0.0:8000",
 					"proxy.royaleapi.dev",
 					"discord.com",
-					"api-assets.clashroyale.com"
-				]
+					"api-assets.clashroyale.com",
+				],
 			},
 			"read": { "allow": true },
-			"write": { "allow": true }
-		}
+			"write": { "allow": true },
+		},
 	},
 
 	"lint": { "rules": { "tags": ["recommended"] }, "exclude": ["**/deno.d.ts"] },
@@ -54,7 +54,7 @@
 	"unstable": ["kv", "cron"],
 
 	"deploy": {
-		"install": "deno ci --prod",
-		"runtime": { "mode": "dynamic", "entrypoint": "src/main.ts" }
-	}
+		"install": "deno install --prod --entrypoint src/main.ts",
+		"runtime": { "mode": "dynamic", "entrypoint": "src/main.ts" },
+	},
 }
