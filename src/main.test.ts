@@ -78,7 +78,7 @@ async function importMain() {
 	return { app: { fetch: fetchHandler }, tick: cronHandler };
 }
 
-async function lastBattleCursors(app: Awaited<ReturnType<typeof importMain>>["app"]) {
+async function lastBattles(app: Awaited<ReturnType<typeof importMain>>["app"]) {
 	const response = await app.fetch(new Request("http://localhost/kv/last-battle"));
 	return (await response.json()) as Record<string, unknown>;
 }
@@ -116,7 +116,7 @@ describe("main with multiple targets", () => {
 		);
 	});
 
-	test("polls every target and keeps their cursors namespaced per tag", async () => {
+	test("polls every target and keeps their lastBattle entries namespaced per tag", async () => {
 		const { app, tick } = await importMain();
 		vi.stubGlobal(
 			"fetch",
@@ -129,7 +129,7 @@ describe("main with multiple targets", () => {
 		await tick();
 
 		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await lastBattleCursors(app)).toEqual({
+		expect(await lastBattles(app)).toEqual({
 			[TAG]: "2024-01-01T00:00:00.000Z",
 			[TAG_B]: "2024-01-02T00:00:00.000Z",
 		});
@@ -156,7 +156,7 @@ describe("main with multiple targets", () => {
 		);
 		await tick();
 
-		expect(await lastBattleCursors(app)).toEqual({
+		expect(await lastBattles(app)).toEqual({
 			[TAG]: "2024-01-15T14:30:22.000Z",
 			[TAG_B]: "2024-01-16T14:30:22.000Z",
 		});
@@ -195,7 +195,7 @@ describe("main with multiple targets", () => {
 		await tick();
 
 		expect(vi.mocked(notifyBattle).mock.calls.map(([webhook]) => webhook)).toContain(WEBHOOK);
-		expect(await lastBattleCursors(app)).toEqual({
+		expect(await lastBattles(app)).toEqual({
 			[TAG]: "2024-01-15T14:30:22.000Z",
 			[TAG_B]: "2024-01-02T00:00:00.000Z",
 		});

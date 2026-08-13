@@ -3,8 +3,8 @@ import { describe, expect, test } from "vitest";
 
 import {
 	BattleSchema,
-	CursorSchema,
 	isEligibleBattle,
+	LastBattleSchema,
 	TargetsEnvSchema,
 	TokenEnvSchema,
 } from "@/schema.ts";
@@ -69,17 +69,17 @@ describe("BattleSchema", () => {
 	});
 });
 
-describe("CursorSchema", () => {
-	test("normalizes a valid cursor timestamp", () => {
-		expect(v.parse(CursorSchema, "20240115T143022.000Z")).toBe("2024-01-15T14:30:22.000Z");
+describe("LastBattleSchema", () => {
+	test("normalizes a valid lastBattle timestamp", () => {
+		expect(v.parse(LastBattleSchema, "20240115T143022.000Z")).toBe("2024-01-15T14:30:22.000Z");
 	});
 
 	test("is idempotent on an already-normalized timestamp", () => {
-		expect(v.parse(CursorSchema, "2024-01-15T14:30:22.000Z")).toBe("2024-01-15T14:30:22.000Z");
+		expect(v.parse(LastBattleSchema, "2024-01-15T14:30:22.000Z")).toBe("2024-01-15T14:30:22.000Z");
 	});
 
-	test("rejects a garbage cursor value", () => {
-		expect(v.safeParse(CursorSchema, "garbage").success).toBe(false);
+	test("rejects a garbage lastBattle value", () => {
+		expect(v.safeParse(LastBattleSchema, "garbage").success).toBe(false);
 	});
 });
 

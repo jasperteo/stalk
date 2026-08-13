@@ -41,7 +41,7 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
  *
  * The log arrives newest-first, so the first eligible entry _is_ the newest and the scan stops
  * there. That ordering is undocumented by Supercell (verified against the live proxy); if it ever
- * changed, we would post an older battle and advance the cursor past the newer ones. Leading 2v2s
+ * changed, we would post an older battle and advance lastBattle past the newer ones. Leading 2v2s
  * and Duels are still walked past, so the assumption only saves scanning the tail.
  *
  * @returns The battle, plus `drifted` when an entry was selected but failed full validation — API

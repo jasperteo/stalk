@@ -12,7 +12,7 @@ const UrlSchema = v.pipe(v.string(), v.url());
 
 /**
  * Canonical player tag: uppercase with a leading "#". Config and API tags both normalize here, so
- * consumers (player lookup, KV cursor keys) can compare them with plain `===`.
+ * consumers (player lookup, KV lastBattle keys) can compare them with plain `===`.
  */
 const TagSchema = v.pipe(
 	v.string(),
@@ -22,8 +22,8 @@ const TagSchema = v.pipe(
 
 /**
  * Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that and
- * rejects invalid dates. Fixing `fractionalSecondDigits` keeps the fixed-width shape KV cursors
- * store, so plain string comparison stays chronological.
+ * rejects invalid dates. Fixing `fractionalSecondDigits` keeps the fixed-width shape KV lastBattle
+ * values store, so plain string comparison stays chronological.
  */
 const BattleTimeSchema = v.pipe(
 	v.string(),
@@ -130,10 +130,10 @@ function isEligibleBattle(entry: unknown): boolean {
 }
 
 /**
- * A stored lastBattle KV cursor. Reuses BattleTimeSchema, so parsing it also re-normalizes and
+ * A stored lastBattle KV value. Reuses BattleTimeSchema, so parsing it also re-normalizes and
  * validates the stored value instead of trusting a raw `kv.get<string>` cast.
  */
-const CursorSchema = BattleTimeSchema;
+const LastBattleSchema = BattleTimeSchema;
 
 // ══════════════════════════════════════════════ ENV ══════════════════════════════════════════════
 
@@ -166,9 +166,9 @@ type EvolutionLevel = NonNullable<Card["evolutionLevel"]>;
 
 export {
 	BattleSchema,
-	CursorSchema,
 	DECK_SIZE,
 	isEligibleBattle,
+	LastBattleSchema,
 	TargetsEnvSchema,
 	TokenEnvSchema,
 };

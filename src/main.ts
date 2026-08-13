@@ -2,7 +2,7 @@ import { Hono } from "hono";
 
 import { config } from "@/env.ts";
 import { hl, levelColor, log } from "@/log.ts";
-import { listCursors, POLL_OUTCOMES, pollAll } from "@/poll.ts";
+import { listLastBattles, POLL_OUTCOMES, pollAll } from "@/poll.ts";
 import type { PollOutcome } from "@/poll.ts";
 
 const app = new Hono();
@@ -10,8 +10,8 @@ const app = new Hono();
 /** Health check endpoint for Deno Deploy. */
 app.get("/", (ctx) => ctx.json({ status: "ok" }));
 
-/** Read-only cursor dump; no secrets live in KV, so this is safe to expose. */
-app.get("/kv/last-battle", async (ctx) => ctx.json(await listCursors()));
+/** Read-only lastBattle dump; no secrets live in KV, so this is safe to expose. */
+app.get("/kv/last-battle", async (ctx) => ctx.json(await listLastBattles()));
 
 Deno.serve({
 	handler: app.fetch,
@@ -58,7 +58,7 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 
 	const { token, targets } = config;
 
-	// pollAll owns the fan-out and the tick's single cursor read; this stays wiring.
+	// pollAll owns the fan-out and the tick's single lastBattle read; this stays wiring.
 	const outcomes = await pollAll(targets, token);
 
 	log.info(`poll-battlelogs: ${String(targets.length)} targets — ${formatTally(outcomes)}`);

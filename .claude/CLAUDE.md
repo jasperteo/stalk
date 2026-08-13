@@ -33,22 +33,22 @@ chains oxlint (type-aware, via oxlint-tsgolint), `deno lint` (Deno-idiom rules),
 Break one of these and the app misbehaves in a way tests may not catch.
 
 1. **At most one battle posts per tick — the newest.** Intermediate battles are skipped by design;
-   the cursor jumps straight to the newest. This is the delivery contract, not a validation
+   lastBattle jumps straight to the newest. This is the delivery contract, not a validation
    shortcut: it keeps a tick to one fetch, one full validation, one post per player.
-2. **The cursor advances only after a successful post** (`poll.ts`). At-least-once delivery: if the
+2. **lastBattle advances only after a successful post** (`poll.ts`). At-least-once delivery: if the
    webhook succeeds but the KV put throws, the next tick re-posts a duplicate rather than dropping
    the battle.
 3. **Neither `poll()` nor `pollAll()` ever rejects.** `poll()` catches its own errors and resolves a
    `POLL_OUTCOMES` value, which is why `pollAll` uses `Promise.all` rather than `allSettled` — one
-   player's failure can't sink the others. `pollAll` additionally catches the cursor read, the one
-   failure that precedes every poll, reporting every target `failed`. `main.ts`'s cron handler
+   player's failure can't sink the others. `pollAll` additionally catches the lastBattle read, the
+   one failure that precedes every poll, reporting every target `failed`. `main.ts`'s cron handler
    awaits `pollAll` with no catch of its own, so an `await` added to `pollAll` outside that try
    reintroduces a rejected tick and loses the tally line.
-4. **A tick reads every cursor in one KV command.** `pollAll` calls `listCursors()` once and hands
-   each `poll()` its own cursor; nothing in the polling path may go back to a per-player `kv.get`.
-   KV reads are the free tier's binding limit (450k/month) and a per-player read at one tick a minute
-   burns ~43.8k of them per player per month. Writes stay per-tag, so concurrent polls never share a
-   value.
+4. **A tick reads every lastBattle value in one KV command.** `pollAll` calls
+   `listLastBattles()` once and hands each `poll()` its own lastBattle value; nothing in the polling
+   path may go back to a per-player `kv.get`. KV reads are the free tier's binding limit
+   (450k/month) and a per-player read at one tick a minute burns ~43.8k of them per player per
+   month. Writes stay per-tag, so concurrent polls never share a value.
 5. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
    fetch is only a fallback for a card id with no local file. 180 PNGs (285×420): `<id>.png` plus 42
    `-evo` and 16 `-hero` variants, covering all 122 playable cards.
@@ -69,32 +69,34 @@ not once) and the reason `src/deck-image.ts` keeps no render cache (see [Deck re
 notes](#deck-rendering-notes) and [the deck-rendering doc](../docs/deck-rendering.md#no-cache)).
 
 Cron tick → `config` (from `env.ts`, validated once at module load; `undefined` when the token is
-missing, which logs a heartbeat and skips) → `pollAll(targets, token)` → one `listCursors()` read →
-`poll()` per player concurrently → fetch
-battle log → compare newest eligible battle against the KV cursor → post → advance cursor.
+missing, which logs a heartbeat and skips) → `pollAll(targets, token)` → one `listLastBattles()`
+read → `poll()` per player concurrently → fetch
+battle log → compare newest eligible battle against the stored lastBattle value → post → advance
+lastBattle.
 
-| File                  | Role                                                                                                                                                                                                                                                                                                                                |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/main.ts`         | Wiring only. Runs as a script (`deno run`, not `deno serve` — hence no default export). `Deno.serve` binds Hono (`GET /` health, `GET /kv/last-battle` cursor dump); `Deno.cron` drives polling and logs a per-tick outcome tally.                                                                                                  |
-| `src/poll.ts`         | The polling domain. Owns the KV handle (private; reads go through `listCursors()`) and the `["lastBattle", tag]` key with its 30-day TTL. `pollAll` is the tick entry point: one cursor read, then a concurrent `poll()` per target, each resolving one of `POLL_OUTCOMES`: `posted` / `seeded` / `skipped` / `drifted` / `failed`. |
-| `src/clash-royale.ts` | Battle-log fetch via the RoyaleAPI proxy, with an abort timeout. `latestBattle` takes the first eligible entry (the log arrives newest-first, with 2v2s and Duels excluded) and fully validates only that one.                                                                                                                      |
-| `src/discord.ts`      | Builds and posts the webhook message: content line (result, crowns, HP margin — doubles as the push notification), then one embed per side with deck grid, trophies, and tower-troop thumbnail.                                                                                                                                     |
-| `src/deck-image.ts`   | Composites cards into a bottom-aligned 4-column PNG grid via sharp.                                                                                                                                                                                                                                                                 |
-| `src/schema.ts`       | Valibot schemas for the API shapes and both env vars. `isEligibleBattle` rejects 2v2s and Duels (a Duel concatenates 2–3 decks into one `cards` array) before full validation. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`.                                                                  |
-| `src/env.ts`          | Reads and validates env once at module load; exports `config`.                                                                                                                                                                                                                                                                      |
-| `src/log.ts`          | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette), `hl` (inline value highlighters), and `ERROR_BODY_CHARS` (upstream error-body truncation cap, shared with `clash-royale.ts`).                                                                                                 |
+| File                  | Role                                                                                                                                                                                                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.ts`         | Wiring only. Runs as a script (`deno run`, not `deno serve` — hence no default export). `Deno.serve` binds Hono (`GET /` health, `GET /kv/last-battle` lastBattle dump); `Deno.cron` drives polling and logs a per-tick outcome tally.                                                                                                      |
+| `src/poll.ts`         | The polling domain. Owns the KV handle (private; reads go through `listLastBattles()`) and the `["lastBattle", tag]` key with its 30-day TTL. `pollAll` is the tick entry point: one lastBattle read, then a concurrent `poll()` per target, each resolving one of `POLL_OUTCOMES`: `posted` / `seeded` / `skipped` / `drifted` / `failed`. |
+| `src/clash-royale.ts` | Battle-log fetch via the RoyaleAPI proxy, with an abort timeout. `latestBattle` takes the first eligible entry (the log arrives newest-first, with 2v2s and Duels excluded) and fully validates only that one.                                                                                                                              |
+| `src/discord.ts`      | Builds and posts the webhook message: content line (result, crowns, HP margin — doubles as the push notification), then one embed per side with deck grid, trophies, and tower-troop thumbnail.                                                                                                                                             |
+| `src/deck-image.ts`   | Composites cards into a bottom-aligned 4-column PNG grid via sharp.                                                                                                                                                                                                                                                                         |
+| `src/schema.ts`       | Valibot schemas for the API shapes and both env vars. `isEligibleBattle` rejects 2v2s and Duels (a Duel concatenates 2–3 decks into one `cards` array) before full validation. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`.                                                                          |
+| `src/env.ts`          | Reads and validates env once at module load; exports `config`.                                                                                                                                                                                                                                                                              |
+| `src/log.ts`          | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette), `hl` (inline value highlighters), and `ERROR_BODY_CHARS` (upstream error-body truncation cap, shared with `clash-royale.ts`).                                                                                                         |
 
 Internal imports use the `@/` map with explicit `.ts` extensions.
 
 ### Failure behavior
 
-- **Corrupt KV cursor** — logs a warning and re-seeds like a first run, rather than re-posting every
-  tick against a cursor that can never match. An expired cursor re-seeds silently.
-- **Cursor read fails** — the tick reports every target `failed` and polls nobody. Falling through
-  with an empty map would be far worse: every player would read as a first run and get seeded past
-  their newest battle without a post.
+- **Corrupt KV lastBattle value** — logs a warning and re-seeds like a first run, rather than
+  re-posting every tick against a value that can never match. An expired lastBattle value re-seeds
+  silently.
+- **lastBattle read fails** — the tick reports every target `failed` and polls nobody. Falling
+  through with an empty map would be far worse: every player would read as a first run and get
+  seeded past their newest battle without a post.
 - **Schema drift** — the newest entry selected but failing full validation resolves `drifted`, not
-  `skipped`, so it doesn't read as a quiet tick. The cursor stays put and the battle retries once
+  `skipped`, so it doesn't read as a quiet tick. lastBattle stays put and the battle retries once
   the schema catches up. An entry whose `team[0].cards` is missing or not an array fails the
   eligibility check during the battlelog scan itself, before anything is selected as newest — that
   resolves `skipped`, not `drifted`, a small accepted narrowing of drift detection.

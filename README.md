@@ -16,14 +16,14 @@ grid.
 2. The battle log is fetched via the [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy), which
    provides the stable outbound IP that the Clash Royale API token is whitelisted against — Deno
    Deploy has none of its own.
-3. The newest eligible battle's timestamp is compared against a cursor in Deno KV, stored per player
-   under `["lastBattle", tag]` with a 30-day TTL, so cursors for players you stop tracking clean
-   themselves up.
-4. **First run:** the cursor is seeded without posting, so you don't get a notification about a
+3. The newest eligible battle's timestamp is compared against a lastBattle value in Deno KV, stored
+   per player under `["lastBattle", tag]` with a 30-day TTL, so entries for players you stop tracking
+   clean themselves up.
+4. **First run:** lastBattle is seeded without posting, so you don't get a notification about a
    match from last week.
-5. **After that:** a new battle is posted to the webhook, and only then does the cursor advance. If
-   the post succeeds but the cursor write fails, the next tick re-posts rather than dropping the
-   battle — a rare duplicate beats a silent loss.
+5. **After that:** a new battle is posted to the webhook, and only then does lastBattle advance. If
+   the post succeeds but the write fails, the next tick re-posts rather than dropping the battle — a
+   rare duplicate beats a silent loss.
 
 2v2 and Duel battles are ignored (a Duel concatenates 2–3 decks into one match, not a single 1v1
 loadout). The log arrives newest-first, so the first entry to pass a cheap 1v1 check — one team
@@ -31,11 +31,11 @@ entry holding at most one deck — is the newest one, and the scan stops there. 
 fully validated, so validation runs once per log rather than once per entry.
 
 An entry that fails the cheap check is skipped. If the newest eligible entry then fails full
-validation, that's `drifted` rather than `skipped`: the cursor stays put so the battle retries once
+validation, that's `drifted` rather than `skipped`: lastBattle stays put so the battle retries once
 the schema catches up, instead of the tick reading as a quiet one.
 
 **At most one battle is posted per tick — the newest.** A player who finishes several matches
-between ticks has the intermediate ones skipped; the cursor jumps straight to the newest. That's
+between ticks has the intermediate ones skipped; lastBattle jumps straight to the newest. That's
 deliberate: it keeps a tick to a single fetch, a single validation, and a single post per player.
 
 ## Setup
@@ -91,7 +91,7 @@ deno task dev
 ```
 
 Runs with `.env` loaded, serving `GET /` (health check) and `GET /kv/last-battle` (a read-only dump
-of the stored cursors). `-P` loads the `default` permission set from `deno.json` instead of
+of the stored lastBattle values). `-P` loads the `default` permission set from `deno.json` instead of
 prompting per-permission. `Deno.cron` registers at startup and fires on the minute against Deno's
 local scheduler.
 
@@ -144,18 +144,18 @@ format check, lint, and test on every pull request and every push to `main`.
 | -------------- | -------- | ---------------------------------------------------------------------------- |
 | `CR_API_TOKEN` | Env var  | Bearer token for the Clash Royale API, whitelisted to the RoyaleAPI proxy IP |
 | `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player               |
-| Deno KV        | KV store | Holds the `["lastBattle", tag]` cursors, 30-day TTL                          |
+| Deno KV        | KV store | Holds the `["lastBattle", tag]` values, 30-day TTL                           |
 
 Both env vars are read and validated once at module load (`src/env.ts`) — from `.env` locally, from
-the project settings in production. Nothing secret is stored in KV, which is why the cursor route is
-safe to expose.
+the project settings in production. Nothing secret is stored in KV, which is why the lastBattle
+route is safe to expose.
 
 ## Project layout
 
 | Path                       | Contents                                                                                                                                                  |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/main.ts`              | Entry point: HTTP routes, cron registration, per-tick tally                                                                                               |
-| `src/poll.ts`              | The polling loop — cursor read/compare/advance, one outcome per player                                                                                    |
+| `src/poll.ts`              | The polling loop — lastBattle read/compare/advance, one outcome per player                                                                                |
 | `src/clash-royale.ts`      | Battle-log fetch and newest-eligible-battle selection                                                                                                     |
 | `src/discord.ts`           | Webhook message construction and delivery, with a text-only fallback                                                                                      |
 | `src/deck-image.ts`        | Deck grids composited from local card art via [sharp](https://sharp.pixelplumbing.com/); tuning log in [`docs/deck-rendering.md`](docs/deck-rendering.md) |
