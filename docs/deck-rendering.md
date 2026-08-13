@@ -5,8 +5,8 @@
 opaque bounds, placed into a fixed-size cell, and the finished grid is composed and encoded once,
 at native resolution — there is no downscale step.
 This doc is the authority on why each constant in that module has the value it does and what
-breaks if you change it — the source carries only a one-line JSDoc per constant, pointing back
-here. Organized by topic, not declaration order.
+breaks if you change it — the source carries a short JSDoc per constant, with an `@see` anchor back
+to the relevant section where one exists. Organized by topic, not declaration order.
 
 ## Single pipeline
 

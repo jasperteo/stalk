@@ -42,6 +42,13 @@ const ERROR_BODY_CHARS = 2000;
 /**
  * Builds one leveled logger: a bold, colored, 5-wide badge (so lines align) in front of every
  * message, optionally tinting the message itself in the same color.
+ *
+ * @param write The console method to wrap, passed in rather than derived from `level` so `success`
+ *   can route to `console.info` under its own badge.
+ * @param tint Whether to paint the message itself, not just the badge. Extra args stay unpainted
+ *   regardless, so an Error keeps its native console inspection.
+ * @returns The logger, with its badge already painted — computed once here, which is what keeps
+ *   every paint call after the `setColorEnabled` gate above.
  */
 const leveled = (
 	write: (...data: unknown[]) => void,
@@ -49,8 +56,6 @@ const leveled = (
 	tint = false
 ) => {
 	const paint = levelColor[level];
-	// Computed once here, when the `log` object below is built — which happens after the
-	// setColorEnabled gate above runs.
 	const badge = paint(bold(level.padEnd(5)));
 
 	return (message: string, ...rest: unknown[]) => {

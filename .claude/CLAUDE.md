@@ -113,8 +113,8 @@ Internal imports use the `@/` map with explicit `.ts` extensions.
 ### Deck rendering notes
 
 [`docs/deck-rendering.md`](../docs/deck-rendering.md) is the authority on every constant's value and
-rationale — the source now carries only a one-line JSDoc per constant pointing back there. What to
-know before editing:
+rationale — the source carries a short JSDoc per constant, with an `@see` anchor back to the
+relevant section where one exists. What to know before editing:
 
 - **Tiles are never individually resized.** They composite at native resolution into fixed
   `CELL_WIDTH`×`CELL_HEIGHT` cells, so the grid's pixel dimensions stay constant across decks. The

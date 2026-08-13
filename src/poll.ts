@@ -30,6 +30,9 @@ type PollOutcome = (typeof POLL_OUTCOMES)[number];
  * that check exact. A _present_ value that fails to parse is corrupt: log and return `undefined` so
  * the caller re-seeds instead of re-posting every tick against a value that can never match.
  *
+ * @param stored The raw KV value, exactly as {@link listLastBattles} read it.
+ * @param tag Only for the corrupt-value log line — the value is already in hand, so nothing here
+ *   looks anything up by tag.
  * @returns The parsed lastBattle time, or `undefined` for both "no stored value" and "corrupt
  *   value" (already logged) — the caller treats both as first-run.
  */
@@ -54,6 +57,8 @@ function readLastBattle(stored: unknown, tag: string): string | undefined {
  * of one per player — see {@link pollAll}. Never rejects: every error resolves "failed", which is
  * why `pollAll` uses `Promise.all` rather than `allSettled` — one player's failure can't sink the
  * others.
+ *
+ * @param stored This tag's raw KV value, still uninterpreted.
  */
 async function poll(target: Target, token: string, stored: unknown): Promise<PollOutcome> {
 	const { tag, webhook } = target;
@@ -101,6 +106,9 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
  * Read-only dump of every stored lastBattle value, keyed by tag. Values stay raw and uninterpreted
  * — {@link readLastBattle} is where corrupt-vs-absent gets decided. Used by {@link pollAll} and
  * main.ts's debug route.
+ *
+ * @returns Tag → raw stored value. A tag with nothing stored is **absent from the record**, not
+ *   present-and-nullish, which is what makes {@link readLastBattle}'s `=== undefined` check exact.
  */
 async function listLastBattles(): Promise<Record<string, unknown>> {
 	const lastBattles: Record<string, unknown> = {};
@@ -128,6 +136,8 @@ async function listLastBattles(): Promise<Record<string, unknown>> {
  * still reach its tally line. {@link poll} contains each target's own errors; the lastBattle read —
  * the one failure that precedes every poll — is contained here. Any `await` added to this function
  * outside that try reintroduces a rejected tick and silently costs the tally.
+ *
+ * @returns One outcome per target, index-aligned with `targets` (`Promise.all` preserves order).
  */
 async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]> {
 	let lastBattles: Record<string, unknown>;

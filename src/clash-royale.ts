@@ -16,6 +16,8 @@ const FETCH_TIMEOUT_MS = 10_000;
 /**
  * Fetches a player's raw battle-log entries. Schema validation is deferred to {@link latestBattle}.
  *
+ * @returns The entries in the API's own order — newest-first, which is what {@link latestBattle}
+ *   selects on.
  * @throws When the API response isn't ok.
  */
 async function fetchBattlelog(playerTag: string, token: string): Promise<unknown[]> {

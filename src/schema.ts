@@ -1,13 +1,16 @@
-import * as v from "valibot";
-
 /**
+ * @module
+ *
  * Valibot schemas for the Clash Royale API shapes and the two env vars. Only the fields we actually
  * use are declared, and `v.object` strips unknown keys, so the API adding fields never breaks
  * parsing.
  */
 
+import * as v from "valibot";
+
 // ══════════════════════════════════════════ PRIMITIVES ═══════════════════════════════════════════
 
+/** Any absolute URL: card art from the API, and the webhook in TARGETS. */
 const UrlSchema = v.pipe(v.string(), v.url());
 
 /**
@@ -99,7 +102,12 @@ const BattleSchema = v.object({
 
 // ════════════════════════════════════════════ DERIVED ════════════════════════════════════════════
 
-/** Cards in one deck; a Duel concatenates 2–3 decks into `cards`, so a longer array is the tell. */
+/**
+ * Cards in one deck; a Duel concatenates 2–3 decks into `cards`, so a longer array is the tell.
+ *
+ * @internal Exported for tests only — production reads it through
+ *   {@link EligibleBattleSchema} in this file.
+ */
 const DECK_SIZE = 8;
 
 /**
@@ -124,7 +132,10 @@ const EligibleBattleSchema = v.object({
 	battleTime: BattleTimeSchema,
 });
 
-/** Whether a raw battlelog entry is a 1v1 worth fully validating. */
+/**
+ * Whether a raw battlelog entry is a 1v1 worth fully validating — see {@link EligibleBattleSchema}
+ * for what passes and what a failure means.
+ */
 function isEligibleBattle(entry: unknown): boolean {
 	return v.is(EligibleBattleSchema, entry);
 }

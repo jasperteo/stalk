@@ -1,7 +1,6 @@
-import { decodeToRaw, IMAGES_DIR, scanArtBounds, type RawImage } from "@/deck-image.ts";
-import { hl, log } from "@/log.ts";
-
 /**
+ * @module
+ *
  * Dev-only measuring tool: reports the transparent margins baked into a card icon, the numbers
  * deck-image.ts's `trimToArt`/`renderDeckGrid` are tuned against. Reads the renderer's own
  * `IMAGES_DIR` (not the CDN), so it measures exactly the directory the renderer reads and stays
@@ -12,6 +11,10 @@ import { hl, log } from "@/log.ts";
  * prints the aggregate row, which is what ROW_GAP's floor and the grid's cell width come from.
  */
 
+import { decodeToRaw, IMAGES_DIR, scanArtBounds, type RawImage } from "@/deck-image.ts";
+import { hl, log } from "@/log.ts";
+
+/** One icon's raw canvas, the trimmed art inside it, and the transparent margins between them. */
 type Measurement = {
 	name: string;
 	width: number;

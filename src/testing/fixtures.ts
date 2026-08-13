@@ -1,4 +1,6 @@
 /**
+ * @module
+ *
  * Shared raw Clash Royale API shapes for tests: plain objects as the API would send them
  * (unnormalized lowercase tags, optional fields absent), pre-validation. Tests spread in only the
  * fields they assert on, and parse through `BattleSchema` where a validated `Battle` is needed.

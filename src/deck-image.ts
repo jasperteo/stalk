@@ -1,3 +1,13 @@
+/**
+ * @module
+ *
+ * Composites Clash Royale cards into a bottom-aligned 4-column PNG grid via sharp.
+ *
+ * `docs/deck-rendering.md` is the authority on every constant's value and rationale — benchmarks,
+ * size tables, change history. Comments here cover only what a future edit must not silently
+ * break.
+ */
+
 import { Buffer } from "node:buffer";
 
 import { Lazy } from "@std/async/lazy";
@@ -7,14 +17,6 @@ import type { SharpConstructor } from "sharp";
 
 import { hl, log } from "@/log.ts";
 import type { Card, EvolutionLevel } from "@/schema.ts";
-
-/**
- * Composites Clash Royale cards into a bottom-aligned 4-column PNG grid via sharp.
- *
- * `docs/deck-rendering.md` is the authority on every constant's value and rationale — benchmarks,
- * size tables, change history. Comments here cover only what a future edit must not silently
- * break.
- */
 
 // ════════════════════════════════════════════ RUNTIME ════════════════════════════════════════════
 
@@ -28,6 +30,8 @@ import type { Card, EvolutionLevel } from "@/schema.ts";
  * `Lazy` is here for its rejection semantics, not just the memo: it clears its state when the
  * initializer rejects, so the next render retries. Caching the rejection would let one transient
  * dlopen failure silently poison every later render for the isolate's lifetime.
+ *
+ * @see docs/deck-rendering.md#sharp-runtime-config
  */
 const sharpModule = new Lazy<SharpConstructor>(async () => {
 	const { default: sharp } = await import("sharp");
@@ -43,18 +47,32 @@ const sharpModule = new Lazy<SharpConstructor>(async () => {
 /**
  * The local card-art mirror (`<id>.png`, `<id>-evo.png`, `<id>-hero.png`), resolved relative to
  * this module rather than the cwd so it survives Deno Deploy, where the cwd isn't the repo root.
+ *
+ * @internal Exported for `scripts/measure.ts`, so its margin numbers come from the same directory
+ *   the renderer reads.
  */
 const IMAGES_DIR = new URL("../images/", import.meta.url);
 
 const COLUMNS = 4;
-/** Fixed cell size every tile composites into: the upper bound of every icon's trimmed size. */
+/**
+ * Fixed cell size every tile composites into: the upper bound of every icon's trimmed size.
+ *
+ * @internal Exported for tests only.
+ * @see docs/deck-rendering.md#cell-sizing
+ */
 const CELL_WIDTH = 261;
 const CELL_HEIGHT = 405;
-/** Gutter between columns, native px. Tiles are trimmed on the sides, so this is the true gap. */
+/**
+ * Gutter between columns, native px. Tiles are trimmed on the sides, so this is the true gap.
+ *
+ * @see docs/deck-rendering.md#gaps-and-overlap
+ */
 const COLUMN_GAP = 12;
 /**
  * Gutter between rows, negative so a row's transparent bottom padding overlaps the row below. Don't
  * go below roughly -20, or hexagon/champion frames start to clip.
+ *
+ * @see docs/deck-rendering.md#gaps-and-overlap
  */
 const ROW_GAP = -16;
 /** Alpha at or below this counts as transparent when scanning for a card's art bounds. */
@@ -64,6 +82,8 @@ const BYTES_PER_PIXEL = 4;
 /**
  * PNG zlib compressionLevel (0–9) for the shipped grid. 0 trades upload size for encode CPU, the
  * scarcer resource on Deploy.
+ *
+ * @see docs/deck-rendering.md#encoding
  */
 const GRID_COMPRESSION = 0;
 /** Abort a fallback card-icon CDN fetch after this long, so a hung request can't stall the tick. */
@@ -109,8 +129,12 @@ type GridPlan = {
 // ══════════════════════════════════════════ RAW BITMAPS ══════════════════════════════════════════
 
 /**
- * Decodes an encoded icon to the raw RGBA bitmap `scanArtBounds` walks. Exported for
- * `scripts/measure.ts`, so its margin numbers come from the renderer's own decode.
+ * Decodes an encoded icon to the raw RGBA bitmap `scanArtBounds` walks.
+ *
+ * @returns Always 4-channel RGBA — `ensureAlpha` guarantees it even for an opaque source, which is
+ *   the `BYTES_PER_PIXEL` stride every scan and crop downstream assumes.
+ * @internal Exported for `scripts/measure.ts` and tests, so measured margins come from the
+ *   renderer's own decode.
  */
 async function decodeToRaw(bytes: Uint8Array): Promise<RawImage> {
 	const sharp = await sharpModule.get();
@@ -125,6 +149,7 @@ async function decodeToRaw(bytes: Uint8Array): Promise<RawImage> {
  *
  * @returns The opaque bounding box; `maxX === -1` (with `minX === width`, `minY === height`) when
  *   the bitmap is fully transparent — the sentinel callers must handle.
+ * @internal Exported for `scripts/measure.ts`.
  */
 function scanArtBounds({ data, width, height }: RawImage) {
 	const rowStride = width * BYTES_PER_PIXEL;
@@ -189,6 +214,8 @@ function scanArtBounds({ data, width, height }: RawImage) {
  * is cheap insurance against a future caller that doesn't share {@link scanArtBounds}'s
  * guarantees.
  *
+ * @returns The cropped pixels, tightly packed at `region.width` stride — no source-width padding
+ *   carried along.
  * @throws When `region` falls outside the source bitmap.
  */
 function cropRaw({ data, width }: RawImage, region: Region): Buffer {
@@ -273,6 +300,10 @@ function iconUrl(card: Card): string {
  * Trims a decoded bitmap's transparent margin on the top and sides but keeps its native bottom
  * edge: every icon shares that baseline, so bottom-aligning on it ({@link renderDeckGrid}) lines
  * the card frames up. Kept at native resolution, since upscaling would blur.
+ *
+ * @returns The trimmed tile, carrying the `bottomPadding` {@link renderDeckGrid} checks against the
+ *   row overlap. A fully-transparent bitmap keeps the whole frame instead, with `bottomPadding`
+ *   equal to its full height.
  */
 function trimRaw(raw: RawImage): Tile {
 	const { width, height } = raw;
@@ -298,7 +329,11 @@ function trimRaw(raw: RawImage): Tile {
 	};
 }
 
-/** Decodes an encoded icon, then trims it — see {@link trimRaw}. The local-art path's entry point. */
+/**
+ * Decodes an encoded icon, then trims it — see {@link trimRaw}. The local-art path's entry point.
+ *
+ * @internal Exported for tests only.
+ */
 async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 	return trimRaw(await decodeToRaw(bytes));
 }
@@ -312,6 +347,7 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
  * shrink the tile's transparent margin along with its art, leaving it smaller than its neighbours.
  *
  * @throws When the CDN response isn't ok.
+ * @see docs/deck-rendering.md#cdn-fallback
  */
 async function fetchTile(url: string): Promise<Tile> {
 	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
@@ -349,8 +385,13 @@ async function fetchTile(url: string): Promise<Tile> {
 /**
  * Loads a card's tile ready to composite, reading from the local mirror. A `NotFound` means the
  * card released after the last mirror sync: warn (the signal to add its art) and fall back to the
- * CDN icon. `cdnFallback` reports whether that fallback ran so {@link renderDeckGrid} can log it.
- * Any other fetch/decode error propagates and rejects the render.
+ * CDN icon.
+ *
+ * @returns The tile, plus `cdnFallback` reporting whether the CDN path ran so
+ *   {@link renderDeckGrid} can count it.
+ * @throws On any error but `NotFound` — a decode failure or a bad CDN response propagates and
+ *   rejects the whole render.
+ * @see docs/deck-rendering.md#cdn-fallback
  */
 async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean }> {
 	try {
@@ -373,6 +414,11 @@ async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean 
 /**
  * Pure grid geometry for a given number of tiles: overall size and each row's top. No I/O —
  * isolated from {@link renderDeckGrid} so it's unit-testable on its own.
+ *
+ * @param tileCount How many tiles will be placed; only the count matters, never their sizes, which
+ *   is what keeps the grid's dimensions constant across decks.
+ * @internal Exported for tests only.
+ * @see docs/deck-rendering.md#output-size
  */
 function planGrid(tileCount: number): GridPlan {
 	const rows = Math.ceil(tileCount / COLUMNS);
@@ -392,7 +438,10 @@ function planGrid(tileCount: number): GridPlan {
  * Renders a deck as a 4-column PNG grid (2 rows for a full 8-card deck); short decks leave trailing
  * cells empty.
  *
+ * @returns The encoded PNG at native resolution — never scaled.
  * @throws On an empty deck or a tile load/decode failure; the caller posts the text-only fallback.
+ * @see docs/deck-rendering.md#output-size
+ * @see docs/deck-rendering.md#no-cache
  */
 async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	if (cards.length === 0) {

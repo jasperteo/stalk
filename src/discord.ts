@@ -10,9 +10,11 @@ const OUTCOMES = {
 } as const;
 
 /**
- * The outcome from the tracked player's side. Keyed by name rather than by `Math.sign`'s -1/0/1, so
- * the three branches cover the table exhaustively by construction — no cast widening `number` back
- * down to a key union.
+ * The outcome from the tracked player's side.
+ *
+ * @param mine Crowns the tracked player took.
+ * @param theirs Crowns the opponent took.
+ * @returns The matching {@link OUTCOMES} entry — result word, verb, and embed color.
  */
 function outcomeFor(mine: number, theirs: number) {
 	if (mine > theirs) {
@@ -60,7 +62,12 @@ const EVOLUTION_PREFIX = {
 	2: "Hero ",
 } as const satisfies Record<EvolutionLevel, string>;
 
-/** Lowest HP among a player's surviving towers (HP > 0); 0 if none survive or there's no player. */
+/**
+ * Lowest HP among a player's surviving towers (HP > 0).
+ *
+ * @returns The weakest survivor's HP, or `0` when none survive or there's no player — the same
+ *   answer either way, since a wipe and an absent player both mean "no margin to report".
+ */
 function weakestSurvivingTowerHp(player: Player | undefined) {
 	const alive = [
 		player?.kingTowerHitPoints ?? 0,
@@ -73,6 +80,8 @@ function weakestSurvivingTowerHp(player: Player | undefined) {
 /**
  * An empty array must fall back the same way as an absent one: `[].join(" · ")` returns `""`, not a
  * nullish value, so `?? "—"` never fires on it.
+ *
+ * @returns The card names joined by `" · "`, or `"—"` when the deck is absent or empty.
  */
 function formatDeck(cards: Card[] | undefined) {
 	if (cards === undefined || cards.length === 0) {
@@ -86,7 +95,13 @@ function formatDeck(cards: Card[] | undefined) {
 		.join(" · ");
 }
 
-/** Trophy progression for a player, e.g. "5,432 → 5,463 (+31)". Dropped on modes without trophies. */
+/**
+ * Trophy progression for a player, e.g. "5,432 → 5,463 (+31)".
+ *
+ * @param label The field's display name, so the same builder serves both the player's row and the
+ *   opponent's.
+ * @returns The embed field, or `undefined` on modes without trophies — the caller filters it out.
+ */
 function buildTrophyField(player: Player | undefined, label: string) {
 	if (player?.startingTrophies === undefined) {
 		return undefined;
@@ -106,6 +121,10 @@ function buildTrophyField(player: Player | undefined, label: string) {
 /**
  * The pair of inline trophy rows for an embed from `subject`'s point of view, so the opponent's
  * embed stays labelled from the opponent's side.
+ *
+ * @param subject The player whose embed this is — labelled "Trophies".
+ * @param other The other side, labelled "Opponent Trophies". Swapping the two is what flips the
+ *   point of view for the opponent's embed.
  */
 function buildTrophyFields(subject: Player | undefined, other: Player | undefined) {
 	return [
@@ -114,6 +133,13 @@ function buildTrophyFields(subject: Player | undefined, other: Player | undefine
 	].filter(Boolean);
 }
 
+/**
+ * The player's tower troops as one comma-joined text field — the fallback embed's stand-in for the
+ * thumbnail {@link towerThumbnail} would otherwise carry.
+ *
+ * @param label The field's display name, labelling this side like {@link buildTrophyField} does.
+ * @returns The embed field, or `undefined` on modes with no tower troop.
+ */
 function buildSupportField(player: Player | undefined, label: string) {
 	if (!player?.supportCards.length) {
 		return undefined;
@@ -155,6 +181,10 @@ function towerThumbnail(player: Player | undefined) {
  * content block, and a per-side embed-base builder. `embedBase` takes the player whose embed it is,
  * because the "Match History" link must deep-link that side's own battle log, not always the
  * tracked player's.
+ *
+ * @param me The tracked player (`battle.team[0]`), already narrowed by the caller.
+ * @returns Both sides, the shared `content` line, and `embedBase` — everything the two message
+ *   shapes need in common.
  */
 function battleContext(battle: Battle, me: Player) {
 	const opponent = battle.opponent[0];
@@ -206,6 +236,9 @@ function payloadJson(message: { content: string; embeds: unknown[] }) {
 /**
  * Renders both deck grids and packs them with the JSON payload into multipart form data. A missing
  * opponent (defensive; 1v1s always have one) just drops the second side.
+ *
+ * @throws When a deck fails to render. {@link notifyBattle} catches this to reach the text-only
+ *   fallback, so an image problem costs the post its pictures, never the notification.
  */
 async function buildForm({ me, opponent, content, embedBase }: BattleContext) {
 	const sides = [
@@ -268,7 +301,12 @@ function buildFallbackMessage({ me, opponent, content, embedBase }: BattleContex
  */
 const PAYLOAD_REJECTED = new Set([400, 413]);
 
-/** POSTs one prepared request to the webhook, returning the response for the caller to judge. */
+/**
+ * POSTs one prepared request to the webhook.
+ *
+ * @returns The response unjudged — the caller decides what a non-ok status means, since only it
+ *   knows whether a retry is still available.
+ */
 async function postWebhook(webhookUrl: string, request: RequestInit) {
 	return await fetch(webhookUrl, {
 		...request,

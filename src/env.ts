@@ -3,7 +3,13 @@ import * as v from "valibot";
 import { hl, log } from "@/log.ts";
 import { TargetsEnvSchema, TokenEnvSchema } from "@/schema.ts";
 
-/** Reads and validates a single env var, logging once and falling back on a missing/invalid value. */
+/**
+ * Reads and validates a single env var, logging once and falling back on a missing/invalid value.
+ *
+ * @template TOutput The schema's output type. Tying `fallback` to it is what lets callers
+ *   destructure the result without re-narrowing — both paths hand back the same type.
+ * @param fallback Returned, after logging, when the var is unset or fails validation.
+ */
 function parseEnv<TOutput>(
 	name: string,
 	schema: v.GenericSchema<string | undefined, TOutput>,

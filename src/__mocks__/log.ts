@@ -1,11 +1,15 @@
-import { vi } from "vitest";
-
 /**
+ * @module
+ *
  * Manual vitest mock for `@/log.ts`, picked up automatically by any bare `vi.mock("@/log.ts")` (no
  * factory) — one canonical copy of the module's export surface, so a new export means one edit here
  * instead of one per test file. `hl`/`levelColor` are identity functions, matching the real
  * module's behavior when color is disabled (which log.test.ts asserts against the real module).
  */
+
+import { vi } from "vitest";
+
+/** The five leveled methods, each a spy so tests can assert on calls. */
 const log = {
 	info: vi.fn(),
 	success: vi.fn(),

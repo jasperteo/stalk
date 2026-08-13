@@ -33,7 +33,12 @@ const outcomeColor: Record<PollOutcome, (str: string) => string> = {
 	failed: levelColor.error,
 };
 
-/** `posted 1, seeded 0, …` — iterates {@link POLL_OUTCOMES} so a new outcome can't go missing. */
+/**
+ * `posted 1, seeded 0, …` — iterates {@link POLL_OUTCOMES} so a new outcome can't go missing.
+ *
+ * @returns Every outcome in display order, each painted in its own badge color, including the ones
+ *   that counted zero — a stable line shape reads better across ticks than a variable one.
+ */
 function formatTally(outcomes: PollOutcome[]) {
 	const counts = new Map<PollOutcome, number>();
 
