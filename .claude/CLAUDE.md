@@ -10,7 +10,7 @@ and deployment.
 ## Commands
 
 ```sh
-deno task dev     # Local dev server (-P loads deno.json's "permissions" set)
+deno task dev     # Local dev server (-P loads deno.jsonc's "permissions" set)
 
 deno task test     # Vitest suite
 deno task preview  # Render a hardcoded deck to scripts/preview.png (manual, offline)
@@ -142,19 +142,19 @@ oxlint and Deno need different libs, so neither config can be dropped:
 - `tsconfig.json` — read by oxlint/tsgolint (vanilla TypeScript). Sets no explicit `lib`, so
   `target: "esnext"` pulls TS's default full lib (DOM included) for web globals; `Deno.*` resolves
   through the vendored `deno.d.ts`.
-- `deno.json` `compilerOptions` — read by `deno check`/`deno run`. Sets
+- `deno.jsonc` `compilerOptions` — read by `deno check`/`deno run`. Sets
   `lib: ["deno.window", "deno.unstable"]` so the real `Deno` namespace (incl. `Deno.cron`,
   `Deno.openKv`, `Temporal`) resolves. Without it, Deno falls back to `tsconfig.json`, whose lib
   drops `deno.ns`.
 
 `deno.d.ts` is a vendored copy of Deno's own `lib.deno.d.ts`, consumed only as ambient types — it's
-excluded from `deno check`/`deno lint` (`deno.json`) and from oxlint's file walk
+excluded from `deno check`/`deno lint` (`deno.jsonc`) and from oxlint's file walk
 (`oxlint.config.ts` `ignorePatterns`) so it's never linted or double-declared. Re-sync with
 `deno task sync-types` after a Deno version bump.
 
 ### Dependencies
 
-Runtime deps live in **`package.json`**, not `deno.json` — the `imports` map holds only the `@/`
+Runtime deps live in **`package.json`**, not `deno.jsonc` — the `imports` map holds only the `@/`
 alias. A JSR-only package is declared with a bare `jsr:` specifier (`"@std/async": "jsr:^1.5.0"`,
 `"@std/fmt": "jsr:^1.0.10"`); Deno resolves `jsr:` specifiers natively and materializes them into
 `node_modules/@std/*` (symlinked into `node_modules/.deno`), and `preferPackageJson` makes
@@ -200,7 +200,7 @@ Two gotchas:
 `@types/node` is a devDependency because the oxlint pass needs it for sharp's `Buffer`/`NodeJS.*`
 references (`deno check` doesn't).
 
-**The `@/` alias is declared in three places that must stay in sync:** `deno.json` `imports`,
+**The `@/` alias is declared in three places that must stay in sync:** `deno.jsonc` `imports`,
 `tsconfig.json` `paths`, and vitest via `resolve: { tsconfigPaths: true }` in `vitest.config.ts`.
 
 ## Testing
@@ -215,8 +215,9 @@ non-DOM global set — it says nothing about the underlying runtime. Discovery i
   top-level `await Deno.openKv()` to a fresh `:memory:` store and closes it via `onTestFinished`, so
   the handle stays scoped to the test that opened it. Call it from inside a test body, never a hook.
 - `src/testing/fixtures.ts` — raw (pre-validation) API shapes: `rawCard`/`rawPlayer`/`rawBattle`
-  factories, so a test overriding one field doesn't restate the rest; the prebuilt `driftedBattle`
-  and `duelBattle` entries for the two rejection paths; and the `BOB`/`WEBHOOK` constants.
+  factories, so a test overriding one field doesn't restate the rest; `driftedBattle` and
+  `duelBattle`, same-shaped factories for the two rejection paths; and the `BOB`/`WEBHOOK`
+  constants.
 - `src/__mocks__/log.ts` — manual mock auto-applied by a factory-less
   `vi.mock(import("@/log.ts"))`; `vitest/prefer-import-in-mock` enforces that form over a path
   string everywhere. One canonical copy of the export surface: a new export from `log.ts` means one

@@ -91,8 +91,8 @@ deno task dev
 ```
 
 Runs with `.env` loaded, serving `GET /` (health check) and `GET /kv/last-battle` (a read-only dump
-of the stored lastBattle values). `-P` loads the `default` permission set from `deno.json` instead of
-prompting per-permission. `Deno.cron` registers at startup and fires on the minute against Deno's
+of the stored lastBattle values). `-P` loads the `default` permission set from `deno.jsonc` instead
+of prompting per-permission. `Deno.cron` registers at startup and fires on the minute against Deno's
 local scheduler.
 
 That permission set's `net.allow` list is the one entry worth knowing about, since a host missing
