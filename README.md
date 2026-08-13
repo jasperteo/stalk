@@ -174,5 +174,5 @@ Deno Deploy gives the app a fresh isolate every tick, so there is no state for a
 A CDN fetch is the fallback for a card too new to be in the mirror; if rendering fails outright, the
 battle still posts as a text-only embed.
 
-Working on the code? `.claude/CLAUDE.md` documents the toolchain setup, the invariants, and the
+Working on the code? `.claude/CLAUDE.md` documents the toolchain setup, the guarantees, and the
 traps. `docs/deck-rendering.md` documents every deck-rendering constant's value and rationale.

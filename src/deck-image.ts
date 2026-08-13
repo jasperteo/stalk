@@ -187,7 +187,7 @@ function scanArtBounds({ data, width, height }: RawImage) {
  * an out-of-bounds region would otherwise leave uninitialized heap bytes in the tail of a row
  * instead of failing loudly. The guard below should make that path unreachable, but the zero-fill
  * is cheap insurance against a future caller that doesn't share {@link scanArtBounds}'s
- * invariants.
+ * guarantees.
  *
  * @throws When `region` falls outside the source bitmap.
  */

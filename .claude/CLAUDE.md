@@ -28,7 +28,7 @@ chains oxlint (type-aware, via oxlint-tsgolint), `deno lint` (Deno-idiom rules),
 `deno check --unstable-tsgo`. CI (`.github/workflows/ci.yml`) runs `deno ci`,
 `deno task fmt --check`, `deno task lint`, and `deno task test`.
 
-## Invariants
+## Guarantees
 
 Break one of these and the app misbehaves in a way tests may not catch.
 

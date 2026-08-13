@@ -397,7 +397,7 @@ describe("trimToArt", () => {
 		// `Buffer.alloc` zero-fills before the copy loop overwrites it; `Buffer.allocUnsafe` would
 		// reuse whatever heap bytes were previously there. Every row this crop copies is fully
 		// in-bounds (the guard above proved that), so the copy loop already overwrites every byte of
-		// the destination — but that invariant is exactly the one worth pinning down: if a future edit
+		// the destination — but that guarantee is exactly the one worth pinning down: if a future edit
 		// ever left a row short, allocUnsafe's recycled memory would make the trailing bytes
 		// non-deterministic between calls, where alloc's zero-fill would not.
 		const bytes = await insetFixture(CANVAS_WIDTH, CANVAS_HEIGHT, RECT);

@@ -149,7 +149,7 @@ one tick to the next regardless of what this module does — see
 [Architecture](../.claude/CLAUDE.md#architecture) for the `onListen` evidence behind that. A cache
 built to skip re-rendering repeated decks was paying upkeep against reuse that could never happen.
 
-Within a single tick, the ceiling on renders is `2 * targets`: invariant 1 caps a tick at one post
+Within a single tick, the ceiling on renders is `2 * targets`: guarantee 1 caps a tick at one post
 per player, and each post renders exactly two grids, one per side. (The `PAYLOAD_REJECTED` retry in
 `discord.ts` posts `buildFallbackMessage`'s text-only body, which carries no images and renders
 nothing, so it never adds to this.) The only way a cache could ever hit inside that ceiling is an
