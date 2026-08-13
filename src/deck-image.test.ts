@@ -230,9 +230,9 @@ describe("renderDeckGrid", () => {
 		// an unclamped oversized tile wouldn't change them either — what the clamp actually prevents is
 		// the tile's overlay offsets going negative (see renderDeckGrid) and the source being visibly
 		// sliced. A successful render at the expected fixed size is the observable proxy available from
-		// outside the module: `fit: "inside"` + `withoutEnlargement` means a tile that already exceeds
-		// the cell now decodes into a rectangle bounded by CELL_WIDTH×CELL_HEIGHT, which trimToArt (also
-		// exercised directly below) confirms in isolation.
+		// outside the module: `fit: "inside"` means a tile that already exceeds the cell now decodes
+		// into a rectangle bounded by CELL_WIDTH×CELL_HEIGHT, which trimToArt (also exercised directly
+		// below) confirms in isolation.
 		await expect(dimensions(oversizedPng)).resolves.toEqual(await dimensions(normalPng));
 	});
 
