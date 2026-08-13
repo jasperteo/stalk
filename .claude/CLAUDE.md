@@ -242,7 +242,9 @@ dependency`. Use `scripts/` (its `*.png` output is gitignored) and delete the pr
   fine.
 - **Exports gathered at the bottom** of each module: plain declarations in the body, then one sorted
   `export { … }` plus a separate `export type { … }`. No inline `export` on declarations.
-- oxlint runs the `typescript`, `unicorn`, and `oxc` plugins with type-aware checking
+- oxlint runs the `typescript`, `unicorn`, `oxc`, and `jsdoc` plugins with type-aware checking
   (`options: { typeAware: true, typeCheck: true }`). Categories are set globally —
   `correctness: "error"`, `perf: "warn"` — on top of a long explicit rule list; `**/*.test.ts` adds
-  the `vitest` plugin via an override.
+  the `vitest` plugin via an override. `jsdoc` contributes only `check-property-names` and
+  `check-tag-names`, both at `warn`: they catch a misspelled or invented tag, and deliberately
+  mandate no coverage — a tag is added only where it carries something the name and type don't.

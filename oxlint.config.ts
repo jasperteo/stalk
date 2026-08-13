@@ -1,7 +1,7 @@
 import { defineConfig } from "oxlint";
 
 const oxlintConfig = defineConfig({
-	plugins: ["typescript", "unicorn", "oxc"],
+	plugins: ["typescript", "unicorn", "oxc", "jsdoc"],
 	categories: { correctness: "error", perf: "warn" },
 	options: { typeAware: true, typeCheck: true },
 	env: { builtin: true, es2026: true },
@@ -333,6 +333,8 @@ const oxlintConfig = defineConfig({
 		"typescript/no-import-type-side-effects": "error",
 		"typescript/consistent-type-imports": "error",
 		"typescript/consistent-type-exports": "error",
+		"jsdoc/check-property-names": "warn",
+		"jsdoc/check-tag-names": "warn",
 	},
 	overrides: [
 		{
