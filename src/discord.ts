@@ -1,6 +1,15 @@
+/**
+ * @module
+ *
+ * Builds and posts the Discord webhook message for a battle: a content line, then one embed per
+ * side with deck grid, trophies, and tower-troop thumbnail.
+ */
+
 import { renderDeckGrid } from "@/deck-image.ts";
 import { ERROR_BODY_CHARS, hl, log } from "@/log.ts";
 import type { Battle, Card, EvolutionLevel, Player } from "@/schema.ts";
+
+// ═══════════════════════════════════════════ CONSTANTS ═══════════════════════════════════════════
 
 const OUTCOMES = {
 	victory: { result: "Victory", verb: "Won", color: 0x00_c9_50 }, // Green
@@ -9,30 +18,7 @@ const OUTCOMES = {
 	draw: { result: "Draw", verb: undefined, color: 0xff_df_20 }, // Yellow
 } as const;
 
-/**
- * The outcome from the tracked player's side.
- *
- * @param mine Crowns the tracked player took.
- * @param theirs Crowns the opponent took.
- * @returns The matching {@link OUTCOMES} entry — result word, verb, and embed color.
- */
-function outcomeFor(mine: number, theirs: number) {
-	if (mine > theirs) {
-		return OUTCOMES.victory;
-	}
-
-	if (mine < theirs) {
-		return OUTCOMES.defeat;
-	}
-
-	return OUTCOMES.draw;
-}
-
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
-
-/** Deep link to a player's RoyaleAPI battle log; the site's URLs carry the tag without its "#". */
-const matchHistoryUrl = (tag: string) =>
-	`https://royaleapi.com/player/${tag.replace("#", "")}/battles`;
 
 /**
  * Abort the webhook POST after this long; generous because the multipart body carries the deck PNGs
@@ -62,20 +48,11 @@ const EVOLUTION_PREFIX = {
 	2: "Hero ",
 } as const satisfies Record<EvolutionLevel, string>;
 
-/**
- * Lowest HP among a player's surviving towers (HP > 0).
- *
- * @returns The weakest survivor's HP, or `0` when none survive or there's no player — the same
- *   answer either way, since a wipe and an absent player both mean "no margin to report".
- */
-function weakestSurvivingTowerHp(player: Player | undefined) {
-	const alive = [
-		player?.kingTowerHitPoints ?? 0,
-		...(player?.princessTowersHitPoints ?? []),
-	].filter((hp) => hp > 0);
+// ═════════════════════════════════════════ EMBED FIELDS ══════════════════════════════════════════
 
-	return alive.length === 0 ? 0 : Math.min(...alive);
-}
+/** Deep link to a player's RoyaleAPI battle log; the site's URLs carry the tag without its "#". */
+const matchHistoryUrl = (tag: string) =>
+	`https://royaleapi.com/player/${tag.replace("#", "")}/battles`;
 
 /**
  * An empty array must fall back the same way as an absent one: `[].join(" · ")` returns `""`, not a
@@ -174,6 +151,42 @@ function towerThumbnail(player: Player | undefined) {
 	}
 
 	return { url: TOWER_TROOP_ART.get(troop.id) ?? troop.iconUrls.medium };
+}
+
+// ════════════════════════════════════════════ MESSAGE ════════════════════════════════════════════
+
+/**
+ * The outcome from the tracked player's side.
+ *
+ * @param mine Crowns the tracked player took.
+ * @param theirs Crowns the opponent took.
+ * @returns The matching {@link OUTCOMES} entry — result word, verb, and embed color.
+ */
+function outcomeFor(mine: number, theirs: number) {
+	if (mine > theirs) {
+		return OUTCOMES.victory;
+	}
+
+	if (mine < theirs) {
+		return OUTCOMES.defeat;
+	}
+
+	return OUTCOMES.draw;
+}
+
+/**
+ * Lowest HP among a player's surviving towers (HP > 0).
+ *
+ * @returns The weakest survivor's HP, or `0` when none survive or there's no player — the same
+ *   answer either way, since a wipe and an absent player both mean "no margin to report".
+ */
+function weakestSurvivingTowerHp(player: Player | undefined) {
+	const alive = [
+		player?.kingTowerHitPoints ?? 0,
+		...(player?.princessTowersHitPoints ?? []),
+	].filter((hp) => hp > 0);
+
+	return alive.length === 0 ? 0 : Math.min(...alive);
 }
 
 /**
@@ -288,6 +301,8 @@ function buildFallbackMessage({ me, opponent, content, embedBase }: BattleContex
 
 	return { content, embeds: [{ ...embedBase(me), fields }] };
 }
+
+// ════════════════════════════════════════════ WEBHOOK ════════════════════════════════════════════
 
 /**
  * Statuses where Discord rejected the payload itself, so the message was definitely not delivered

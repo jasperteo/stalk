@@ -5,6 +5,8 @@ import { hl, levelColor, log } from "@/log.ts";
 import { listLastBattles, POLL_OUTCOMES, pollAll } from "@/poll.ts";
 import type { PollOutcome } from "@/poll.ts";
 
+// ════════════════════════════════════════════ SERVER ═════════════════════════════════════════════
+
 const app = new Hono();
 
 /** Health check endpoint for Deno Deploy. */
@@ -23,6 +25,8 @@ Deno.serve({
 		log.info(`stalk listening on ${hl.value(`http://${hostname}:${String(port)}`)} — ${status}`);
 	},
 });
+
+// ═════════════════════════════════════════════ CRON ══════════════════════════════════════════════
 
 /** Each outcome borrows its level's badge color, so the tally stays in sync with the badges. */
 const outcomeColor: Record<PollOutcome, (str: string) => string> = {
