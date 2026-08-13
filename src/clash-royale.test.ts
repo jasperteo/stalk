@@ -1,3 +1,4 @@
+import * as v from "valibot";
 import { describe, expect, test, vi } from "vitest";
 
 import { fetchBattlelog, latestBattle } from "@/clash-royale.ts";
@@ -113,7 +114,8 @@ describe("fetchBattlelog", () => {
 
 		const result = await fetchBattlelog("#ABC123", "my-token");
 
-		expect(fetchMock).toHaveBeenCalledWith(
+		// Exactly once: one tick is one fetch per player, and the tag is URL-encoded ("#" → "%23").
+		expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
 			"https://proxy.royaleapi.dev/v1/players/%23ABC123/battlelog",
 			{
 				headers: { Authorization: "Bearer my-token", Accept: "application/json" },
@@ -121,6 +123,19 @@ describe("fetchBattlelog", () => {
 			}
 		);
 		expect(result).toEqual([{ any: "thing" }]);
+	});
+
+	test("rejects when the proxy returns JSON that isn't an array", async () => {
+		// An ok response whose body is an error object rather than a battlelog: `latestBattle` would
+		// otherwise call `.find` on a non-array. Rejecting here makes it the poll's "failed" outcome.
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(() => Response.json({ reason: "notFound" }))
+		);
+
+		// The class, not a message: what matters is that it fails validation here rather than surfacing
+		// later as a TypeError from `latestBattle`'s `.find`.
+		await expect(fetchBattlelog("#ABC123", "my-token")).rejects.toThrow(v.ValiError);
 	});
 
 	test("throws with the status and tag context on a non-ok response", async () => {

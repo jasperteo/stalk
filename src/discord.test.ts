@@ -55,6 +55,7 @@ type Payload = {
 		fields?: { name: string; value: string }[];
 		thumbnail?: { url: string };
 		author?: { url: string };
+		footer?: { text: string };
 	}[];
 };
 
@@ -209,8 +210,29 @@ describe("notifyBattle", () => {
 
 		const payload = sentPayload();
 
-		expect(payload.embeds[0]?.author?.url).toBe("https://royaleapi.com/player/ABC123/battles");
-		expect(payload.embeds[1]?.author?.url).toBe("https://royaleapi.com/player/DEF456/battles");
+		// Soft: the failure mode worth seeing whole is both embeds pointing at the same player.
+		expect.soft(payload.embeds[0]?.author?.url).toBe("https://royaleapi.com/player/ABC123/battles");
+		expect.soft(payload.embeds[1]?.author?.url).toBe("https://royaleapi.com/player/DEF456/battles");
+	});
+
+	describe("footer", () => {
+		test("names the game mode, with its underscores spaced out", async () => {
+			await notifyBattle(WEBHOOK, makeBattle({ gameMode: { name: "Path_of_Legends" } }));
+
+			const payload = sentPayload();
+
+			// Both embeds share one footer object, so both sides must read the same mode.
+			expect.soft(payload.embeds[0]?.footer?.text).toBe("Path of Legends");
+			expect.soft(payload.embeds[1]?.footer?.text).toBe("Path of Legends");
+		});
+
+		test("falls back to the battle type when the entry carries no game mode", async () => {
+			// gameMode is optional on BattleSchema (modes without one exist), and an empty footer would
+			// leave the embed with no indication of what was played.
+			await notifyBattle(WEBHOOK, makeBattle({ gameMode: undefined, type: "PvP" }));
+
+			expect(sentPayload().embeds[0]?.footer?.text).toBe("PvP");
+		});
 	});
 
 	test("drops the second embed and file when there is no opponent", async () => {
@@ -224,45 +246,21 @@ describe("notifyBattle", () => {
 	});
 
 	describe("trophy fields", () => {
-		test("renders a positive trophy change", async () => {
+		// One table rather than four near-identical tests: every row is the same call with a different
+		// trophyChange, and the sign rule (+ only when positive, nothing on 0 or on the already-signed
+		// negative) is easiest to read as a column.
+		test.for([
+			{ change: 31, as: "a positive change with a + sign", expected: "5,432 → 5,463 (+31)" },
+			{ change: -18, as: "a negative change with one minus sign", expected: "5,432 → 5,414 (-18)" },
+			{ change: 0, as: "a zero change unsigned", expected: "5,432 → 5,432 (0)" },
+			{ change: undefined, as: "a missing change as zero", expected: "5,432 → 5,432 (0)" },
+		])("renders $as", async ({ change, expected }) => {
 			await notifyBattle(
 				WEBHOOK,
-				makeBattle({ team: [player({ startingTrophies: 5432, trophyChange: 31 })] })
+				makeBattle({ team: [player({ startingTrophies: 5432, trophyChange: change })] })
 			);
 
-			const trophies = fieldValue(sentPayload(), "Trophies");
-
-			expect(trophies).toBe("5,432 → 5,463 (+31)");
-		});
-
-		test("renders a negative trophy change with a single minus sign", async () => {
-			await notifyBattle(
-				WEBHOOK,
-				makeBattle({ team: [player({ startingTrophies: 5432, trophyChange: -18 })] })
-			);
-
-			const trophies = fieldValue(sentPayload(), "Trophies");
-
-			expect(trophies).toBe("5,432 → 5,414 (-18)");
-		});
-
-		test("renders a zero trophy change with no sign", async () => {
-			await notifyBattle(
-				WEBHOOK,
-				makeBattle({ team: [player({ startingTrophies: 5432, trophyChange: 0 })] })
-			);
-
-			const trophies = fieldValue(sentPayload(), "Trophies");
-
-			expect(trophies).toBe("5,432 → 5,432 (0)");
-		});
-
-		test("treats a missing trophyChange as zero", async () => {
-			await notifyBattle(WEBHOOK, makeBattle({ team: [player({ startingTrophies: 5432 })] }));
-
-			const trophies = fieldValue(sentPayload(), "Trophies");
-
-			expect(trophies).toBe("5,432 → 5,432 (0)");
+			expect(fieldValue(sentPayload(), "Trophies")).toBe(expected);
 		});
 
 		test("omits the Trophies field entirely when startingTrophies is absent", async () => {
@@ -285,11 +283,12 @@ describe("notifyBattle", () => {
 			const payload = sentPayload();
 
 			// Embed 0 is the tracked player's, embed 1 the opponent's — each labels the same pair of
-			// numbers from its own side, so the two embeds' values are mirror images.
-			expect(fieldValue(payload, "Trophies", 0)).toBe("5,000 → 5,010 (+10)");
-			expect(fieldValue(payload, "Opponent Trophies", 0)).toBe("4,800 → 4,795 (-5)");
-			expect(fieldValue(payload, "Trophies", 1)).toBe("4,800 → 4,795 (-5)");
-			expect(fieldValue(payload, "Opponent Trophies", 1)).toBe("5,000 → 5,010 (+10)");
+			// numbers from its own side, so the two embeds' values are mirror images. Soft, so a swapped
+			// perspective reports all four cells at once rather than only the first mismatch.
+			expect.soft(fieldValue(payload, "Trophies", 0)).toBe("5,000 → 5,010 (+10)");
+			expect.soft(fieldValue(payload, "Opponent Trophies", 0)).toBe("4,800 → 4,795 (-5)");
+			expect.soft(fieldValue(payload, "Trophies", 1)).toBe("4,800 → 4,795 (-5)");
+			expect.soft(fieldValue(payload, "Opponent Trophies", 1)).toBe("5,000 → 5,010 (+10)");
 		});
 	});
 

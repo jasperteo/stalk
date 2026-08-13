@@ -190,9 +190,11 @@ describe("renderDeckGrid", () => {
 
 		const paths = readFileMock.mock.calls.map((call) => String(call[0]));
 
-		expect(paths.some((path) => path.endsWith(`${String(evo.id)}-evo.png`))).toBe(true);
-		expect(paths.some((path) => path.endsWith(`${String(hero.id)}-hero.png`))).toBe(true);
-		expect(paths.some((path) => path.endsWith(`${String(base.id)}.png`))).toBe(true);
+		// Soft: one suffix table drives all three, so a broken mapping should report every wrong
+		// filename in one run rather than one per re-run.
+		expect.soft(paths.some((path) => path.endsWith(`${String(evo.id)}-evo.png`))).toBe(true);
+		expect.soft(paths.some((path) => path.endsWith(`${String(hero.id)}-hero.png`))).toBe(true);
+		expect.soft(paths.some((path) => path.endsWith(`${String(base.id)}.png`))).toBe(true);
 		// No network for locally-mirrored cards, whatever their evolutionLevel.
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
@@ -288,10 +290,12 @@ describe("renderDeckGrid", () => {
 
 		const urls = fetchMock.mock.calls.map((call) => call[0]);
 
-		expect(urls).toContain("https://api.clashroyale.com/evo-variant.png");
-		expect(urls).toContain("https://api.clashroyale.com/hero-variant.png");
-		expect(urls).not.toContain("https://api.clashroyale.com/evo-icon.png");
-		expect(urls).not.toContain("https://api.clashroyale.com/hero-icon.png");
+		// Soft: the pair of "took the variant" and "left medium alone" facts is one behavior per level,
+		// and seeing all four at once tells a wrong-key bug from a missing-guard bug immediately.
+		expect.soft(urls).toContain("https://api.clashroyale.com/evo-variant.png");
+		expect.soft(urls).toContain("https://api.clashroyale.com/hero-variant.png");
+		expect.soft(urls).not.toContain("https://api.clashroyale.com/evo-icon.png");
+		expect.soft(urls).not.toContain("https://api.clashroyale.com/hero-icon.png");
 	});
 
 	test("rejects the render when an Evo/Hero card has no variant icon, without fetching medium", async () => {
@@ -332,12 +336,43 @@ describe("renderDeckGrid", () => {
 		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Uint8Array);
 	});
 
-	test("renders separately for a different deck", async () => {
-		await renderDeckGrid([card()]);
-		const readsAfterFirst = readFileMock.mock.calls.length;
-		await renderDeckGrid([card()]);
+	test("re-reads every tile when the same deck renders twice — there is no cache", async () => {
+		const cards = [card(), card()];
 
-		expect(readFileMock.mock.calls.length).toBeGreaterThan(readsAfterFirst);
+		await renderDeckGrid(cards);
+
+		expect(readFileMock).toHaveBeenCalledTimes(cards.length);
+
+		await renderDeckGrid(cards);
+
+		// The *identical* deck, rendered again: a fresh isolate per tick means a cross-tick cache could
+		// never hit, so renderDeckGrid deliberately keeps none — and no per-tile cache either (local
+		// reads ride the OS page cache). Re-rendering a different deck would pass either way, so this
+		// only pins the decision when the decks match.
+		expect(readFileMock).toHaveBeenCalledTimes(cards.length * 2);
+	});
+
+	test("rejects an empty deck rather than encoding a zero-tile grid", async () => {
+		// discord.ts hands over `player.cards` unchecked, and planGrid(0) would still describe a
+		// 4-column canvas — so the guard is what turns an empty deck into the text-only fallback.
+		await expect(renderDeckGrid([])).rejects.toThrow("No cards to render");
+		expect(readFileMock).not.toHaveBeenCalled();
+	});
+
+	test("warns that rows may clip when a tile keeps less bottom padding than the row overlap", async () => {
+		// FIXTURE is fully opaque, so trimToArt keeps it to the pixel: bottomPadding 0, under the 16px
+		// the row below overlaps by (ROW_GAP). Five tiles is the smallest deck with a row under another.
+		await renderDeckGrid(Array.from({ length: 5 }, () => card()));
+
+		expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("grid rows may clip"));
+	});
+
+	test("stays quiet about clipping when the whole deck fits on one row", async () => {
+		await renderDeckGrid(Array.from({ length: 4 }, () => card()));
+
+		// Nothing sits below the last row to clip into it, so the check has to skip that row —
+		// otherwise the same zero-padding tiles would warn on every single-row post.
+		expect(log.warn).not.toHaveBeenCalled();
 	});
 });
 
@@ -391,6 +426,26 @@ describe("trimToArt", () => {
 		expect(tile.width).toBe(CANVAS_WIDTH - RECT.left);
 		expect(tile.height).toBe(CANVAS_HEIGHT - RECT.top);
 		expect(tile.data.length).toBe(tile.width * tile.height * 4);
+	});
+
+	test("keeps the whole frame for a fully transparent tile", async () => {
+		// scanArtBounds' `maxX === -1` sentinel. Shouldn't happen for real card art, but the fallback
+		// has to be the untouched frame: cropping to an empty region would hand `.composite()` a
+		// zero-byte input and reject the whole render over one blank tile.
+		const blank = await insetFixture(CANVAS_WIDTH, CANVAS_HEIGHT, {
+			left: 0,
+			top: 0,
+			width: 0,
+			height: 0,
+		});
+
+		const tile = await trimToArt(blank);
+
+		expect(tile.width).toBe(CANVAS_WIDTH);
+		expect(tile.height).toBe(CANVAS_HEIGHT);
+		expect(tile.data.length).toBe(CANVAS_WIDTH * CANVAS_HEIGHT * 4);
+		// Every row counts as padding, so a blank tile also trips renderDeckGrid's clip warning.
+		expect(tile.bottomPadding).toBe(CANVAS_HEIGHT);
 	});
 
 	test("produces byte-identical buffers across two renders of the same fixture", async () => {

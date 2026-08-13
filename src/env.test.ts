@@ -59,7 +59,11 @@ describe("config", () => {
 		const { config, log } = await importEnv();
 
 		expect(config).toEqual({ token: "my-token", targets: [] });
-		expect(log.error).toHaveBeenCalledTimes(1);
-		expect(log.error).toHaveBeenCalledWith(expect.stringContaining(TARGETS_VAR), expect.anything());
+		// Exactly once: `parseEnv` logs per var, so a second line here would mean the token var was
+		// dragged into the same failure.
+		expect(log.error).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining(TARGETS_VAR),
+			expect.anything()
+		);
 	});
 });

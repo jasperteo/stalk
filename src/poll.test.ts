@@ -27,19 +27,24 @@ function battlelogFetch(entries: unknown[]) {
  * Returns `tick`, a one-target `pollAll` — the tests drive the real tick entry point rather than
  * `poll` (which is module-private now), so each call re-reads lastBattle exactly as production does
  * and sequences of polls need no lastBattle plumbing.
+ *
+ * `log` comes back with it because `vi.resetModules()` re-evaluates the manual `@/log.ts` mock,
+ * handing out a fresh `log` each time: a statically imported one would be a stale instance poll.ts
+ * is no longer bound to.
  */
 async function importPoll() {
 	const getKv = spyMemoryKv();
 
 	vi.resetModules();
 	const { listLastBattles, pollAll } = await import("@/poll.ts");
+	const { log } = await import("@/log.ts");
 
 	const tick = async (target: Target = TARGET) => {
 		const outcomes = await pollAll([target], TOKEN);
 		return outcomes[0];
 	};
 
-	return { pollAll, tick, listLastBattles, kv: getKv() };
+	return { pollAll, tick, listLastBattles, log, kv: getKv() };
 }
 
 describe("poll", () => {
@@ -164,7 +169,7 @@ describe("poll", () => {
 	});
 
 	test("re-seeds without throwing when the stored lastBattle value is corrupt", async () => {
-		const { tick, listLastBattles, kv } = await importPoll();
+		const { tick, listLastBattles, kv, log } = await importPoll();
 		await kv.set(["lastBattle", TAG], "garbage-cursor");
 
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
@@ -172,6 +177,19 @@ describe("poll", () => {
 
 		expect(notifyBattle).not.toHaveBeenCalled();
 		expect(await listLastBattles()).toEqual({ [TAG]: "2024-01-15T14:30:22.000Z" });
+		// A corrupt value is the loud case; an absent/expired one re-seeds silently (below).
+		expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("Corrupt lastBattle value"));
+	});
+
+	test("re-seeds silently when the stored lastBattle value is simply absent", async () => {
+		const { tick, log } = await importPoll();
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
+		expect(await tick()).toBe("seeded");
+
+		// First run and an expired entry are indistinguishable and both normal, so neither may warn —
+		// `readLastBattle` skips the parse entirely on `undefined` to keep that check exact.
+		expect(log.warn).not.toHaveBeenCalled();
 	});
 
 	test("leaves lastBattle untouched when the CR API request fails", async () => {
@@ -240,10 +258,7 @@ describe("pollAll", () => {
 	// The lastBattle read runs before any poll(), so it is the one failure that isn't already
 	// contained by poll()'s own catch — and it hits every target at once. It must not reject the tick.
 	test("reports every target failed when the lastBattle read fails, without seeding any lastBattle", async () => {
-		const { pollAll, listLastBattles, kv } = await importPoll();
-		// importPoll()'s vi.resetModules() re-evaluates the manual `@/log.ts` mock, so it hands out a
-		// fresh `log` each time; re-import here to get the instance poll.ts is actually bound to.
-		const { log } = await import("@/log.ts");
+		const { pollAll, listLastBattles, kv, log } = await importPoll();
 
 		vi.spyOn(kv, "list").mockImplementationOnce(() => {
 			throw new Error("kv unavailable");
