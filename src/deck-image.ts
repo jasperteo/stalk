@@ -449,9 +449,10 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 		.composite(overlays)
 		.png({ compressionLevel: GRID_COMPRESSION })
 		.toUint8Array();
-	// Narrowed, not copied: sharp documents toUint8Array() as returning a transferable, plain
-	// ArrayBuffer — only the declared type is the wider Uint8Array<ArrayBufferLike> that BlobPart
-	// (File/FormData) rejects. Copying a grid-sized PNG per render to satisfy the type isn't worth it.
+	// SAFETY: Narrowed, not copied — sharp documents toUint8Array() as returning a transferable,
+	// plain ArrayBuffer; only the declared type is the wider Uint8Array<ArrayBufferLike> that
+	// BlobPart (File/FormData) rejects. Copying a grid-sized PNG per render to satisfy the type
+	// isn't worth it.
 	const png = data as Uint8Array<ArrayBuffer>;
 	const end = performance.now();
 

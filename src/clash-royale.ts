@@ -35,6 +35,9 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
 	return v.parse(v.array(v.unknown()), await response.json());
 }
 
+/** What {@link latestBattle} resolved out of a battle log: the battle, or why there isn't one. */
+type BattleSelection = { battle: Battle | undefined; drifted: boolean };
+
 /**
  * Picks the newest eligible (1v1) battle and fully validates only that one — a tick posts at most
  * one battle, so matches in between are skipped by design.
@@ -47,7 +50,7 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
  * @returns The battle, plus `drifted` when an entry was selected but failed full validation — API
  *   schema drift, which the caller surfaces separately from "no new battles".
  */
-function latestBattle(entries: unknown[]): { battle: Battle | undefined; drifted: boolean } {
+function latestBattle(entries: unknown[]): BattleSelection {
 	const newest = entries.find((entry) => isEligibleBattle(entry));
 
 	if (newest === undefined) {

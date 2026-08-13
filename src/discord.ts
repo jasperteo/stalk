@@ -3,11 +3,28 @@ import { ERROR_BODY_CHARS, hl, log } from "@/log.ts";
 import type { Battle, Card, EvolutionLevel, Player } from "@/schema.ts";
 
 const OUTCOMES = {
-	[1]: { result: "Victory", verb: "Won", color: 0x00_c9_50 }, // Green
-	[-1]: { result: "Defeat", verb: "Lost", color: 0xe7_00_0b }, // Red
+	victory: { result: "Victory", verb: "Won", color: 0x00_c9_50 }, // Green
+	defeat: { result: "Defeat", verb: "Lost", color: 0xe7_00_0b }, // Red
 	// No verb: `battleContext` uses this being undefined as the signal to skip the HP-margin line.
-	[0]: { result: "Draw", verb: undefined, color: 0xff_df_20 }, // Yellow
+	draw: { result: "Draw", verb: undefined, color: 0xff_df_20 }, // Yellow
 } as const;
+
+/**
+ * The outcome from the tracked player's side. Keyed by name rather than by `Math.sign`'s -1/0/1, so
+ * the three branches cover the table exhaustively by construction — no cast widening `number` back
+ * down to a key union.
+ */
+function outcomeFor(mine: number, theirs: number) {
+	if (mine > theirs) {
+		return OUTCOMES.victory;
+	}
+
+	if (mine < theirs) {
+		return OUTCOMES.defeat;
+	}
+
+	return OUTCOMES.draw;
+}
 
 const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi-logo-128.png";
 
@@ -112,16 +129,16 @@ function buildSupportField(player: Player | undefined, label: string) {
  * Curated art for the tower troops we have art for, overriding the API's own `iconUrls.medium`.
  * Keyed by troop card id; anything else (a newer troop) falls through to the API icon.
  */
-const TOWER_TROOP_ART: Record<number, string> = {
+const TOWER_TROOP_ART = new Map([
 	// Tower Princess
-	159_000_000: "https://liquipedia.net/commons/images/5/54/Clash_Royale_Card_Tower_Princess.png",
+	[159_000_000, "https://liquipedia.net/commons/images/5/54/Clash_Royale_Card_Tower_Princess.png"],
 	// Cannoneer
-	159_000_001: "https://liquipedia.net/commons/images/0/06/Clash_Royale_Card_Cannoneer.png",
+	[159_000_001, "https://liquipedia.net/commons/images/0/06/Clash_Royale_Card_Cannoneer.png"],
 	// Dagger Duchess
-	159_000_002: "https://liquipedia.net/commons/images/f/fb/Clash_Royale_Card_Dagger_Duchess.png",
+	[159_000_002, "https://liquipedia.net/commons/images/f/fb/Clash_Royale_Card_Dagger_Duchess.png"],
 	// Royal Chef
-	159_000_004: "https://liquipedia.net/commons/images/5/50/Clash_Royale_Card_Royal_Chef.png",
-};
+	[159_000_004, "https://liquipedia.net/commons/images/5/50/Clash_Royale_Card_Royal_Chef.png"],
+]);
 
 /** The player's tower troop art as the embed thumbnail; undefined if the mode has none. */
 function towerThumbnail(player: Player | undefined) {
@@ -130,7 +147,7 @@ function towerThumbnail(player: Player | undefined) {
 		return undefined;
 	}
 
-	return { url: TOWER_TROOP_ART[troop.id] ?? troop.iconUrls.medium };
+	return { url: TOWER_TROOP_ART.get(troop.id) ?? troop.iconUrls.medium };
 }
 
 /**
@@ -142,12 +159,12 @@ function towerThumbnail(player: Player | undefined) {
 function battleContext(battle: Battle, me: Player) {
 	const opponent = battle.opponent[0];
 	const opponentCrowns = opponent?.crowns ?? 0;
-	const diff = Math.sign(me.crowns - opponentCrowns) as keyof typeof OUTCOMES;
-	const outcome = OUTCOMES[diff];
+	const won = me.crowns > opponentCrowns;
+	const outcome = outcomeFor(me.crowns, opponentCrowns);
 
 	// HP margin on decisive games only, measured on the winner's side so it stays positive even
 	// when both sides felled a tower (e.g. 2-1).
-	const winner = diff === 1 ? me : opponent;
+	const winner = won ? me : opponent;
 	const margin = outcome.verb
 		? `${outcome.verb} by ${weakestSurvivingTowerHp(winner).toLocaleString()}hp`
 		: undefined;
