@@ -212,7 +212,8 @@ non-DOM global set — it says nothing about the underlying runtime. Discovery i
 `unstubEnvs` are all on; no test uses `.concurrent`, since several mutate shared `globalThis` state.
 
 - `src/testing/kv.ts` — `spyMemoryKv()`, the shared `Deno.openKv` spy. Redirects a module's
-  top-level `await Deno.openKv()` to a fresh `:memory:` store and closes it in an `afterEach`.
+  top-level `await Deno.openKv()` to a fresh `:memory:` store and closes it via `onTestFinished`, so
+  the handle stays scoped to the test that opened it. Call it from inside a test body, never a hook.
 - `src/testing/fixtures.ts` — raw (pre-validation) API shapes: `rawCard`/`rawPlayer`/`rawBattle`
   factories, so a test overriding one field doesn't restate the rest; the prebuilt `driftedBattle`
   and `duelBattle` entries for the two rejection paths; and the `BOB`/`WEBHOOK` constants.
