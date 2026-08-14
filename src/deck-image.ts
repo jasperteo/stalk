@@ -21,15 +21,9 @@ import type { Card, EvolutionLevel } from "@/schema.ts";
 // ════════════════════════════════════════════ RUNTIME ════════════════════════════════════════════
 
 /**
- * Lazily imports sharp so its native binding loads on first render, not every isolate cold boot.
- * `sharp.cache(false)` disables libvips' own cache: a fresh isolate per tick means it can never
- * accumulate a useful hit, only hold memory, so no cache is wanted here at all.
- * `sharp.concurrency(1)` collapses each pipeline's thread pool to one thread, trading wall time for
- * total CPU. Deploy bills by total CPU, not wall time, so nothing here is lost by that trade.
- *
- * `Lazy` is here for its rejection semantics, not just the memo: it clears its state when the
- * initializer rejects, so the next render retries. Caching the rejection would let one transient
- * dlopen failure silently poison every later render for the isolate's lifetime.
+ * Lazily imports and configures sharp on first render — `cache(false)`, `concurrency(1)`. `Lazy`
+ * specifically (not a bare promise memo) for its rejection semantics: it clears its state on a
+ * rejected initializer, so a transient dlopen failure doesn't silently poison every later render.
  *
  * @see docs/deck-rendering.md#sharp-runtime-config
  */
@@ -339,12 +333,8 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
 }
 
 /**
- * Fetches a fallback card icon and trims it exactly like a local one, shrinking it only if the
- * _trimmed_ tile still overflows the cell.
- *
- * Trim first, resize second — never the reverse. `CELL_WIDTH`/`CELL_HEIGHT` bound every local
- * icon's **trimmed** size, not its raw canvas: fitting the untrimmed canvas to the cell would
- * shrink the tile's transparent margin along with its art, leaving it smaller than its neighbours.
+ * Fetches a fallback card icon and trims it exactly like a local one, resizing only if the trimmed
+ * tile still overflows the cell — trim before resize, never the reverse.
  *
  * @throws When the CDN response isn't ok.
  * @see docs/deck-rendering.md#cdn-fallback

@@ -31,10 +31,9 @@ type PollOutcome = (typeof POLL_OUTCOMES)[number];
  * the caller re-seeds instead of re-posting every tick against a value that can never match.
  *
  * @param stored The raw KV value, exactly as {@link listLastBattles} read it.
- * @param tag Only for the corrupt-value log line — the value is already in hand, so nothing here
- *   looks anything up by tag.
- * @returns The parsed lastBattle time, or `undefined` for both "no stored value" and "corrupt
- *   value" (already logged) — the caller treats both as first-run.
+ * @param tag Only for the corrupt-value log line.
+ * @returns The parsed lastBattle time, or `undefined` for both cases above — the caller treats both
+ *   as first-run.
  */
 function readLastBattle(stored: unknown, tag: string): string | undefined {
 	if (stored === undefined) {
@@ -52,11 +51,9 @@ function readLastBattle(stored: unknown, tag: string): string | undefined {
 }
 
 /**
- * Polls one target against the lastBattle value {@link pollAll} read for it this tick. Taking
- * `stored` as an argument rather than fetching it here is what lets a tick cost one KV read instead
- * of one per player — see {@link pollAll}. Never rejects: every error resolves "failed", which is
- * why `pollAll` uses `Promise.all` rather than `allSettled` — one player's failure can't sink the
- * others.
+ * Polls one target against the lastBattle value {@link pollAll} read for it this tick — see
+ * {@link pollAll} for why `stored` is a parameter here rather than a fetch, and why this function
+ * never rejects.
  *
  * @param stored This tag's raw KV value, still uninterpreted.
  */
@@ -128,14 +125,15 @@ async function listLastBattles(): Promise<Record<string, unknown>> {
  *
  * One `list` for the whole set, rather than a `kv.get` per player: KV reads are the free tier's
  * binding limit (450k/month), and a per-player read at one tick a minute costs ~43.8k of them per
- * player per month. Reading them together keeps a tick's read cost flat in the target count. Writes
- * are untouched — each player still writes its own key on success, so concurrent polls never share
- * a value.
+ * player per month. Writes are untouched — each player still writes its own key on success, so
+ * concurrent polls never share a value.
  *
  * Never rejects, which is what lets main.ts's cron handler await it with no catch of its own and
- * still reach its tally line. {@link poll} contains each target's own errors; the lastBattle read —
- * the one failure that precedes every poll — is contained here. Any `await` added to this function
- * outside that try reintroduces a rejected tick and silently costs the tally.
+ * still reach its tally line. {@link poll} contains each target's own errors, resolving "failed"
+ * rather than rejecting — which is why the fan-out below can use `Promise.all` and not
+ * `allSettled`; the lastBattle read — the one failure that precedes every poll — is contained here.
+ * Any `await` added to this function outside that try reintroduces a rejected tick and silently
+ * costs the tally.
  *
  * @returns One outcome per target, index-aligned with `targets` (`Promise.all` preserves order).
  */

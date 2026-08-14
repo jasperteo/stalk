@@ -40,8 +40,8 @@ const ALLOWED_MENTIONS = { parse: [] } as const;
 
 /**
  * Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. The
- * `satisfies` guard works like `EVOLUTION_SUFFIX` in deck-image.ts: a new schema level fails to
- * compile rather than fall through to a bare name.
+ * `satisfies` clause makes a new schema level fail to compile, like `EVOLUTION_SUFFIX` in
+ * deck-image.ts.
  */
 const EVOLUTION_PREFIX = {
 	1: "Evo ",
@@ -238,9 +238,8 @@ type BattleContext = ReturnType<typeof battleContext>;
 /**
  * The one place a webhook body is serialized, so no payload shape can forget
  * {@link ALLOWED_MENTIONS} — both the multipart `payload_json` part and the text-only fallback go
- * through here. Adding the field per call site instead would leave a third shape unprotected by
- * default, which for this particular field means silently re-enabling `@everyone` on a name we
- * don't control.
+ * through here. Adding the field per call site instead would leave a third shape unprotected, and
+ * silently so, by default.
  */
 function payloadJson(message: { content: string; embeds: unknown[] }) {
 	return JSON.stringify({ ...message, allowed_mentions: ALLOWED_MENTIONS });
@@ -331,10 +330,12 @@ async function postWebhook(webhookUrl: string, request: RequestInit) {
 
 /**
  * Posts a single battle to the webhook. `battle.team[0]` is always the tracked player (2v2 is
- * filtered out upstream). Multipart when the deck images render — fetch derives the boundary from
- * the FormData body, so no manual Content-Type — otherwise the JSON text fallback. A payload
- * Discord rejects outright (see {@link PAYLOAD_REJECTED}) retries once with the text-only fallback
- * instead of failing the whole tick and re-posting the identical oversized request every minute.
+ * filtered out upstream).
+ *
+ * Multipart when the deck images render — fetch derives the boundary from the FormData body, so no
+ * manual Content-Type — otherwise the JSON text fallback. A payload Discord rejects outright (see
+ * {@link PAYLOAD_REJECTED}) retries once with the text-only fallback, instead of failing the whole
+ * tick and re-posting the identical oversized request every minute.
  *
  * @throws When Discord still rejects the post after that retry (a 5xx/429, or a non-payload 4xx).
  */
