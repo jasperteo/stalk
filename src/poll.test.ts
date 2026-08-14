@@ -55,7 +55,7 @@ describe("poll", () => {
 		expect(await tick()).toBe("seeded");
 
 		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await listLastBattles()).toEqual({ [TAG]: "2024-01-01T00:00:00.000Z" });
+		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-01T00:00:00.000Z"]]));
 	});
 
 	test("posts and advances lastBattle on a new battle after the first run", async () => {
@@ -68,7 +68,7 @@ describe("poll", () => {
 		expect(await tick()).toBe("posted");
 
 		expect(notifyBattle).toHaveBeenCalledTimes(1);
-		expect(await listLastBattles()).toEqual({ [TAG]: "2024-01-15T14:30:22.000Z" });
+		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-15T14:30:22.000Z"]]));
 	});
 
 	test("leaves lastBattle untouched when the post fails, then retries next poll", async () => {
@@ -82,13 +82,13 @@ describe("poll", () => {
 		expect(await tick()).toBe("failed");
 
 		// The failed post must not advance lastBattle — the battle is still owed.
-		expect(await listLastBattles()).toEqual({ [TAG]: "2024-01-01T00:00:00.000Z" });
+		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-01T00:00:00.000Z"]]));
 
 		// The retry posts the same battle and only then advances lastBattle.
 		expect(await tick()).toBe("posted");
 
 		expect(notifyBattle).toHaveBeenCalledTimes(2);
-		expect(await listLastBattles()).toEqual({ [TAG]: "2024-01-15T14:30:22.000Z" });
+		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-15T14:30:22.000Z"]]));
 	});
 
 	test("prefers a duplicate post over a lost battle when the lastBattle write fails", async () => {
@@ -104,13 +104,13 @@ describe("poll", () => {
 		// The post happened, but the failed write leaves the old lastBattle — the battle is not marked
 		// done.
 		expect(notifyBattle).toHaveBeenCalledTimes(1);
-		expect(await listLastBattles()).toEqual({ [TAG]: "2024-01-01T00:00:00.000Z" });
+		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-01T00:00:00.000Z"]]));
 
 		// At-least-once: the same battle posts again (a duplicate), then lastBattle finally advances.
 		expect(await tick()).toBe("posted");
 
 		expect(notifyBattle).toHaveBeenCalledTimes(2);
-		expect(await listLastBattles()).toEqual({ [TAG]: "2024-01-15T14:30:22.000Z" });
+		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-15T14:30:22.000Z"]]));
 	});
 
 	test("writes lastBattle with a 30-day TTL on both seed and post", async () => {
@@ -154,7 +154,7 @@ describe("poll", () => {
 		expect(await tick()).toBe("skipped");
 
 		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await listLastBattles()).toEqual({});
+		expect(await listLastBattles()).toEqual(new Map());
 	});
 
 	test("reports drift without notifying or writing lastBattle when the newest eligible entry fails schema validation", async () => {
@@ -165,7 +165,7 @@ describe("poll", () => {
 		expect(await tick()).toBe("drifted");
 
 		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await listLastBattles()).toEqual({});
+		expect(await listLastBattles()).toEqual(new Map());
 	});
 
 	test("re-seeds without throwing when the stored lastBattle value is corrupt", async () => {
@@ -176,7 +176,7 @@ describe("poll", () => {
 		expect(await tick()).toBe("seeded");
 
 		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await listLastBattles()).toEqual({ [TAG]: "2024-01-15T14:30:22.000Z" });
+		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-15T14:30:22.000Z"]]));
 		// A corrupt value is the loud case; an absent/expired one re-seeds silently (below).
 		expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("Corrupt lastBattle value"));
 	});
@@ -202,7 +202,7 @@ describe("poll", () => {
 		expect(await tick()).toBe("failed");
 
 		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await listLastBattles()).toEqual({});
+		expect(await listLastBattles()).toEqual(new Map());
 	});
 
 	test("keeps lastBattle entries namespaced per tag in a shared KV", async () => {
@@ -215,10 +215,12 @@ describe("poll", () => {
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240102T000000.000Z" })]));
 		await tick({ tag: TAG_B, webhook: WEBHOOK });
 
-		expect(await listLastBattles()).toEqual({
-			[TAG]: "2024-01-01T00:00:00.000Z",
-			[TAG_B]: "2024-01-02T00:00:00.000Z",
-		});
+		expect(await listLastBattles()).toEqual(
+			new Map([
+				[TAG, "2024-01-01T00:00:00.000Z"],
+				[TAG_B, "2024-01-02T00:00:00.000Z"],
+			])
+		);
 	});
 });
 
@@ -272,7 +274,7 @@ describe("pollAll", () => {
 
 		// Nothing posted, and no lastBattle was seeded past anyone's newest battle.
 		expect(notifyBattle).not.toHaveBeenCalled();
-		expect(await listLastBattles()).toEqual({});
+		expect(await listLastBattles()).toEqual(new Map());
 		expect(log.error).toHaveBeenCalled();
 	});
 });

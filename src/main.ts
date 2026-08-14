@@ -13,7 +13,7 @@ const app = new Hono();
 app.get("/", (ctx) => ctx.json({ status: "ok" }));
 
 /** Read-only lastBattle dump; no secrets live in KV, so this is safe to expose. */
-app.get("/kv/last-battle", async (ctx) => ctx.json(await listLastBattles()));
+app.get("/kv/last-battle", async (ctx) => ctx.json(Object.fromEntries(await listLastBattles())));
 
 Deno.serve({
 	handler: app.fetch,

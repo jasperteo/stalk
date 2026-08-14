@@ -106,16 +106,16 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
  * — {@link readLastBattle} is where corrupt-vs-absent gets decided. Used by {@link pollAll} and
  * main.ts's debug route.
  *
- * @returns Tag → raw stored value. A tag with nothing stored is **absent from the record**, not
+ * @returns Tag → raw stored value. A tag with nothing stored is **absent from the map**, not
  *   present-and-nullish, which is what makes {@link readLastBattle}'s `=== undefined` check exact.
  */
-async function listLastBattles(): Promise<Record<string, unknown>> {
-	const lastBattles: Record<string, unknown> = {};
+async function listLastBattles(): Promise<Map<string, unknown>> {
+	const lastBattles = new Map<string, unknown>();
 
 	for await (const entry of kv.list({ prefix: [LAST_BATTLE_PREFIX] })) {
 		const [, tag] = entry.key;
 
-		lastBattles[String(tag)] = entry.value;
+		lastBattles.set(String(tag), entry.value);
 	}
 
 	return lastBattles;
@@ -140,7 +140,7 @@ async function listLastBattles(): Promise<Record<string, unknown>> {
  * @returns One outcome per target, index-aligned with `targets` (`Promise.all` preserves order).
  */
 async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]> {
-	let lastBattles: Record<string, unknown>;
+	let lastBattles: Map<string, unknown>;
 
 	try {
 		lastBattles = await listLastBattles();
@@ -154,7 +154,9 @@ async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]>
 		return targets.map((): PollOutcome => "failed");
 	}
 
-	return await Promise.all(targets.map((target) => poll(target, token, lastBattles[target.tag])));
+	return await Promise.all(
+		targets.map((target) => poll(target, token, lastBattles.get(target.tag)))
+	);
 }
 
 export { listLastBattles, POLL_OUTCOMES, pollAll };
