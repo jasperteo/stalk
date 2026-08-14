@@ -23,6 +23,8 @@ const LAST_BATTLE_TTL_MS = Temporal.Duration.from({ days: 30 }).total("milliseco
 const POLL_OUTCOMES = ["posted", "seeded", "skipped", "drifted", "failed"] as const;
 type PollOutcome = (typeof POLL_OUTCOMES)[number];
 
+type LastBattle = v.InferOutput<typeof LastBattleSchema>;
+
 /**
  * Interprets one raw stored lastBattle value. Absence — `stored` is `undefined`, meaning first run
  * or an expired entry — is never corrupt, so it skips the parse straight to `undefined`;
@@ -35,7 +37,7 @@ type PollOutcome = (typeof POLL_OUTCOMES)[number];
  * @returns The parsed lastBattle time, or `undefined` for both cases above — the caller treats both
  *   as first-run.
  */
-function readLastBattle(stored: unknown, tag: string): string | undefined {
+function readLastBattle(stored: unknown, tag: string): LastBattle | undefined {
 	if (stored === undefined) {
 		return undefined;
 	}
