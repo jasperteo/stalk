@@ -13,6 +13,10 @@ const PROXY_BASE = "https://proxy.royaleapi.dev/v1";
 /** Abort the battle-log request after this long, so a hung request can't stall the cron tick. */
 const FETCH_TIMEOUT_MS = 10_000;
 
+/** The battle log as fetched: an array whose entries stay unvalidated until {@link latestBattle}. */
+const BattleLogSchema = v.array(v.unknown());
+type BattleLog = v.InferOutput<typeof BattleLogSchema>;
+
 /**
  * Fetches a player's raw battle-log entries. Schema validation is deferred to {@link latestBattle}.
  *
@@ -20,7 +24,7 @@ const FETCH_TIMEOUT_MS = 10_000;
  *   selects on.
  * @throws When the API response isn't ok.
  */
-async function fetchBattlelog(playerTag: string, token: string): Promise<unknown[]> {
+async function fetchBattlelog(playerTag: string, token: string): Promise<BattleLog> {
 	const response = await fetch(`${PROXY_BASE}/players/${encodeURIComponent(playerTag)}/battlelog`, {
 		headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
 		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -34,7 +38,7 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<unknown
 		);
 	}
 
-	return v.parse(v.array(v.unknown()), await response.json());
+	return v.parse(BattleLogSchema, await response.json());
 }
 
 /** What {@link latestBattle} resolved out of a battle log: the battle, or why there isn't one. */
@@ -52,7 +56,7 @@ type BattleSelection = { battle: Battle | undefined; drifted: boolean };
  * @returns The battle, plus `drifted` when an entry was selected but failed full validation — API
  *   schema drift, which the caller surfaces separately from "no new battles".
  */
-function latestBattle(entries: unknown[]): BattleSelection {
+function latestBattle(entries: BattleLog): BattleSelection {
 	const newest = entries.find((entry) => isEligibleBattle(entry));
 
 	if (newest === undefined) {
