@@ -139,6 +139,14 @@ cache-memory side of that cost anymore either — the trade is purely encode CPU
 bytes, which only strengthens the case for native resolution: less CPU, and the extra bytes buy
 nothing visible, since Discord renders embed images at a few hundred px wide regardless.
 
+**The budget those 6.6 MiB are spent against is Discord's 10 MiB default request limit** ("The
+default limit is `10 MiB` for all users, but may be higher … by the server's Boost Tier" — Discord's
+API reference), so a post sits at roughly 66% of it. Comfortable today, and `PAYLOAD_REJECTED` in
+`discord.ts` self-heals an overflow by retrying text-only — but that headroom is what anything
+raising the grid's pixel count spends. A third row, a wider cell, or a third attachment all come out
+of the same ~3.4 MiB, and the failure mode without checking first is a 400 in production that costs
+every post its images.
+
 ## No cache
 
 `renderDeckGrid` renders straight through, every call, with nothing memoized. An earlier version

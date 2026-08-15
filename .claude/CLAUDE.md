@@ -59,6 +59,25 @@ Break one of these and the app misbehaves in a way tests may not catch.
    stranger. A new payload shape that calls `JSON.stringify` directly re-enables `@everyone` parsing
    on that name, and the existing tests only cover the two shapes that exist today.
 
+### Known ceilings
+
+Neither is a problem at the current scale; both are recorded so the next person doesn't have to
+re-derive them.
+
+- **`pollAll`'s fan-out is unbounded** (`Promise.all` over every target). Each in-flight post holds
+  roughly 25 MB of pixels — per grid, a ~5.09 MB raw canvas plus ~3.8 MB of decoded tiles plus the
+  ~3.44 MB encoded PNG, and a post carries two. That makes isolate memory the binding constraint
+  somewhere around 15–20 targets, well before CPU or the KV read budget. The fix, when it's needed,
+  is `pooledMap` from `@std/async/pool`: already an installed dependency, zero runtime imports (so
+  it costs nothing at module eval, same as `@std/async/lazy`), and it yields in input order, so
+  `pollAll`'s index-aligned return survives. Note that it reports errors as an `AggregateError` —
+  harmless only because guarantee 3 keeps `poll()` from ever rejecting, which would become the thing
+  keeping that safe.
+- **A post ships ~6.6 MiB of attachments against Discord's 10 MiB default** — about 66%, and
+  `PAYLOAD_REJECTED` self-heals an overflow by retrying text-only. See
+  [the deck-rendering doc](../docs/deck-rendering.md#output-size) before raising the grid's pixel
+  count.
+
 ## Architecture
 
 Deno Deploy gives the app a fresh isolate per cron tick — `Deno.serve`'s `onListen` callback logs on
