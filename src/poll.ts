@@ -73,14 +73,28 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
 
 		const lastSeen = readLastBattle(stored, tag);
 
-		if (battle.battleTime === lastSeen) {
-			return "skipped";
-		}
-
 		// First run (or corrupt lastBattle value): seed without posting a possibly-stale battle.
 		const isFirstRun = lastSeen === undefined;
 
 		if (!isFirstRun) {
+			const order = Temporal.Instant.compare(battle.battleTime, lastSeen);
+
+			if (order === 0) {
+				return "skipped";
+			}
+
+			// The battlelog's newest-first order is an assumption we can't verify (see
+			// clash-royale.ts). If it ever breaks, refuse to move lastBattle backwards: post nothing
+			// and say so, rather than post a stale battle and advance past the newer ones. Compared as
+			// instants, not strings, so this stays correct without depending on BattleTimeSchema's
+			// output happening to sort lexicographically.
+			if (order < 0) {
+				log.warn(
+					`Newest eligible battle for ${hl.entity(tag)} (${battle.battleTime}) predates the stored lastBattle (${lastSeen}); skipping`
+				);
+				return "skipped";
+			}
+
 			await notifyBattle(webhook, battle);
 		}
 

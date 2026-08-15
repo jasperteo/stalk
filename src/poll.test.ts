@@ -147,6 +147,25 @@ describe("poll", () => {
 		expect(notifyBattle).toHaveBeenCalledTimes(1);
 	});
 
+	// Only reachable if the battlelog's newest-first order breaks — see the guard in poll.ts.
+	test("skips an eligible battle older than the stored lastBattle, without rewinding it", async () => {
+		const { tick, listLastBattles, log } = await importPoll();
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
+		await tick();
+
+		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
+		expect(await tick()).toBe("skipped");
+
+		expect(notifyBattle).not.toHaveBeenCalled();
+		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-15T14:30:22.000Z"]]));
+		// Loud, unlike an ordinary skip: a quiet `skipped` here would be indistinguishable from a
+		// player who simply isn't playing, which is exactly the signal we'd need to notice.
+		expect(log.warn).toHaveBeenCalledWith(
+			expect.stringContaining("predates the stored lastBattle")
+		);
+	});
+
 	test("skips without writing lastBattle when there is no eligible battle", async () => {
 		const { tick, listLastBattles } = await importPoll();
 		vi.stubGlobal("fetch", battlelogFetch([]));

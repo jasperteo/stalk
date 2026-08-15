@@ -100,6 +100,9 @@ Internal imports use the `@/` map with explicit `.ts` extensions.
   the schema catches up. An entry whose `team[0].cards` is missing or not an array fails the
   eligibility check during the battlelog scan itself, before anything is selected as newest — that
   resolves `skipped`, not `drifted`, a small accepted narrowing of drift detection.
+- **A battle older than the stored lastBattle** — `poll.ts` compares the two as `Temporal.Instant`s
+  and refuses to move lastBattle backwards: it warns and resolves `skipped`. Only reachable if the
+  battlelog's newest-first ordering breaks; see the guard in `poll.ts` for what that would cost.
 - **Deck render fails** — `discord.ts` posts a text-only embed instead.
 - **Evo/Hero card missing its CDN variant art** — `iconUrl` (`deck-image.ts`) throws rather than
   silently substitute the card's un-evolved `medium` art, which would be the wrong picture, not a
