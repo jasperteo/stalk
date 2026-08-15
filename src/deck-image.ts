@@ -504,14 +504,12 @@ async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
 	return png;
 }
 
-export {
-	CELL_HEIGHT,
-	CELL_WIDTH,
-	decodeToRaw,
-	IMAGES_DIR,
-	planGrid,
-	renderDeckGrid,
-	scanArtBounds,
-	trimToArt,
-};
+export { renderDeckGrid };
+
+/**
+ * @internal Outside the production path — `renderDeckGrid` above is the only export `discord.ts`
+ *   calls. Each declaration names its own consumer (`scripts/measure.ts`, tests, or both).
+ */
+export { CELL_HEIGHT, CELL_WIDTH, decodeToRaw, IMAGES_DIR, planGrid, scanArtBounds, trimToArt };
+
 export type { GridPlan, RawImage };

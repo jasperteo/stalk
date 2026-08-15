@@ -245,8 +245,10 @@ dependency`. Use `scripts/` (its `*.png` output is gitignored) and delete the pr
   in the builtins group), even where Deno's node compat resolves the bare global and lint stays
   green. Genuine platform globals (`fetch`, `Response`, `Deno.*`, `Temporal`, `performance`) are
   fine.
-- **Exports gathered at the bottom** of each module: plain declarations in the body, then one sorted
-  `export { … }` plus a separate `export type { … }`. No inline `export` on declarations.
+- **Exports gathered at the bottom** of each module: plain declarations in the body, then a sorted
+  `export { … }` plus a separate `export type { … }`. No inline `export` on declarations. A module
+  whose surface is mostly not production API may split the value exports into a production group and
+  an `@internal` group (`deck-image.ts`, `discord.ts`), sorted within each.
 - oxlint runs the `typescript`, `unicorn`, `oxc`, and `jsdoc` plugins with type-aware checking
   (`options: { typeAware: true, typeCheck: true }`). Categories are set globally —
   `correctness: "error"`, `perf: "warn"` — on top of a long explicit rule list; `**/*.test.ts` adds
