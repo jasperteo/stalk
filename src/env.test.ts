@@ -28,16 +28,32 @@ describe("config", () => {
 		const { config, log } = await importEnv();
 
 		expect(config).toBeUndefined();
-		expect(log.error).toHaveBeenCalledWith(expect.stringContaining(TOKEN_VAR), expect.anything());
+		// Unset reports at info, never error — see parseEnv's JSDoc for why the two are split.
+		expect(log.info).toHaveBeenCalledWith(expect.stringContaining(TOKEN_VAR));
+		expect(log.error).not.toHaveBeenCalled();
 	});
 
-	test("defaults targets to [] when TARGETS is missing", async () => {
+	test("defaults targets to [] when TARGETS is missing, without reporting an error", async () => {
 		vi.stubEnv(TOKEN_VAR, "my-token");
 		vi.stubEnv(TARGETS_VAR, undefined);
 
-		const { config } = await importEnv();
+		const { config, log } = await importEnv();
 
 		expect(config).toEqual({ token: "my-token", targets: [] });
+		expect(log.info).toHaveBeenCalledWith(expect.stringContaining(TARGETS_VAR));
+		expect(log.error).not.toHaveBeenCalled();
+	});
+
+	test("still reports an empty CR_API_TOKEN as an error, unlike an unset one", async () => {
+		// The distinction the unset path is drawing: "" is a value someone supplied and got wrong,
+		// which TokenEnvSchema's nonEmpty() rejects. That is a malformed var, not an absent one.
+		vi.stubEnv(TOKEN_VAR, "");
+		vi.stubEnv(TARGETS_VAR, undefined);
+
+		const { config, log } = await importEnv();
+
+		expect(config).toBeUndefined();
+		expect(log.error).toHaveBeenCalledWith(expect.stringContaining(TOKEN_VAR), expect.anything());
 	});
 
 	test("parses and normalizes a valid TARGETS value", async () => {

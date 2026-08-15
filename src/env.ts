@@ -6,16 +6,29 @@ import { TargetsEnvSchema, TokenEnvSchema } from "@/schema.ts";
 /**
  * Reads and validates a single env var, logging once and falling back on a missing/invalid value.
  *
+ * Unset and malformed are reported differently on purpose. An unset var is a deploy that isn't
+ * configured yet, not a mistake in a value someone wrote, and Deno Deploy evaluates this module in
+ * a fresh isolate every tick — so logging it at `error` would print an error line a minute for a
+ * state that is merely incomplete. Consumers supply the loudness where it's warranted: `main.ts`
+ * warns every tick on a missing token.
+ *
  * @template TOutput The schema's output type. Tying `fallback` to it is what lets callers
  *   destructure the result without re-narrowing — both paths hand back the same type.
  * @param fallback Returned, after logging, when the var is unset or fails validation.
  */
 function parseEnv<TOutput>(
 	name: string,
-	schema: v.GenericSchema<string | undefined, TOutput>,
+	schema: v.GenericSchema<string, TOutput>,
 	fallback: TOutput
 ) {
-	const parsed = v.safeParse(schema, Deno.env.get(name));
+	const raw = Deno.env.get(name);
+
+	if (raw === undefined) {
+		log.info(`${hl.entity(name)} is not set`);
+		return fallback;
+	}
+
+	const parsed = v.safeParse(schema, raw);
 
 	if (!parsed.success) {
 		log.error(`Invalid ${hl.entity(name)} env var:`, v.flatten(parsed.issues));
