@@ -2,7 +2,7 @@ import * as v from "valibot";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { renderDeckGrid } from "@/deck-image.ts";
-import { notifyBattle } from "@/discord.ts";
+import { battleContext, buildFallbackMessage, notifyBattle } from "@/discord.ts";
 import { log } from "@/log.ts";
 import { BattleSchema } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
@@ -30,6 +30,22 @@ function makeBattle(overrides: Record<string, unknown> = {}): Battle {
 			...overrides,
 		})
 	);
+}
+
+/**
+ * The shared battle context for a battle, built directly. Everything downstream of it is pure
+ * formatting, so the tests below assert on it (and on {@link fallbackFor}) rather than posting a
+ * message and decoding the strings back out of an HTTP body. The `fetch`-driven helpers further
+ * down are for the tests that are genuinely about the send path.
+ */
+function contextFor(overrides: Record<string, unknown> = {}) {
+	const battle = makeBattle(overrides);
+	return battleContext(battle, battle.team[0]);
+}
+
+/** The text-only message body for a battle, built directly — no render failure to stage, no POST. */
+function fallbackFor(overrides: Record<string, unknown> = {}): Payload {
+	return buildFallbackMessage(contextFor(overrides)) as unknown as Payload;
 }
 
 /**
@@ -104,28 +120,22 @@ describe("notifyBattle", () => {
 		expect(init?.signal).toBeInstanceOf(AbortSignal);
 	});
 
-	test("posts a loss with the opponent's HP margin", async () => {
-		await notifyBattle(
-			WEBHOOK,
-			makeBattle({
-				team: [player({ crowns: 1 })],
-				opponent: [player({ ...BOB, crowns: 2, kingTowerHitPoints: 1000 })],
-			})
-		);
+	test("reports a loss with the opponent's HP margin", () => {
+		const { content } = contextFor({
+			team: [player({ crowns: 1 })],
+			opponent: [player({ ...BOB, crowns: 2, kingTowerHitPoints: 1000 })],
+		});
 
-		expect(sentPayload().content).toBe("# Defeat\n## Alice  1 — 2  Bob\nLost by 1,000hp");
+		expect(content).toBe("# Defeat\n## Alice  1 — 2  Bob\nLost by 1,000hp");
 	});
 
-	test("posts a draw with no HP margin line", async () => {
-		await notifyBattle(
-			WEBHOOK,
-			makeBattle({
-				team: [player({ crowns: 1 })],
-				opponent: [player(BOB)],
-			})
-		);
+	test("reports a draw with no HP margin line", () => {
+		const { content } = contextFor({
+			team: [player({ crowns: 1 })],
+			opponent: [player(BOB)],
+		});
 
-		expect(sentPayload().content).toBe("# Draw\n## Alice  1 — 1  Bob");
+		expect(content).toBe("# Draw\n## Alice  1 — 1  Bob");
 	});
 
 	test("falls back to a text-only JSON embed when deck rendering fails", async () => {
@@ -199,50 +209,40 @@ describe("notifyBattle", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
-	test("does nothing when the battle has no tracked player", async () => {
-		await notifyBattle(WEBHOOK, makeBattle({ team: [] }));
+	test("deep-links each side's embed to that side's own battle log", () => {
+		const { me, opponent, embedBase } = contextFor();
 
-		expect(fetch).not.toHaveBeenCalled();
-	});
-
-	test("deep-links each embed's author to that side's own battle log", async () => {
-		await notifyBattle(WEBHOOK, makeBattle());
-
-		const payload = sentPayload();
-
-		// Soft: the failure mode worth seeing whole is both embeds pointing at the same player.
-		expect.soft(payload.embeds[0]?.author?.url).toBe("https://royaleapi.com/player/ABC123/battles");
-		expect.soft(payload.embeds[1]?.author?.url).toBe("https://royaleapi.com/player/DEF456/battles");
+		// Soft: the failure mode worth seeing whole is both sides pointing at the same player.
+		expect.soft(embedBase(me).author.url).toBe("https://royaleapi.com/player/ABC123/battles");
+		expect.soft(embedBase(opponent).author.url).toBe("https://royaleapi.com/player/DEF456/battles");
 	});
 
 	describe("footer", () => {
-		test("names the game mode, with its underscores spaced out", async () => {
-			await notifyBattle(WEBHOOK, makeBattle({ gameMode: { name: "Path_of_Legends" } }));
+		test("names the game mode, with its underscores spaced out", () => {
+			const { me, opponent, embedBase } = contextFor({ gameMode: { name: "Path_of_Legends" } });
 
-			const payload = sentPayload();
-
-			// Both embeds share one footer object, so both sides must read the same mode.
-			expect.soft(payload.embeds[0]?.footer?.text).toBe("Path of Legends");
-			expect.soft(payload.embeds[1]?.footer?.text).toBe("Path of Legends");
+			// Both sides share one footer object, so both must read the same mode.
+			expect.soft(embedBase(me).footer.text).toBe("Path of Legends");
+			expect.soft(embedBase(opponent).footer.text).toBe("Path of Legends");
 		});
 
-		test("falls back to the battle type when the entry carries no game mode", async () => {
+		test("falls back to the battle type when the entry carries no game mode", () => {
 			// gameMode is optional on BattleSchema (modes without one exist), and an empty footer would
 			// leave the embed with no indication of what was played.
-			await notifyBattle(WEBHOOK, makeBattle({ gameMode: undefined, type: "PvP" }));
+			const { me, embedBase } = contextFor({ gameMode: undefined, type: "PvP" });
 
-			expect(sentPayload().embeds[0]?.footer?.text).toBe("PvP");
+			expect(embedBase(me).footer.text).toBe("PvP");
 		});
 	});
 
-	test("drops the second embed and file when there is no opponent", async () => {
-		await notifyBattle(WEBHOOK, makeBattle({ opponent: [] }));
+	test("attaches one embed and one deck image per side", async () => {
+		await notifyBattle(WEBHOOK, makeBattle());
 
 		const form = sentForm();
 
-		expect(sentPayload(form).embeds).toHaveLength(1);
-		expect(form.get("files[1]")).toBeNull();
-		expect(vi.mocked(renderDeckGrid)).toHaveBeenCalledTimes(1);
+		expect(sentPayload(form).embeds).toHaveLength(2);
+		expect(form.get("files[1]")).toBeInstanceOf(File);
+		expect(vi.mocked(renderDeckGrid)).toHaveBeenCalledTimes(2);
 	});
 
 	describe("trophy fields", () => {
@@ -254,21 +254,16 @@ describe("notifyBattle", () => {
 			{ change: -18, as: "a negative change with one minus sign", expected: "5,432 → 5,414 (-18)" },
 			{ change: 0, as: "a zero change unsigned", expected: "5,432 → 5,432 (0)" },
 			{ change: undefined, as: "a missing change as zero", expected: "5,432 → 5,432 (0)" },
-		])("renders $as", async ({ change, expected }) => {
-			await notifyBattle(
-				WEBHOOK,
-				makeBattle({ team: [player({ startingTrophies: 5432, trophyChange: change })] })
-			);
+		])("renders $as", ({ change, expected }) => {
+			const message = fallbackFor({
+				team: [player({ startingTrophies: 5432, trophyChange: change })],
+			});
 
-			expect(fieldValue(sentPayload(), "Trophies")).toBe(expected);
+			expect(fieldValue(message, "Trophies")).toBe(expected);
 		});
 
-		test("omits the Trophies field entirely when startingTrophies is absent", async () => {
-			await notifyBattle(WEBHOOK, makeBattle());
-
-			const names = fieldNames(sentPayload());
-
-			expect(names).not.toContain("Trophies");
+		test("omits the Trophies field entirely when startingTrophies is absent", () => {
+			expect(fieldNames(fallbackFor())).not.toContain("Trophies");
 		});
 
 		test("labels each embed's fields from its own subject's perspective", async () => {
@@ -337,74 +332,51 @@ describe("notifyBattle", () => {
 	});
 
 	describe("deck name formatting (fallback)", () => {
-		beforeEach(() => {
-			vi.mocked(renderDeckGrid).mockRejectedValue(new Error("icon CDN down"));
+		test("prefixes evolutions and heroes, joined by ' · '", () => {
+			const message = fallbackFor({
+				team: [
+					player({
+						cards: [
+							rawCard({ name: "Knight" }),
+							rawCard({ id: 26_000_001, name: "Mega Knight", evolutionLevel: 1 }),
+							rawCard({ id: 26_000_002, name: "Ram Rider", evolutionLevel: 2 }),
+						],
+					}),
+				],
+			});
+
+			expect(fieldValue(message, "Deck")).toBe("Knight · Evo Mega Knight · Hero Ram Rider");
 		});
 
-		test("prefixes evolutions and heroes, joined by ' · '", async () => {
-			await notifyBattle(
-				WEBHOOK,
-				makeBattle({
-					team: [
-						player({
-							cards: [
-								rawCard({ name: "Knight" }),
-								rawCard({ id: 26_000_001, name: "Mega Knight", evolutionLevel: 1 }),
-								rawCard({ id: 26_000_002, name: "Ram Rider", evolutionLevel: 2 }),
-							],
-						}),
-					],
-				})
+		test("renders an em dash for an empty deck", () => {
+			const message = fallbackFor({ team: [player({ cards: [] })] });
+
+			expect(fieldValue(message, "Deck")).toBe("—");
+		});
+
+		test("lists support-card names, comma-separated", () => {
+			const message = fallbackFor({
+				team: [
+					player({
+						supportCards: [
+							rawCard({ id: 159_000_000, name: "Tower Princess" }),
+							rawCard({ id: 159_000_001, name: "Cannoneer" }),
+						],
+					}),
+				],
+			});
+
+			expect(fieldValue(message, "Tower Troop")).toBe("Tower Princess, Cannoneer");
+		});
+
+		test("omits the Tower Troop field when there are no support cards", () => {
+			expect(fieldNames(fallbackFor())).not.toContain("Tower Troop");
+		});
+
+		test("includes the spacer field between trophy rows and deck rows when trophies are present", () => {
+			const names = fieldNames(
+				fallbackFor({ team: [player({ startingTrophies: 5000, trophyChange: 10 })] })
 			);
-
-			const deck = fieldValue(sentFallbackPayload(), "Deck");
-
-			expect(deck).toBe("Knight · Evo Mega Knight · Hero Ram Rider");
-		});
-
-		test("renders an em dash for an empty deck", async () => {
-			await notifyBattle(WEBHOOK, makeBattle({ team: [player({ cards: [] })] }));
-
-			const deck = fieldValue(sentFallbackPayload(), "Deck");
-
-			expect(deck).toBe("—");
-		});
-
-		test("lists support-card names, comma-separated", async () => {
-			await notifyBattle(
-				WEBHOOK,
-				makeBattle({
-					team: [
-						player({
-							supportCards: [
-								rawCard({ id: 159_000_000, name: "Tower Princess" }),
-								rawCard({ id: 159_000_001, name: "Cannoneer" }),
-							],
-						}),
-					],
-				})
-			);
-
-			const value = fieldValue(sentFallbackPayload(), "Tower Troop");
-
-			expect(value).toBe("Tower Princess, Cannoneer");
-		});
-
-		test("omits the Tower Troop field when there are no support cards", async () => {
-			await notifyBattle(WEBHOOK, makeBattle());
-
-			const names = fieldNames(sentFallbackPayload());
-
-			expect(names).not.toContain("Tower Troop");
-		});
-
-		test("includes the spacer field between trophy rows and deck rows when trophies are present", async () => {
-			await notifyBattle(
-				WEBHOOK,
-				makeBattle({ team: [player({ startingTrophies: 5000, trophyChange: 10 })] })
-			);
-
-			const names = fieldNames(sentFallbackPayload());
 			const deckIndex = names.indexOf("Deck");
 
 			expect(names[deckIndex - 1]).toBe("​");
@@ -412,42 +384,29 @@ describe("notifyBattle", () => {
 	});
 
 	describe("HP margin with destroyed towers", () => {
-		test("skips a destroyed princess tower when computing the winner's margin", async () => {
-			await notifyBattle(
-				WEBHOOK,
-				makeBattle({
-					team: [
-						player({ crowns: 2, kingTowerHitPoints: 2500, princessTowersHitPoints: [0, 1400] }),
-					],
-				})
-			);
+		test("skips a destroyed princess tower when computing the winner's margin", () => {
+			const { content } = contextFor({
+				team: [player({ crowns: 2, kingTowerHitPoints: 2500, princessTowersHitPoints: [0, 1400] })],
+			});
 
-			expect(sentPayload().content).toBe("# Victory\n## Alice  2 — 1  Bob\nWon by 1,400hp");
+			expect(content).toBe("# Victory\n## Alice  2 — 1  Bob\nWon by 1,400hp");
 		});
 
-		test("reports 0 when all of the winner's towers are destroyed", async () => {
-			await notifyBattle(
-				WEBHOOK,
-				makeBattle({
-					team: [player({ crowns: 2, kingTowerHitPoints: 0, princessTowersHitPoints: [0, 0] })],
-				})
-			);
+		test("reports 0 when all of the winner's towers are destroyed", () => {
+			const { content } = contextFor({
+				team: [player({ crowns: 2, kingTowerHitPoints: 0, princessTowersHitPoints: [0, 0] })],
+			});
 
-			expect(sentPayload().content).toBe("# Victory\n## Alice  2 — 1  Bob\nWon by 0hp");
+			expect(content).toBe("# Victory\n## Alice  2 — 1  Bob\nWon by 0hp");
 		});
 
-		test("omits the margin line entirely on a draw, regardless of tower state", async () => {
-			await notifyBattle(
-				WEBHOOK,
-				makeBattle({
-					team: [
-						player({ crowns: 1, kingTowerHitPoints: 2500, princessTowersHitPoints: [1000, 0] }),
-					],
-					opponent: [player({ ...BOB, crowns: 1 })],
-				})
-			);
+		test("omits the margin line entirely on a draw, regardless of tower state", () => {
+			const { content } = contextFor({
+				team: [player({ crowns: 1, kingTowerHitPoints: 2500, princessTowersHitPoints: [1000, 0] })],
+				opponent: [player({ ...BOB, crowns: 1 })],
+			});
 
-			expect(sentPayload().content).toBe("# Draw\n## Alice  1 — 1  Bob");
+			expect(content).toBe("# Draw\n## Alice  1 — 1  Bob");
 		});
 	});
 

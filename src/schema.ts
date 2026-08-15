@@ -96,8 +96,20 @@ const BattleSchema = v.object({
 	type: v.string(),
 	battleTime: BattleTimeSchema,
 	gameMode: v.optional(v.object({ name: v.string() })),
-	team: v.array(PlayerSchema),
-	opponent: v.array(PlayerSchema),
+	/**
+	 * Exactly one player per side — which {@link EligibleBattleSchema} already enforces before this
+	 * schema ever runs. Declared as a tuple rather than `v.pipe(v.array(…), v.length(1))` so the
+	 * _type_ carries it too: `v.length` is an action and leaves the output `Player[]`, whereas a
+	 * tuple's index 0 is a known position, so `noUncheckedIndexedAccess` doesn't widen `team[0]` to
+	 * `Player | undefined`. That is what lets `discord.ts` stop re-checking a guarantee it has.
+	 *
+	 * `strictTuple`, not `tuple`, unlike the `v.object`s here that strip unknown keys: a plain
+	 * `v.tuple` would silently drop a second entry, posting a 2v2 as though it were a 1v1. Stripping
+	 * an unknown _key_ is harmless forward-compatibility; stripping a _player_ is a wrong post.
+	 * Rejecting instead surfaces it as `drifted`.
+	 */
+	team: v.strictTuple([PlayerSchema]),
+	opponent: v.strictTuple([PlayerSchema]),
 });
 
 // ════════════════════════════════════════════ DERIVED ════════════════════════════════════════════
@@ -112,23 +124,31 @@ const DECK_SIZE = 8;
 
 /**
  * The cheap 1v1 gate run over the whole battlelog before full validation: exactly one `team` entry
- * whose `cards` is at most one deck. A Duel is also a single `team` entry, but concatenates 2–3
- * decks (16 or 24 cards) into `cards` — the card count, not `gameMode.name` (which varies across
- * duel variants), is the structural tell.
+ * whose `cards` is at most one deck, against exactly one `opponent`. A Duel is also a single `team`
+ * entry, but concatenates 2–3 decks (16 or 24 cards) into `cards` — the card count, not
+ * `gameMode.name` (which varies across duel variants), is the structural tell.
  *
- * `team` is declared before `battleTime` deliberately. `v.is` runs valibot with abort-early config
- * internally, and `v.object` checks entries in declaration order, stopping at the first issue. So a
- * 2v2 or Duel entry fails the cheap structural check before ever paying for the `Temporal` parse. A
- * malformed `battleTime` also counts as ineligible, so such an entry is skipped rather than
- * reported as schema drift — which is what makes the ordering (and abort-early itself) purely an
- * optimization: reordering the fields, or a future valibot internals change that stops
- * short-circuiting on the first issue, would cost speed, not correctness.
+ * The `opponent` check is what keeps {@link BattleSchema}'s one-per-side tuples from creating a
+ * stuck state: without it, an entry missing its opponent would pass this gate, win selection, then
+ * fail full validation as `drifted` — which holds lastBattle in place and retries forever against a
+ * shape that can never become valid. Checked here instead, such an entry is merely ineligible, so
+ * the scan walks past it like a 2v2. It only reads the length, leaving the contents to
+ * `BattleSchema`, so genuine drift inside an opponent still reports as drift.
+ *
+ * `team` and `opponent` are declared before `battleTime` deliberately. `v.is` runs valibot with
+ * abort-early config internally, and `v.object` checks entries in declaration order, stopping at
+ * the first issue. So a 2v2 or Duel entry fails the cheap structural check before ever paying for
+ * the `Temporal` parse. A malformed `battleTime` also counts as ineligible, so such an entry is
+ * skipped rather than reported as schema drift — which is what makes the ordering (and abort-early
+ * itself) purely an optimization: reordering the fields, or a future valibot internals change that
+ * stops short-circuiting on the first issue, would cost speed, not correctness.
  */
 const EligibleBattleSchema = v.object({
 	team: v.pipe(
 		v.array(v.object({ cards: v.pipe(v.array(v.unknown()), v.maxLength(DECK_SIZE)) })),
 		v.length(1)
 	),
+	opponent: v.pipe(v.array(v.unknown()), v.length(1)),
 	battleTime: BattleTimeSchema,
 });
 

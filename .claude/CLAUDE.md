@@ -97,9 +97,11 @@ Internal imports use the `@/` map with explicit `.ts` extensions.
   seeded past their newest battle without a post.
 - **Schema drift** — the newest entry selected but failing full validation resolves `drifted`, not
   `skipped`, so it doesn't read as a quiet tick. lastBattle stays put and the battle retries once
-  the schema catches up. An entry whose `team[0].cards` is missing or not an array fails the
-  eligibility check during the battlelog scan itself, before anything is selected as newest — that
-  resolves `skipped`, not `drifted`, a small accepted narrowing of drift detection.
+  the schema catches up. An entry whose `team[0].cards` is missing or not an array, or that doesn't
+  carry exactly one `opponent`, fails the eligibility check during the battlelog scan itself, before
+  anything is selected as newest — that resolves `skipped`, not `drifted`, a small accepted
+  narrowing of drift detection. `EligibleBattleSchema` (`src/schema.ts`) carries why the `opponent`
+  check earns that narrowing.
 - **A battle older than the stored lastBattle** — `poll.ts` compares the two as `Temporal.Instant`s
   and refuses to move lastBattle backwards: it warns and resolves `skipped`. Only reachable if the
   battlelog's newest-first ordering breaks; see the guard in `poll.ts` for what that would cost.

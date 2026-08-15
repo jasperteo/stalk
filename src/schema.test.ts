@@ -67,6 +67,20 @@ describe("BattleSchema", () => {
 
 		expect(result.success).toBe(false);
 	});
+
+	// The runtime half of the one-per-side tuples: a shape the type rules out must not parse either.
+	describe("one player per side", () => {
+		test.for([
+			{ as: "an empty team", battle: { team: [] } },
+			{ as: "an empty opponent", battle: { opponent: [] } },
+			// `strictTuple`, not `tuple`, specifically for this row: a plain `v.tuple` would strip the
+			// second player and post a 2v2 as though it were a 1v1.
+			{ as: "a two-player team", battle: { team: [rawPlayer(), rawPlayer()] } },
+			{ as: "a two-player opponent", battle: { opponent: [rawPlayer(), rawPlayer()] } },
+		])("rejects $as", ({ battle }) => {
+			expect(v.safeParse(BattleSchema, rawBattle(battle)).success).toBe(false);
+		});
+	});
 });
 
 describe("LastBattleSchema", () => {
@@ -98,6 +112,12 @@ describe("isEligibleBattle", () => {
 
 	test("rejects a duel entry", () => {
 		expect(isEligibleBattle(duelBattle())).toBe(false);
+	});
+
+	// Pinned because the gate, not BattleSchema, is what must reject this — see
+	// EligibleBattleSchema's JSDoc for the stuck state that would otherwise result.
+	test("rejects an entry with no opponent, so the scan skips it rather than reporting drift", () => {
+		expect(isEligibleBattle(rawBattle({ opponent: [] }))).toBe(false);
 	});
 });
 

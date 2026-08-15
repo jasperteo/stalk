@@ -55,13 +55,13 @@ const matchHistoryUrl = (tag: string) =>
 	`https://royaleapi.com/player/${tag.replace("#", "")}/battles`;
 
 /**
- * An empty array must fall back the same way as an absent one: `[].join(" · ")` returns `""`, not a
- * nullish value, so `?? "—"` never fires on it.
+ * An empty deck still needs the explicit branch: `[].join(" · ")` returns `""`, not a nullish
+ * value, so a `?? "—"` at the call site would never fire on it.
  *
- * @returns The card names joined by `" · "`, or `"—"` when the deck is absent or empty.
+ * @returns The card names joined by `" · "`, or `"—"` when the deck is empty.
  */
-function formatDeck(cards: Card[] | undefined) {
-	if (cards === undefined || cards.length === 0) {
+function formatDeck(cards: Card[]) {
+	if (cards.length === 0) {
 		return "—";
 	}
 
@@ -79,8 +79,8 @@ function formatDeck(cards: Card[] | undefined) {
  *   opponent's.
  * @returns The embed field, or `undefined` on modes without trophies — the caller filters it out.
  */
-function buildTrophyField(player: Player | undefined, label: string) {
-	if (player?.startingTrophies === undefined) {
+function buildTrophyField(player: Player, label: string) {
+	if (player.startingTrophies === undefined) {
 		return undefined;
 	}
 
@@ -103,7 +103,7 @@ function buildTrophyField(player: Player | undefined, label: string) {
  * @param other The other side, labelled "Opponent Trophies". Swapping the two is what flips the
  *   point of view for the opponent's embed.
  */
-function buildTrophyFields(subject: Player | undefined, other: Player | undefined) {
+function buildTrophyFields(subject: Player, other: Player) {
 	return [
 		buildTrophyField(subject, "Trophies"),
 		buildTrophyField(other, "Opponent Trophies"),
@@ -117,8 +117,8 @@ function buildTrophyFields(subject: Player | undefined, other: Player | undefine
  * @param label The field's display name, labelling this side like {@link buildTrophyField} does.
  * @returns The embed field, or `undefined` on modes with no tower troop.
  */
-function buildSupportField(player: Player | undefined, label: string) {
-	if (!player?.supportCards.length) {
+function buildSupportField(player: Player, label: string) {
+	if (player.supportCards.length === 0) {
 		return undefined;
 	}
 
@@ -144,8 +144,8 @@ const TOWER_TROOP_ART = new Map([
 ]);
 
 /** The player's tower troop art as the embed thumbnail; undefined if the mode has none. */
-function towerThumbnail(player: Player | undefined) {
-	const troop = player?.supportCards[0];
+function towerThumbnail(player: Player) {
+	const troop = player.supportCards[0];
 	if (troop === undefined) {
 		return undefined;
 	}
@@ -177,14 +177,13 @@ function outcomeFor(mine: number, theirs: number) {
 /**
  * Lowest HP among a player's surviving towers (HP > 0).
  *
- * @returns The weakest survivor's HP, or `0` when none survive or there's no player — the same
- *   answer either way, since a wipe and an absent player both mean "no margin to report".
+ * @returns The weakest survivor's HP, or `0` when none survive — a total wipe has no margin to
+ *   report.
  */
-function weakestSurvivingTowerHp(player: Player | undefined) {
-	const alive = [
-		player?.kingTowerHitPoints ?? 0,
-		...(player?.princessTowersHitPoints ?? []),
-	].filter((hp) => hp > 0);
+function weakestSurvivingTowerHp(player: Player) {
+	const alive = [player.kingTowerHitPoints, ...player.princessTowersHitPoints].filter(
+		(hp) => hp > 0
+	);
 
 	return alive.length === 0 ? 0 : Math.min(...alive);
 }
@@ -200,10 +199,9 @@ function weakestSurvivingTowerHp(player: Player | undefined) {
  *   shapes need in common.
  */
 function battleContext(battle: Battle, me: Player) {
-	const opponent = battle.opponent[0];
-	const opponentCrowns = opponent?.crowns ?? 0;
-	const won = me.crowns > opponentCrowns;
-	const outcome = outcomeFor(me.crowns, opponentCrowns);
+	const [opponent] = battle.opponent;
+	const won = me.crowns > opponent.crowns;
+	const outcome = outcomeFor(me.crowns, opponent.crowns);
 
 	// HP margin on decisive games only, measured on the winner's side so it stays positive even
 	// when both sides felled a tower (e.g. 2-1).
@@ -213,7 +211,7 @@ function battleContext(battle: Battle, me: Player) {
 		: undefined;
 
 	// Content doubles as the push-notification text, which bare embeds wouldn't provide.
-	const scoreLine = `${me.name}  ${String(me.crowns)} — ${String(opponentCrowns)}  ${opponent?.name ?? "Unknown"}`;
+	const scoreLine = `${me.name}  ${String(me.crowns)} — ${String(opponent.crowns)}  ${opponent.name}`;
 	const content = [`# ${outcome.result}`, `## ${scoreLine}`, margin].filter(Boolean).join("\n");
 
 	const footer = { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type };
@@ -246,8 +244,7 @@ function payloadJson(message: { content: string; embeds: unknown[] }) {
 }
 
 /**
- * Renders both deck grids and packs them with the JSON payload into multipart form data. A missing
- * opponent (defensive; 1v1s always have one) just drops the second side.
+ * Renders both deck grids and packs them with the JSON payload into multipart form data.
  *
  * @throws When a deck fails to render. {@link notifyBattle} catches this to reach the text-only
  *   fallback, so an image problem costs the post its pictures, never the notification.
@@ -255,7 +252,7 @@ function payloadJson(message: { content: string; embeds: unknown[] }) {
 async function buildForm({ me, opponent, content, embedBase }: BattleContext) {
 	const sides = [
 		{ player: me, other: opponent, filename: "my-deck.png" },
-		...(opponent === undefined ? [] : [{ player: opponent, other: me, filename: "opp-deck.png" }]),
+		{ player: opponent, other: me, filename: "opp-deck.png" },
 	];
 
 	// The File and its `attachment://` reference are built together because Discord pairs them by
@@ -294,7 +291,7 @@ function buildFallbackMessage({ me, opponent, content, embedBase }: BattleContex
 		{ name: "Deck", value: formatDeck(me.cards) },
 		buildSupportField(me, "Tower Troop"),
 		SPACER_FIELD,
-		{ name: "Opponent Deck", value: formatDeck(opponent?.cards) },
+		{ name: "Opponent Deck", value: formatDeck(opponent.cards) },
 		buildSupportField(opponent, "Opponent Tower Troop"),
 	].filter(Boolean);
 
@@ -329,8 +326,9 @@ async function postWebhook(webhookUrl: string, request: RequestInit) {
 }
 
 /**
- * Posts a single battle to the webhook. `battle.team[0]` is always the tracked player (2v2 is
- * filtered out upstream).
+ * Posts a single battle to the webhook. `battle.team[0]` is always the tracked player:
+ * `BattleSchema` types both sides as one-element tuples, and 2v2s are filtered out upstream
+ * anyway.
  *
  * Multipart when the deck images render — fetch derives the boundary from the FormData body, so no
  * manual Content-Type — otherwise the JSON text fallback. A payload Discord rejects outright (see
@@ -340,11 +338,7 @@ async function postWebhook(webhookUrl: string, request: RequestInit) {
  * @throws When Discord still rejects the post after that retry (a 5xx/429, or a non-payload 4xx).
  */
 async function notifyBattle(webhookUrl: string, battle: Battle) {
-	const me = battle.team[0];
-
-	if (me === undefined) {
-		return;
-	}
+	const [me] = battle.team;
 
 	const ctx = battleContext(battle, me);
 
@@ -392,3 +386,11 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 }
 
 export { notifyBattle };
+
+/**
+ * @internal Exported for tests only — lets the presentation tests assert on a message object
+ *   directly, instead of stubbing `fetch` and decoding a multipart body to read one embed field.
+ *   `payloadJson` stays private, so no new call site can serialize a body without
+ *   {@link ALLOWED_MENTIONS}.
+ */
+export { battleContext, buildFallbackMessage };
