@@ -72,6 +72,7 @@ type Payload = {
 		thumbnail?: { url: string };
 		author?: { url: string };
 		footer?: { text: string };
+		timestamp?: string;
 	}[];
 };
 
@@ -207,6 +208,19 @@ describe("notifyBattle", () => {
 
 		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 413");
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	// battleTime is a Temporal.Instant in the domain and only becomes a string when payloadJson
+	// stringifies the body, via Instant.prototype.toJSON. Asserted on the serialized payload rather
+	// than on embedBase(), because what matters is the bytes Discord receives: reading the embed
+	// object directly would see the Instant and would not catch a serialization regression.
+	test("serializes the embed timestamp as an ISO string Discord can parse", async () => {
+		await notifyBattle(WEBHOOK, makeBattle());
+
+		const [embed] = sentPayload().embeds;
+
+		expect(embed?.timestamp).toBe("2024-01-15T14:30:22Z");
+		expect(Number.isNaN(new Date(embed?.timestamp ?? "").getTime())).toBe(false);
 	});
 
 	test("deep-links each side's embed to that side's own battle log", () => {
