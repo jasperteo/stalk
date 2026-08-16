@@ -14,7 +14,7 @@ describe("BattleSchema", () => {
 	test("normalizes a valid battle", () => {
 		const result = v.parse(BattleSchema, rawBattle());
 
-		expect(result.battleTime).toBe("2024-01-15T14:30:22.000Z");
+		expect(result.battleTime).toEqual(Temporal.Instant.from("2024-01-15T14:30:22Z"));
 		expect(result.team[0]?.tag).toBe("#ABC123");
 		expect(result.opponent[0]?.tag).toBe("#DEF456");
 	});
@@ -84,12 +84,27 @@ describe("BattleSchema", () => {
 });
 
 describe("LastBattleSchema", () => {
-	test("normalizes a valid lastBattle timestamp", () => {
-		expect(v.parse(LastBattleSchema, "20240115T143022.000Z")).toBe("2024-01-15T14:30:22.000Z");
+	test("parses a stored timestamp into an Instant", () => {
+		expect(v.parse(LastBattleSchema, "20240115T143022.000Z")).toEqual(
+			Temporal.Instant.from("2024-01-15T14:30:22Z")
+		);
 	});
 
-	test("is idempotent on an already-normalized timestamp", () => {
-		expect(v.parse(LastBattleSchema, "2024-01-15T14:30:22.000Z")).toBe("2024-01-15T14:30:22.000Z");
+	// The property that matters now that the output is an Instant rather than a canonical string: a
+	// value stored by any version — compact as the API sends it, or the extended form poll.ts writes
+	// — parses to the same instant, so it compares directly against a freshly fetched battle.
+	test("parses the compact and extended forms to the same instant", () => {
+		expect(v.parse(LastBattleSchema, "20240115T143022.000Z")).toEqual(
+			v.parse(LastBattleSchema, "2024-01-15T14:30:22.000Z")
+		);
+	});
+
+	// Guards the two tests above: Instants carry their state in internal slots, so a structural
+	// matcher that ignored them would report every Instant equal and quietly pass on any value.
+	test("toEqual actually distinguishes different instants", () => {
+		expect(v.parse(LastBattleSchema, "20240115T143022.000Z")).not.toEqual(
+			Temporal.Instant.from("2019-06-01T00:00:00Z")
+		);
 	});
 
 	test("rejects a garbage lastBattle value", () => {

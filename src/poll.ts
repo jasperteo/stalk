@@ -3,7 +3,7 @@ import * as v from "valibot";
 import { fetchBattlelog, latestBattle } from "@/clash-royale.ts";
 import { notifyBattle } from "@/discord.ts";
 import { hl, log } from "@/log.ts";
-import { LastBattleSchema } from "@/schema.ts";
+import { LastBattleSchema, serializeLastBattle } from "@/schema.ts";
 import type { Target } from "@/schema.ts";
 
 /** One KV handle for the isolate's lifetime; Deno.openKv() opens the Deploy-managed store. */
@@ -85,12 +85,10 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
 
 			// The battlelog's newest-first order is an assumption we can't verify (see
 			// clash-royale.ts). If it ever breaks, refuse to move lastBattle backwards: post nothing
-			// and say so, rather than post a stale battle and advance past the newer ones. Compared as
-			// instants, not strings, so this stays correct without depending on BattleTimeSchema's
-			// output happening to sort lexicographically.
+			// and say so, rather than post a stale battle and advance past the newer ones.
 			if (order < 0) {
 				log.warn(
-					`Newest eligible battle for ${hl.entity(tag)} (${battle.battleTime}) predates the stored lastBattle (${lastSeen}); skipping`
+					`Newest eligible battle for ${hl.entity(tag)} (${serializeLastBattle(battle.battleTime)}) predates the stored lastBattle (${serializeLastBattle(lastSeen)}); skipping`
 				);
 				return "skipped";
 			}
@@ -98,16 +96,18 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
 			await notifyBattle(webhook, battle);
 		}
 
+		const newLastBattle = serializeLastBattle(battle.battleTime);
+
 		// Advance lastBattle only after a successful post: at-least-once delivery. If the webhook
 		// succeeds but this put throws, the next run re-posts a duplicate rather than drops it.
-		await kv.set([LAST_BATTLE_PREFIX, tag], battle.battleTime, { expireIn: LAST_BATTLE_TTL_MS });
+		await kv.set([LAST_BATTLE_PREFIX, tag], newLastBattle, { expireIn: LAST_BATTLE_TTL_MS });
 
 		if (isFirstRun) {
 			log.info(`Seeded lastBattle for ${hl.entity(tag)} (first run, no notification sent)`);
 			return "seeded";
 		}
 
-		log.success(`Posted battle for ${hl.entity(tag)} at ${battle.battleTime}`);
+		log.success(`Posted battle for ${hl.entity(tag)} at ${newLastBattle}`);
 		return "posted";
 	} catch (error) {
 		log.error(`Poll failed for ${hl.entity(tag)}:`, error);

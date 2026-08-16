@@ -25,14 +25,21 @@ const TagSchema = v.pipe(
 
 /**
  * Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that and
- * rejects invalid dates. Fixing `fractionalSecondDigits` keeps the fixed-width shape KV lastBattle
- * values store, so plain string comparison stays chronological.
+ * rejects invalid dates, which is why the parse doubles as the validation — there is no cheaper
+ * check to swap in. Valibot's `iso*` actions don't apply: they all reject the compact form, and
+ * even on the extended form they are regex shape checks that accept impossible dates like Feb 31.
+ *
+ * Yields the `Temporal.Instant` itself rather than a formatted string. Consumers want the instant
+ * (`poll.ts` compares two of them), so formatting here would only mean re-parsing there.
+ * Serializing is left to the two boundaries that need it: `poll.ts`'s KV write, which must format
+ * explicitly because Deno KV can't structured-clone an `Instant`, and `discord.ts`'s webhook body,
+ * where `JSON.stringify` reaches `Temporal.Instant.prototype.toJSON` on its own.
  */
 const BattleTimeSchema = v.pipe(
 	v.string(),
 	v.rawTransform(({ dataset, addIssue, NEVER }) => {
 		try {
-			return Temporal.Instant.from(dataset.value).toString({ fractionalSecondDigits: 3 });
+			return Temporal.Instant.from(dataset.value);
 		} catch {
 			addIssue({ message: "Invalid battleTime" });
 			return NEVER;
@@ -161,10 +168,22 @@ function isEligibleBattle(entry: unknown): boolean {
 }
 
 /**
- * A stored lastBattle KV value. Reuses BattleTimeSchema, so parsing it also re-normalizes and
- * validates the stored value instead of trusting a raw `kv.get<string>` cast.
+ * A stored lastBattle KV value. Reuses BattleTimeSchema, so the stored string parses into the same
+ * `Temporal.Instant` a freshly fetched battle carries and the two compare directly — rather than
+ * trusting a raw `kv.get<string>` cast. It also still validates: a corrupt stored value fails here,
+ * which is what lets `readLastBattle` re-seed instead of re-posting forever.
  */
 const LastBattleSchema = BattleTimeSchema;
+
+/**
+ * The write side of {@link LastBattleSchema}: formats an `Instant` into the string KV actually
+ * stores, since KV can't structured-clone an `Instant` directly. Fixed `fractionalSecondDigits` so
+ * the same instant always serializes to the same bytes — a read/write cycle never churns the stored
+ * value, and `main.ts`'s lastBattle dump stays aligned.
+ */
+function serializeLastBattle(instant: Temporal.Instant) {
+	return instant.toString({ fractionalSecondDigits: 3 });
+}
 
 // ══════════════════════════════════════════════ ENV ══════════════════════════════════════════════
 
@@ -200,6 +219,7 @@ export {
 	DECK_SIZE,
 	isEligibleBattle,
 	LastBattleSchema,
+	serializeLastBattle,
 	TargetsEnvSchema,
 	TokenEnvSchema,
 };

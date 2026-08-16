@@ -12,6 +12,11 @@ function battle(battleTime: string, teamSize = 1) {
 	return rawBattle({ battleTime, team: Array.from({ length: teamSize }, () => rawPlayer()) });
 }
 
+/** `BattleSchema` yields a `Temporal.Instant`, so selection assertions compare against one. */
+function at(iso: string) {
+	return Temporal.Instant.from(iso);
+}
+
 describe("latestBattle", () => {
 	test("returns undefined for an empty log", () => {
 		const result = latestBattle([]);
@@ -36,15 +41,15 @@ describe("latestBattle", () => {
 
 		const entries = [newer, older, "garbage"];
 
-		expect(latestBattle(entries).battle?.battleTime).toBe("2024-01-15T14:30:22.000Z");
+		expect(latestBattle(entries).battle?.battleTime).toEqual(at("2024-01-15T14:30:22.000Z"));
 	});
 
 	test("skips leading 2v2 and malformed entries to reach the first eligible one", () => {
 		const twoVsTwo = battle("20240201T000000.000Z", 2);
 		const eligible = battle("20240101T000000.000Z");
 
-		expect(latestBattle([twoVsTwo, "garbage", eligible]).battle?.battleTime).toBe(
-			"2024-01-01T00:00:00.000Z"
+		expect(latestBattle([twoVsTwo, "garbage", eligible]).battle?.battleTime).toEqual(
+			at("2024-01-01T00:00:00.000Z")
 		);
 	});
 
@@ -55,21 +60,27 @@ describe("latestBattle", () => {
 		const first = battle("20240101T000000.000Z");
 		const outOfOrder = battle("20240201T000000.000Z");
 
-		expect(latestBattle([first, outOfOrder]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
+		expect(latestBattle([first, outOfOrder]).battle?.battleTime).toEqual(
+			at("2024-01-01T00:00:00.000Z")
+		);
 	});
 
 	test("skips a duel (16 concatenated cards) to reach an ordinary 1v1 further down the log", () => {
 		const duel = duelBattle({ battleTime: "20240201T000000.000Z" });
 		const eligible = battle("20240101T000000.000Z");
 
-		expect(latestBattle([duel, eligible]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
+		expect(latestBattle([duel, eligible]).battle?.battleTime).toEqual(
+			at("2024-01-01T00:00:00.000Z")
+		);
 	});
 
 	test("skips a duel with 24 concatenated cards (3-deck variant) too", () => {
 		const duel = duelBattle({ battleTime: "20240201T000000.000Z" }, 3);
 		const eligible = battle("20240101T000000.000Z");
 
-		expect(latestBattle([duel, eligible]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
+		expect(latestBattle([duel, eligible]).battle?.battleTime).toEqual(
+			at("2024-01-01T00:00:00.000Z")
+		);
 	});
 
 	test("an 8-card deck is still eligible — the duel check must not be off by one", () => {
@@ -86,7 +97,9 @@ describe("latestBattle", () => {
 		});
 		const eligible = battle("20240101T000000.000Z");
 
-		expect(latestBattle([nineCards, eligible]).battle?.battleTime).toBe("2024-01-01T00:00:00.000Z");
+		expect(latestBattle([nineCards, eligible]).battle?.battleTime).toEqual(
+			at("2024-01-01T00:00:00.000Z")
+		);
 	});
 
 	test("returns undefined when the newest eligible entry fails full schema validation", () => {
