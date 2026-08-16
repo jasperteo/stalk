@@ -50,18 +50,18 @@ const ERROR_BODY_CHARS = 2000;
  * @returns The logger, with its badge already painted — computed once here, which is what keeps
  *   every paint call after the `setColorEnabled` gate above.
  */
-const leveled = (
+function leveled(
 	write: (...data: unknown[]) => void,
 	level: keyof typeof levelColor,
 	tint = false
-) => {
+) {
 	const paint = levelColor[level];
 	const badge = paint(bold(level.padEnd(5)));
 
 	return (message: string, ...rest: unknown[]) => {
 		write(badge, tint ? paint(message) : message, ...rest);
 	};
-};
+}
 
 /**
  * Console wrapper: every line carries a colored level badge so local dev and Deno Deploy logs read

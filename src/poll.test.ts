@@ -13,7 +13,9 @@ const TARGET: Target = { tag: TAG, webhook: WEBHOOK };
 const TOKEN = "test-token";
 
 /** Targets sharing one webhook — only the tags vary in the fan-out tests. */
-const targetsFor = (...tags: string[]): Target[] => tags.map((tag) => ({ tag, webhook: WEBHOOK }));
+function targetsFor(...tags: string[]): Target[] {
+	return tags.map((tag) => ({ tag, webhook: WEBHOOK }));
+}
 
 function battlelogFetch(entries: unknown[]) {
 	return vi.fn<() => Promise<Response>>(() => Promise.resolve(Response.json(entries)));

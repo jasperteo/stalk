@@ -4,8 +4,9 @@ import { describe, expect, test, vi } from "vitest";
 // time, so a spy installed after a static top-level import is too late to intercept anything.
 // Each test spies first, then resets modules and re-imports fresh, so the module's closures
 // capture the spies instead of the native console methods.
-const spy = (method: "info" | "warn" | "error" | "debug") =>
-	vi.spyOn(console, method).mockImplementation(() => undefined);
+function spy(method: "info" | "warn" | "error" | "debug") {
+	return vi.spyOn(console, method).mockImplementation(() => undefined);
+}
 
 async function importLog() {
 	vi.resetModules();

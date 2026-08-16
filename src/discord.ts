@@ -51,8 +51,9 @@ const EVOLUTION_PREFIX = {
 // ═════════════════════════════════════════ EMBED FIELDS ══════════════════════════════════════════
 
 /** Deep link to a player's RoyaleAPI battle log; the site's URLs carry the tag without its "#". */
-const matchHistoryUrl = (tag: string) =>
-	`https://royaleapi.com/player/${tag.replace("#", "")}/battles`;
+function matchHistoryUrl(tag: string) {
+	return `https://royaleapi.com/player/${tag.replace("#", "")}/battles`;
+}
 
 /**
  * An empty deck still needs the explicit branch: `[].join(" · ")` returns `""`, not a nullish
