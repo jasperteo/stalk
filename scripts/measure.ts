@@ -57,12 +57,12 @@ function measure(name: string, image: RawImage): Measurement {
 	};
 }
 
-async function measureFile(name: string): Promise<Measurement> {
+async function measureFile(name: string) {
 	const file = new URL(`${name}.png`, IMAGES_DIR);
 	return measure(name, await decodeToRaw(await Deno.readFile(file)));
 }
 
-async function listImages(): Promise<string[]> {
+async function listImages() {
 	const names: string[] = [];
 
 	for await (const entry of Deno.readDir(IMAGES_DIR)) {

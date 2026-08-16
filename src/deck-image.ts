@@ -13,7 +13,6 @@ import { Buffer } from "node:buffer";
 import { Lazy } from "@std/async/lazy";
 import { format as formatBytes } from "@std/fmt/bytes";
 import { format as formatDuration } from "@std/fmt/duration";
-import type { SharpConstructor } from "sharp";
 
 import { hl, log } from "@/log.ts";
 import type { Card, EvolutionLevel } from "@/schema.ts";
@@ -27,7 +26,7 @@ import type { Card, EvolutionLevel } from "@/schema.ts";
  *
  * @see docs/deck-rendering.md#sharp-runtime-config
  */
-const sharpModule = new Lazy<SharpConstructor>(async () => {
+const sharpModule = new Lazy(async () => {
 	const { default: sharp } = await import("sharp");
 
 	sharp.cache(false);
@@ -212,7 +211,7 @@ function scanArtBounds({ data, width, height }: RawImage) {
  *   carried along.
  * @throws When `region` falls outside the source bitmap.
  */
-function cropRaw({ data, width }: RawImage, region: Region): Buffer {
+function cropRaw({ data, width }: RawImage, region: Region) {
 	if (
 		region.left < 0 ||
 		region.top < 0 ||
@@ -259,7 +258,7 @@ const EVOLUTION_ICON = {
 } as const satisfies Record<EvolutionLevel, keyof Card["iconUrls"]>;
 
 /** The local mirror filename for the card as it was played: `<id>`, `<id>-evo`, or `<id>-hero`. */
-function tileName(card: Card): string {
+function tileName(card: Card) {
 	const suffix = card.evolutionLevel ? EVOLUTION_SUFFIX[card.evolutionLevel] : "";
 	return `${String(card.id)}${suffix}.png`;
 }
@@ -271,7 +270,7 @@ function tileName(card: Card): string {
  * @throws When `evolutionLevel` is set but the API lists no matching variant — rejects the whole
  *   render, via {@link loadTile}.
  */
-function iconUrl(card: Card): string {
+function iconUrl(card: Card) {
 	if (!card.evolutionLevel) {
 		return card.iconUrls.medium;
 	}
@@ -328,7 +327,7 @@ function trimRaw(raw: RawImage): Tile {
  *
  * @internal Exported for tests only.
  */
-async function trimToArt(bytes: Uint8Array): Promise<Tile> {
+async function trimToArt(bytes: Uint8Array) {
 	return trimRaw(await decodeToRaw(bytes));
 }
 
@@ -339,7 +338,7 @@ async function trimToArt(bytes: Uint8Array): Promise<Tile> {
  * @throws When the CDN response isn't ok.
  * @see docs/deck-rendering.md#cdn-fallback
  */
-async function fetchTile(url: string): Promise<Tile> {
+async function fetchTile(url: string) {
 	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
 
 	if (!response.ok) {
@@ -383,7 +382,7 @@ async function fetchTile(url: string): Promise<Tile> {
  *   rejects the whole render.
  * @see docs/deck-rendering.md#cdn-fallback
  */
-async function loadTile(card: Card): Promise<{ tile: Tile; cdnFallback: boolean }> {
+async function loadTile(card: Card) {
 	try {
 		const bytes = await Deno.readFile(new URL(tileName(card), IMAGES_DIR));
 		return { tile: await trimToArt(bytes), cdnFallback: false };
@@ -433,7 +432,7 @@ function planGrid(tileCount: number): GridPlan {
  * @see docs/deck-rendering.md#output-size
  * @see docs/deck-rendering.md#no-cache
  */
-async function renderDeckGrid(cards: Card[]): Promise<Uint8Array<ArrayBuffer>> {
+async function renderDeckGrid(cards: Card[]) {
 	if (cards.length === 0) {
 		throw new Error("No cards to render");
 	}

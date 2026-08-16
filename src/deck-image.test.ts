@@ -34,11 +34,7 @@ const TILE_WIDTH = 20;
 const TILE_HEIGHT = 30;
 
 /** A fully-opaque solid-color PNG of the given size — the base shape of every fixture below. */
-async function solidPng(
-	width: number,
-	height: number,
-	color: { r: number; g: number; b: number }
-): Promise<Uint8Array> {
+async function solidPng(width: number, height: number, color: { r: number; g: number; b: number }) {
 	const { data } = await sharp({
 		create: { width, height, channels: 4, background: { ...color, alpha: 1 } },
 	})
@@ -48,7 +44,7 @@ async function solidPng(
 }
 
 /** Encodes a raw straight-alpha RGBA buffer to PNG. */
-async function rawToPng(raw: Buffer, width: number, height: number): Promise<Uint8Array> {
+async function rawToPng(raw: Buffer, width: number, height: number) {
 	const { data } = await sharp(raw, { raw: { width, height, channels: 4 } })
 		.png()
 		.toUint8Array();
@@ -75,7 +71,7 @@ async function insetFixture(
 	width: number,
 	height: number,
 	rect: { left: number; top: number; width: number; height: number }
-): Promise<Uint8Array> {
+) {
 	const raw = Buffer.alloc(width * height * 4);
 
 	for (let y = rect.top; y < rect.top + rect.height; y++) {
