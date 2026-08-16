@@ -363,6 +363,13 @@ const oxlintConfig = defineConfig({
 				"vitest/hoisted-apis-on-top": "error",
 				"vitest/prefer-import-in-mock": "error",
 				"vitest/prefer-importing-vitest-globals": "error",
+				// disabled — arrives via the plugin's `correctness` set, not the lists above.
+				// `vi.fn(impl)` already infers the mock's signature from the implementation, so
+				// demanding an explicit type parameter restates what inference supplies. The mocks
+				// that genuinely need one still carry it, and for reasons this rule can't see: no
+				// implementation to infer from (`vi.fn<typeof fetch>()`), or a signature deliberately
+				// wider than the impl so the recorded call arguments stay typed (`deck-image.test.ts`).
+				"vitest/require-mock-type-parameters": "off",
 			},
 		},
 	],

@@ -18,7 +18,7 @@ function targetsFor(...tags: string[]): Target[] {
 }
 
 function battlelogFetch(entries: unknown[]) {
-	return vi.fn<() => Promise<Response>>(() => Promise.resolve(Response.json(entries)));
+	return vi.fn(() => Promise.resolve(Response.json(entries)));
 }
 
 /**
