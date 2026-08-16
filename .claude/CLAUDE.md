@@ -216,10 +216,10 @@ Two gotchas:
 - **Its ESM entry exports only `default` at runtime.** The named exports its `.d.mts` declares
   (`cache`, `format`, …) do not exist in `dist/index.mjs`. Always go through the default:
   `sharp.cache(false)`, never `import { cache } from "sharp"`.
-- **It is loaded lazily through a `Lazy<SharpConstructor>`** (`sharpModule` in `deck-image.ts`).
-  `Lazy` was picked for its rejection semantics, not just the memo: it clears its state when the
-  initializer rejects, so the next render retries. Caching the rejection would let one transient
-  dlopen failure silently poison every later render for the isolate's lifetime.
+- **It is loaded lazily through a `Lazy`** (`sharpModule` in `deck-image.ts`). `Lazy` was picked
+  for its rejection semantics, not just the memo: it clears its state when the initializer rejects,
+  so the next render retries. Caching the rejection would let one transient dlopen failure silently
+  poison every later render for the isolate's lifetime.
 
 `@types/node` is a devDependency because the oxlint pass needs it for sharp's `Buffer`/`NodeJS.*`
 references (`deno check` doesn't).
@@ -268,6 +268,12 @@ dependency`. Use `scripts/` (its `*.png` output is gitignored) and delete the pr
   `export { … }` plus a separate `export type { … }`. No inline `export` on declarations. A module
   whose surface is mostly not production API may split the value exports into a production group and
   an `@internal` group (`deck-image.ts`, `discord.ts`), sorted within each.
+- **Return types and generic type arguments are inferred by default.** Write one explicitly only
+  when inference would produce a worse type: it erases a named alias from hover
+  (`Promise<BattleLog>` → `Promise<unknown[]>`), widens a literal union (`PollOutcome` → `string`),
+  or launders `any` into `unknown`. Otherwise it is noise — `new Lazy(init)` infers `T` from the
+  initializer's return type exactly as a function infers its own, and a cast or a callee's own
+  annotation usually carries the alias through already.
 - oxlint runs the `typescript`, `unicorn`, `oxc`, and `jsdoc` plugins with type-aware checking
   (`options: { typeAware: true, typeCheck: true }`). Categories are set globally —
   `correctness: "error"`, `perf: "warn"` — on top of a long explicit rule list; `**/*.test.ts` adds

@@ -25,9 +25,9 @@ single pipeline above.
 
 ## sharp runtime config
 
-`sharpModule`, a `Lazy<SharpConstructor>` from `@std/async`, imports `sharp` lazily — on first
-render rather than at every isolate cold boot — and memoizes the resolved module. Two calls follow
-immediately on load:
+`sharpModule`, a `Lazy` from `@std/async` holding sharp's constructor, imports `sharp` lazily — on
+first render rather than at every isolate cold boot — and memoizes the resolved module. Two calls
+follow immediately on load:
 
 - **`sharp.cache(false)`** disables libvips' own operation cache. This module keeps no cache of its
   own either (see [No cache](#no-cache)) — Deno Deploy gives the app a fresh isolate per cron tick,
