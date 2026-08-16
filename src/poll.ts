@@ -123,7 +123,7 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
  * @returns Tag → raw stored value. A tag with nothing stored is **absent from the map**, not
  *   present-and-nullish, which is what makes {@link readLastBattle}'s `=== undefined` check exact.
  */
-async function listLastBattles(): Promise<Map<string, unknown>> {
+async function listLastBattles() {
 	const lastBattles = new Map<string, unknown>();
 
 	for await (const entry of kv.list({ prefix: [LAST_BATTLE_PREFIX] })) {
@@ -165,7 +165,7 @@ async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]>
 		// instead would be far worse — every player would read as a first run and get seeded straight
 		// past their newest battle, with no post.
 		log.error("Reading lastBattle failed; every target failed this tick:", error);
-		return targets.map((): PollOutcome => "failed");
+		return targets.map(() => "failed");
 	}
 
 	return await Promise.all(

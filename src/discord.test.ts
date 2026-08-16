@@ -44,7 +44,7 @@ function contextFor(overrides: Record<string, unknown> = {}) {
 }
 
 /** The text-only message body for a battle, built directly — no render failure to stage, no POST. */
-function fallbackFor(overrides: Record<string, unknown> = {}): Payload {
+function fallbackFor(overrides: Record<string, unknown> = {}) {
 	return buildFallbackMessage(contextFor(overrides)) as unknown as Payload;
 }
 
@@ -58,7 +58,7 @@ function parseJsonString(value: unknown): unknown {
 }
 
 /** The multipart body of the first webhook POST. */
-function sentForm(): FormData {
+function sentForm() {
 	const body = vi.mocked(fetch).mock.calls[0]?.[1]?.body;
 	if (!(body instanceof FormData)) throw new TypeError("expected a FormData body");
 	return body;
@@ -77,12 +77,12 @@ type Payload = {
 };
 
 /** The decoded `payload_json` of the first webhook POST. */
-function sentPayload(form: FormData = sentForm()): Payload {
+function sentPayload(form: FormData = sentForm()) {
 	return parseJsonString(form.get("payload_json")) as Payload;
 }
 
 /** The decoded JSON body of the first webhook POST, for the text-only fallback path. */
-function sentFallbackPayload(): Payload {
+function sentFallbackPayload() {
 	const [, init] = vi.mocked(fetch).mock.calls[0] ?? [];
 	return parseJsonString(init?.body) as Payload;
 }
