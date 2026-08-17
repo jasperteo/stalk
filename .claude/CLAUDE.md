@@ -67,12 +67,15 @@ re-derive them.
 - **`pollAll`'s fan-out is unbounded** (`Promise.all` over every target). Each in-flight post holds
   roughly 25 MB of pixels — per grid, a ~5.09 MB raw canvas plus ~3.8 MB of decoded tiles plus the
   ~3.44 MB encoded PNG, and a post carries two. That makes isolate memory the binding constraint
-  somewhere around 15–20 targets, well before CPU or the KV read budget. The fix, when it's needed,
-  is `pooledMap` from `@std/async/pool`: already an installed dependency, zero runtime imports (so
-  it costs nothing at module eval, same as `@std/async/lazy`), and it yields in input order, so
-  `pollAll`'s index-aligned return survives. Note that it reports errors as an `AggregateError` —
-  harmless only because guarantee 3 keeps `poll()` from ever rejecting, which would become the thing
-  keeping that safe.
+  somewhere around 15–20 targets, well before CPU or the KV read budget. That accounting is
+  unchanged by the `toBuffer()` switch, which removed a transient duplicate stacked on top of it —
+  so read 15–20 as a conservative floor; see
+  [Output method](../docs/deck-rendering.md#output-method-tobuffer-vs-touint8array). The fix, when
+  it's needed, is `pooledMap` from `@std/async/pool`: already an installed dependency, zero runtime
+  imports (so it costs nothing at module eval, same as `@std/async/lazy`), and it yields in input
+  order, so `pollAll`'s index-aligned return survives. Note that it reports errors as an
+  `AggregateError` — harmless only because guarantee 3 keeps `poll()` from ever rejecting, which
+  would become the thing keeping that safe.
 - **A post ships ~6.6 MiB of attachments against Discord's 10 MiB default** — about 66%, and
   `PAYLOAD_REJECTED` self-heals an overflow by retrying text-only. See
   [the deck-rendering doc](../docs/deck-rendering.md#output-size) before raising the grid's pixel
@@ -147,9 +150,14 @@ relevant section where one exists. What to know before editing:
   `planGrid(tileCount)` function, with no sharp involvement, so the layout math is unit-testable
   without rendering pixels. See [Cell sizing](../docs/deck-rendering.md#cell-sizing) and
   [Output size](../docs/deck-rendering.md#output-size).
-- **Stay in raw memory.** Tiles decode once to raw RGBA; `cropRaw` slices `Buffer`s by memcpy rather
-  than running a second sharp pipeline — see its doc comment (`src/deck-image.ts`) for why `Buffer`
-  specifically, not `Uint8Array`. `toUint8Array()` is the rule only for data _leaving_ sharp.
+- **Stay in raw memory, and stay on `Buffer`.** Tiles decode once to raw RGBA; `cropRaw` slices by
+  memcpy rather than running a second sharp pipeline. Every pixel buffer inside the module is a
+  `Buffer` — `RawImage.data`, `Tile.data`, `cropRaw`'s return, `renderDeckGrid`'s — which is what
+  keeps them assignable to `.composite()`'s `OverlayOptions.input` and to `BlobPart` without a cast.
+  `Uint8Array` appears only on inbound parameters, which accept a `Buffer` anyway. The mechanism is
+  `toBuffer()`, never `toUint8Array()`: the two differ only in a native branch, and switching every
+  output site cut peak RSS 2.6× with no change in render time or output bytes. See
+  [Output method](../docs/deck-rendering.md#output-method-tobuffer-vs-touint8array).
 - **No cache.** `renderDeckGrid` renders straight through every call; an earlier LRU keyed by the
   deck's ordered mirror filenames was deleted because the fresh-isolate-per-tick fact above means
   cross-tick reuse — its whole premise — can't happen. See
@@ -211,7 +219,7 @@ install cost only.
 
 `sharp` is the one dependency with a native component — a libvips addon shipped via platform-filtered
 `optionalDependencies` (Deno Deploy resolves the linux binaries from `deno.lock` at deploy time).
-Two gotchas:
+Three gotchas:
 
 - **Its ESM entry exports only `default` at runtime.** The named exports its `.d.mts` declares
   (`cache`, `format`, …) do not exist in `dist/index.mjs`. Always go through the default:
@@ -220,6 +228,9 @@ Two gotchas:
   for its rejection semantics, not just the memo: it clears its state when the initializer rejects,
   so the next render retries. Caching the rejection would let one transient dlopen failure silently
   poison every later render for the isolate's lifetime.
+- **`toUint8Array()` is `toBuffer()` plus a memcpy.** The name suggests a different return shape;
+  both resolve a `Buffer` on Deno, and its `.d.mts` declares the wider `Uint8Array<ArrayBufferLike>`
+  that `BlobPart` rejects. Nothing in the codebase calls it — see the deck-rendering notes above.
 
 `@types/node` is a devDependency because the oxlint pass needs it for sharp's `Buffer`/`NodeJS.*`
 references (`deno check` doesn't).

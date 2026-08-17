@@ -59,6 +59,59 @@ poison every later render for the isolate's lifetime, and silently: `discord.ts`
 render and posts the text-only fallback, so the symptom would be decks quietly vanishing from every
 post rather than a visible crash.
 
+### Output method: `toBuffer` vs `toUint8Array`
+
+Every value that leaves sharp does so through **`toBuffer()`**. The alternative reads like a
+different return shape and isn't — `toUint8Array()` is `toBuffer` with two options preset
+(`sharp/dist/output.mjs`):
+
+```js
+function toUint8Array() {
+	this.options.resolveWithObject = true; // why call sites destructure { data, info }
+	this.options.typedArrayOut = true;
+	return this._pipeline(null, stack);
+}
+```
+
+`typedArrayOut` picks a branch in sharp's native `pipeline.cc`:
+
+| method           | native call                     | libvips memory                             |
+| ---------------- | ------------------------------- | ------------------------------------------ |
+| `toUint8Array()` | `Napi::Buffer<char>::Copy`      | **full memcpy**, then freed immediately    |
+| `toBuffer()`     | `Napi::Buffer<char>::NewOrCopy` | wrapped externally, zero-copy, freed on GC |
+
+So `toUint8Array()` allocates a second full-size backing store before releasing libvips'. A render
+decodes 8 tiles at ~478 KB each and encodes a ~3.44 MB PNG, and those transient duplicates
+accumulate faster than GC reclaims them. Measured on a real 8-card deck, 40 renders, sampling
+`Deno.memoryUsage().rss` per render:
+
+| Output sites on `toBuffer`  | Mean render | Peak RSS              |
+| --------------------------- | ----------- | --------------------- |
+| none (all `toUint8Array`)   | 12.5 ms     | 491.4 / 490.5 MiB     |
+| `decodeToRaw` + `fetchTile` | —           | 326.1 MiB             |
+| `renderDeckGrid` only       | —           | 347.2 MiB             |
+| **all (current)**           | 12.4 ms     | **185.7 / 186.4 MiB** |
+
+**2.6× less peak RSS, no change in render time.** V8's heap stays ~9 MiB in every configuration, so
+the whole difference is off-heap. Pixels are untouched: `deno task preview` hashes to
+`613718b7499c7bb03629789e8b80346390c7e7f78fd5906977a35f4e4579c548` before and after.
+
+Two things follow on the type side. `toBuffer()` is declared `Promise<Buffer<ArrayBuffer>>` with the
+type argument pinned, where `toUint8Array()` declares a bare `Uint8Array` defaulting to
+`ArrayBufferLike` — the widening `BlobPart` rejects — so the encoded PNG reaches `File`/`FormData`
+uncast. And `RawImage.data` is declared `Buffer`, which it holds at runtime either way:
+`Napi::Buffer::Copy` produces a JS `Buffer` too, so `toUint8Array()` never returned a plain
+`Uint8Array` in the first place.
+
+**Inputs are not part of this rule.** `decodeToRaw`/`trimToArt` keep `Uint8Array` parameters:
+`Buffer` is a `Uint8Array` subclass, so those accept both, and `Deno.readFile`'s result flows in
+with no wrapper. Wrapping it yourself would only duplicate what sharp's `_createInputDescriptor`
+already does for typed arrays — a zero-copy `Buffer.from(buf, byteOffset, byteLength)`, measured at
+0.048 µs.
+
+Measured on macOS arm64 (Deno 2.9.5, V8 15.0.245.2, sharp 0.35.3). Deno Deploy runs linux x64 on the
+same V8/napi/sharp, so the direction holds; the magnitude there is unverified.
+
 ## Cell sizing
 
 Tiles are never individually resized. Each card composites at native resolution into a fixed
@@ -169,12 +222,11 @@ tick, for the cost of an LRU, its eviction policy, `configureDeckCache`'s wiring
 the tests covering all of it. Not worth carrying.
 
 If head-to-head battles between tracked players ever turn out to be common enough to matter, the
-right fix is not this LRU back again — it's a bare `Map<string, Promise<Uint8Array<ArrayBuffer>>>`
-keyed the same way, populated before awaiting and read by the second caller within the same tick,
-discarded with the isolate at tick end. That's in-flight _dedupe_, not a _cache_: it collapses two
-concurrent renders of the same deck into one, which is the only shape of reuse a
-fresh-isolate-per-tick world can ever pay back. About 10 lines, no eviction policy, no byte budget,
-nothing to tune.
+right fix is not this LRU back again — it's a bare `Map<string, Promise<Buffer>>` keyed the same
+way, populated before awaiting and read by the second caller within the same tick, discarded with
+the isolate at tick end. That's in-flight _dedupe_, not a _cache_: it collapses two concurrent
+renders of the same deck into one, which is the only shape of reuse a fresh-isolate-per-tick world
+can ever pay back. About 10 lines, no eviction policy, no byte budget, nothing to tune.
 
 ## CDN fallback
 
