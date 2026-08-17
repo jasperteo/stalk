@@ -84,9 +84,12 @@ const ICON_TIMEOUT_MS = 10_000;
 
 // ═════════════════════════════════════════════ TYPES ═════════════════════════════════════════════
 
-/** A decoded, row-major RGBA bitmap: the shape {@link scanArtBounds} walks. */
+/**
+ * A decoded, row-major RGBA bitmap: the shape {@link scanArtBounds} walks. `data` is a `Buffer` so
+ * {@link cropRaw}'s output composites without a cast — see its doc comment.
+ */
 type RawImage = {
-	data: Uint8Array;
+	data: Buffer;
 	width: number;
 	height: number;
 };
@@ -128,10 +131,14 @@ type GridPlan = {
  *   the `BYTES_PER_PIXEL` stride every scan and crop downstream assumes.
  * @internal Exported for `scripts/measure.ts` and tests, so measured margins come from the
  *   renderer's own decode.
+ * @see docs/deck-rendering.md#output-method-tobuffer-vs-touint8array
  */
 async function decodeToRaw(bytes: Uint8Array): Promise<RawImage> {
 	const sharp = await sharpModule.get();
-	const { data, info } = await sharp(bytes).ensureAlpha().raw().toUint8Array();
+	const { data, info } = await sharp(bytes)
+		.ensureAlpha()
+		.raw()
+		.toBuffer({ resolveWithObject: true });
 	return { data, width: info.width, height: info.height };
 }
 
@@ -196,10 +203,9 @@ function scanArtBounds({ data, width, height }: RawImage) {
 
 /**
  * Copies a rectangle out of a raw RGBA bitmap, row by row — a plain memcpy in-process rather than a
- * second `sharp(...).extract()` pipeline. Returns a `Buffer`, not a `Uint8Array`, because
- * `.composite()`'s `OverlayOptions.input` requires one — the `sharp()` constructor itself accepts a
- * `Uint8Array` fine, so this is a `.composite()`-specific constraint. It's the only reason
- * `node:buffer` is imported here.
+ * second `sharp(...).extract()` pipeline. Stays on {@link RawImage}'s `Buffer`, which is also what
+ * `.composite()`'s `OverlayOptions.input` declares — the `sharp()` constructor admits typed arrays
+ * too, so `Buffer` is the one shape that satisfies both without a cast.
  *
  * Zero-fills via `Buffer.alloc`, not `allocUnsafe`: `subarray` clamps silently on a short row, so
  * an out-of-bounds region would otherwise leave uninitialized heap bytes in the tail of a row
@@ -366,7 +372,7 @@ async function fetchTile(url: string) {
 	})
 		.resize({ width: CELL_WIDTH, height: CELL_HEIGHT, fit: "inside" })
 		.raw()
-		.toUint8Array();
+		.toBuffer({ resolveWithObject: true });
 
 	return trimRaw({ data, width: info.width, height: info.height });
 }
@@ -431,6 +437,7 @@ function planGrid(tileCount: number): GridPlan {
  * @throws On an empty deck or a tile load/decode failure; the caller posts the text-only fallback.
  * @see docs/deck-rendering.md#output-size
  * @see docs/deck-rendering.md#no-cache
+ * @see docs/deck-rendering.md#output-method-tobuffer-vs-touint8array
  */
 async function renderDeckGrid(cards: Card[]) {
 	if (cards.length === 0) {
@@ -481,17 +488,12 @@ async function renderDeckGrid(cards: Card[]) {
 		};
 	});
 
-	const { data } = await sharp({
+	const png = await sharp({
 		create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
 	})
 		.composite(overlays)
 		.png({ compressionLevel: GRID_COMPRESSION })
-		.toUint8Array();
-	// SAFETY: Narrowed, not copied — sharp documents toUint8Array() as returning a transferable,
-	// plain ArrayBuffer; only the declared type is the wider Uint8Array<ArrayBufferLike> that
-	// BlobPart (File/FormData) rejects. Copying a grid-sized PNG per render to satisfy the type
-	// isn't worth it.
-	const png = data as Uint8Array<ArrayBuffer>;
+		.toBuffer();
 	const end = performance.now();
 
 	const elapsed = formatDuration(Math.round(end - start), { ignoreZero: true });

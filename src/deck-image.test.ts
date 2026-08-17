@@ -35,27 +35,25 @@ const TILE_HEIGHT = 30;
 
 /** A fully-opaque solid-color PNG of the given size — the base shape of every fixture below. */
 async function solidPng(width: number, height: number, color: { r: number; g: number; b: number }) {
-	const { data } = await sharp({
+	return await sharp({
 		create: { width, height, channels: 4, background: { ...color, alpha: 1 } },
 	})
 		.png()
-		.toUint8Array();
-	return new Uint8Array(data);
+		.toBuffer();
 }
 
 /** Encodes a raw straight-alpha RGBA buffer to PNG. */
 async function rawToPng(raw: Buffer, width: number, height: number) {
-	const { data } = await sharp(raw, { raw: { width, height, channels: 4 } })
+	return await sharp(raw, { raw: { width, height, channels: 4 } })
 		.png()
-		.toUint8Array();
-	return new Uint8Array(data);
+		.toBuffer();
 }
 
 /**
  * A small, fully-opaque solid-color PNG, encoded once for the whole file. It has no transparent
- * margin, so `trimToArt` keeps it at full size and its geometry is predictable. The bytes are
- * read-only — every serve wraps a fresh `Uint8Array` copy — so both the local-mirror read and the
- * CDN fallback can hand back the same image.
+ * margin, so `trimToArt` keeps it at full size and its geometry is predictable. Nothing mutates the
+ * bytes — the `readFile` mock hands out a fresh `Uint8Array` copy, as the real one would, and
+ * `Response` snapshots its body — so both the local-mirror read and the CDN fallback can serve it.
  */
 const FIXTURE = await solidPng(TILE_WIDTH, TILE_HEIGHT, { r: 200, g: 30, b: 30 });
 
@@ -119,7 +117,7 @@ function localArtReadFile() {
  */
 function fetchServingFixture() {
 	return vi.fn<(url: string | URL, init?: RequestInit) => Promise<Response>>(() =>
-		Promise.resolve(new Response(new Uint8Array(FIXTURE)))
+		Promise.resolve(new Response(FIXTURE))
 	);
 }
 
@@ -169,7 +167,7 @@ describe("renderDeckGrid", () => {
 	test("renders entirely from the local mirror without touching the network", async () => {
 		const cards = [card(), card(), card()];
 
-		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Uint8Array);
+		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Buffer);
 
 		// One local read per card and no CDN fallback — the mirror is meant to cover every playable
 		// card, so a fully-local deck must never hit the network.
@@ -201,7 +199,7 @@ describe("renderDeckGrid", () => {
 			iconUrls: { medium: "https://api.clashroyale.com/fresh-release.png" },
 		});
 
-		await expect(renderDeckGrid([missing])).resolves.toBeInstanceOf(Uint8Array);
+		await expect(renderDeckGrid([missing])).resolves.toBeInstanceOf(Buffer);
 
 		// The fallback fetches the card's own icon URL, with the render's abort signal attached.
 		expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.clashroyale.com/fresh-release.png");
@@ -210,9 +208,7 @@ describe("renderDeckGrid", () => {
 
 	test("clamps an oversized CDN fallback tile to the cell instead of composing it past the cell bounds", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
-		fetchMock.mockImplementationOnce(() =>
-			Promise.resolve(new Response(new Uint8Array(OVERSIZED_FIXTURE)))
-		);
+		fetchMock.mockImplementationOnce(() => Promise.resolve(new Response(OVERSIZED_FIXTURE)));
 
 		const oversized = card({
 			iconUrls: { medium: "https://api.clashroyale.com/oversized.png" },
@@ -245,7 +241,7 @@ describe("renderDeckGrid", () => {
 			width: TILE_WIDTH,
 			height: TILE_HEIGHT,
 		});
-		fetchMock.mockImplementationOnce(() => Promise.resolve(new Response(new Uint8Array(padded))));
+		fetchMock.mockImplementationOnce(() => Promise.resolve(new Response(padded)));
 
 		await renderDeckGrid([
 			card({ iconUrls: { medium: "https://api.clashroyale.com/padded.png" } }),
@@ -329,7 +325,7 @@ describe("renderDeckGrid", () => {
 
 		// No module-level state outlives a call, so a failed render has no lasting side effect: the
 		// retry is just another independent render.
-		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Uint8Array);
+		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Buffer);
 	});
 
 	test("re-reads every tile when the same deck renders twice — there is no cache", async () => {
