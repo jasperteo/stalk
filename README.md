@@ -152,20 +152,42 @@ route is safe to expose.
 
 ## Project layout
 
-| Path                       | Contents                                                                                                                                                  |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/main.ts`              | Entry point: HTTP routes, cron registration, per-tick tally                                                                                               |
-| `src/poll.ts`              | The polling loop — lastBattle read/compare/advance, one outcome per player                                                                                |
-| `src/clash-royale.ts`      | Battle-log fetch and newest-eligible-battle selection                                                                                                     |
-| `src/discord.ts`           | Webhook message construction and delivery, with a text-only fallback                                                                                      |
-| `src/deck-image.ts`        | Deck grids composited from local card art via [sharp](https://sharp.pixelplumbing.com/); tuning log in [`docs/deck-rendering.md`](docs/deck-rendering.md) |
-| `src/schema.ts`            | Valibot schemas for the API shapes and the env vars                                                                                                       |
-| `src/env.ts`, `src/log.ts` | Validated config; leveled, colored console output                                                                                                         |
-| `src/*.test.ts`            | Vitest suite, colocated next to each module                                                                                                               |
-| `src/testing/`             | Shared test helpers: the in-memory KV spy and the raw API fixtures                                                                                        |
-| `src/__mocks__/`           | Manual module mocks picked up by factory-less `vi.mock` (currently `log.ts`)                                                                              |
-| `images/`                  | 180 card-art PNGs, keyed by card id (plus `-evo`/`-hero` variants)                                                                                        |
-| `scripts/`                 | Offline dev tools behind `deno task preview` / `deno task measure`                                                                                        |
+```
+stalk/
+├── src/                    # application code — see the table below
+│   ├── __mocks__/          # manual module mocks for vi.mock
+│   └── testing/            # KV spy + raw API fixtures
+├── images/                 # 180 card-art PNGs, keyed by card id (plus -evo/-hero variants)
+├── scripts/
+│   ├── preview.ts          # deno task preview — render a deck to preview.png
+│   └── measure.ts          # deno task measure — card icons' transparent margins
+├── docs/
+│   └── deck-rendering.md   # every deck constant's value and rationale
+├── .github/
+│   └── workflows/
+│       └── ci.yml          # install, fmt --check, lint, test — on PRs and main
+├── deno.jsonc              # tasks, dev permission set, @/ alias, Deno compilerOptions
+├── package.json            # runtime deps (the @/ alias is the only import in deno.jsonc)
+├── deno.lock
+├── deno.d.ts               # vendored Deno types, for oxlint (deno task sync-types)
+├── tsconfig.json           # read by oxlint/tsgolint, not by Deno
+├── oxlint.config.ts
+├── oxfmt.config.ts
+└── vitest.config.ts
+```
+
+The `src/` modules, each with a `*.test.ts` beside it:
+
+| Module            | Role                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| `main.ts`         | Entry point: HTTP routes, cron registration, per-tick tally                             |
+| `poll.ts`         | The polling loop — lastBattle read/compare/advance, one outcome per player              |
+| `clash-royale.ts` | Battle-log fetch and newest-eligible-battle selection                                   |
+| `discord.ts`      | Webhook message construction and delivery, with a text-only fallback                    |
+| `deck-image.ts`   | Deck grids composited from local card art via [sharp](https://sharp.pixelplumbing.com/) |
+| `schema.ts`       | Valibot schemas for the API shapes and the env vars                                     |
+| `env.ts`          | Env vars read and validated once at module load                                         |
+| `log.ts`          | Leveled, colored console output                                                         |
 
 Deck grids are composited from the local `images/` mirror rather than fetched per render, and
 shipped at native resolution with no downscale step — a shipped 8-card grid is 1080 px wide and
@@ -175,4 +197,5 @@ A CDN fetch is the fallback for a card too new to be in the mirror; if rendering
 battle still posts as a text-only embed.
 
 Working on the code? `.claude/CLAUDE.md` documents the toolchain setup, the guarantees, and the
-traps. `docs/deck-rendering.md` documents every deck-rendering constant's value and rationale.
+traps. [`docs/deck-rendering.md`](docs/deck-rendering.md) documents every deck-rendering
+constant's value and rationale.
