@@ -65,18 +65,20 @@ Neither is a problem at the current scale; both are recorded so the next person 
 re-derive them.
 
 - **`pollAll`'s fan-out is unbounded** (`Promise.all` over every target). Each in-flight post holds
-  roughly 25 MB of pixels — per grid, a ~5.09 MB raw canvas plus ~3.8 MB of decoded tiles plus the
-  ~3.44 MB encoded PNG, and a post carries two. That makes isolate memory the binding constraint
-  somewhere around 15–20 targets, well before CPU or the KV read budget. That accounting is
-  unchanged by the `toBuffer()` switch, which removed a transient duplicate stacked on top of it —
-  so read 15–20 as a conservative floor; see
+  **~28 MB of pixels** — per grid, ~3.83 MB of decoded tiles (8 × 285×420×4) plus ~3.38 MB of
+  trimmed copies plus the 3.43 MB composed canvas plus the 3.44 MB encoded PNG, ~14 MB, and a post
+  carries two. Measured, not just derived: marginal peak RSS is 28 MiB per concurrent post from 1
+  to 8 posts, easing to ~21 MiB at 16 as GC keeps up over the longer wall time, and 16 concurrent
+  posts peak at 429–483 MiB RSS. That makes isolate memory the binding constraint somewhere around
+  **15 targets**, well before CPU or the KV read budget. The figure is post-`toBuffer()`, which
+  removed a transient duplicate that used to stack on top of it — see
   [Output method](../docs/deck-rendering.md#output-method-tobuffer-vs-touint8array). The fix, when
   it's needed, is `pooledMap` from `@std/async/pool`: already an installed dependency, zero runtime
   imports (so it costs nothing at module eval, same as `@std/async/lazy`), and it yields in input
   order, so `pollAll`'s index-aligned return survives. Note that it reports errors as an
   `AggregateError` — harmless only because guarantee 3 keeps `poll()` from ever rejecting, which
   would become the thing keeping that safe.
-- **A post ships ~6.6 MiB of attachments against Discord's 10 MiB default** — about 66%, and
+- **A post ships 6.55 MiB of attachments against Discord's 10 MiB default** — 65.5%, and
   `PAYLOAD_REJECTED` self-heals an overflow by retrying text-only. See
   [the deck-rendering doc](../docs/deck-rendering.md#output-size) before raising the grid's pixel
   count.
@@ -156,7 +158,7 @@ relevant section where one exists. What to know before editing:
   keeps them assignable to `.composite()`'s `OverlayOptions.input` and to `BlobPart` without a cast.
   `Uint8Array` appears only on inbound parameters, which accept a `Buffer` anyway. The mechanism is
   `toBuffer()`, never `toUint8Array()`: the two differ only in a native branch, and switching every
-  output site cut peak RSS 2.6× with no change in render time or output bytes. See
+  output site cut peak RSS 2.4× with no change in render time or output bytes. See
   [Output method](../docs/deck-rendering.md#output-method-tobuffer-vs-touint8array).
 - **No cache.** `renderDeckGrid` renders straight through every call; an earlier LRU keyed by the
   deck's ordered mirror filenames was deleted because the fresh-isolate-per-tick fact above means
