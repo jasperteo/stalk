@@ -4,9 +4,9 @@ Watches Clash Royale players and posts their matches to Discord.
 
 A [Deno](https://deno.com/) app (deployed on [Deno Deploy](https://deno.com/deploy), built with
 [Hono](https://hono.dev/)) that polls one or more players' battle logs every minute and posts each
-new result to that player's own webhook — the outcome, crown score, and HP margin as the message
-text, then an embed per side with trophies, tower troop, and the full deck rendered as a card-image
-grid.
+new result to that player's own webhook. The message text carries the outcome, crown score, and HP
+margin. Below it sits one embed per side, with trophies, tower troop, and the full deck rendered as
+a card-image grid.
 
 ![stalk architecture diagram](docs/architecture.png)
 
@@ -15,30 +15,31 @@ grid.
 1. `Deno.cron` fires every minute and polls every tracked player concurrently. One player's failure
    can't sink the others, and each tick ends with a one-line tally
    (`posted` / `seeded` / `skipped` / `drifted` / `failed`).
-2. The battle log is fetched via the [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy), which
-   provides the stable outbound IP that the Clash Royale API token is whitelisted against — Deno
-   Deploy has none of its own.
-3. The newest eligible battle's timestamp is compared against a lastBattle value in Deno KV, stored
-   per player under `["lastBattle", tag]` with a 30-day TTL, so entries for players you stop tracking
-   clean themselves up.
-4. **First run:** lastBattle is seeded without posting, so you don't get a notification about a
-   match from last week.
-5. **After that:** a new battle is posted to the webhook, and only then does lastBattle advance. If
-   the post succeeds but the write fails, the next tick re-posts rather than dropping the battle — a
-   rare duplicate beats a silent loss.
+2. `clash-royale.ts` fetches the battle log through the
+   [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy), which provides the stable outbound IP that
+   the Clash Royale API token is whitelisted against. Deno Deploy has none of its own.
+3. `poll.ts` compares the newest eligible battle's timestamp against a lastBattle value in Deno KV.
+   Each player gets its own key, `["lastBattle", tag]`, with a 30-day TTL, so entries for players
+   you stop tracking clean themselves up.
+4. **First run:** `poll.ts` seeds lastBattle without posting, so you don't get a notification about
+   a battle from last week.
+5. **After that:** it posts the new battle to the webhook, and only then advances lastBattle. If the
+   post succeeds but the write fails, the next tick re-posts rather than dropping the battle. A rare
+   duplicate beats a silent loss.
 
-2v2 and Duel battles are ignored (a Duel concatenates 2–3 decks into one match, not a single 1v1
-loadout). The log arrives newest-first, so the first entry to pass a cheap 1v1 check — one team
-entry holding at most one deck — is the newest one, and the scan stops there. Only that entry is
+`src/schema.ts` ignores 2v2 and Duel battles (a Duel concatenates 2–3 decks into one battle, not a
+single 1v1 loadout). The log arrives newest-first, so the first entry to pass a cheap 1v1 check, one
+team entry holding at most one deck, is the newest one, and the scan stops there. Only that entry is
 fully validated, so validation runs once per log rather than once per entry.
 
-An entry that fails the cheap check is skipped. If the newest eligible entry then fails full
+The scan skips an entry that fails the cheap check. If the newest eligible entry then fails full
 validation, that's `drifted` rather than `skipped`: lastBattle stays put so the battle retries once
 the schema catches up, instead of the tick reading as a quiet one.
 
-**At most one battle is posted per tick — the newest.** A player who finishes several matches
-between ticks has the intermediate ones skipped; lastBattle jumps straight to the newest. That's
-deliberate: it keeps a tick to a single fetch, a single validation, and a single post per player.
+**At most one battle posts per tick, and it is the newest one.** A player who finishes several
+battles between ticks has the intermediate ones skipped; lastBattle jumps straight to the newest.
+That's deliberate: it keeps a tick to a single fetch, a single validation, and a single post per
+player.
 
 ## Setup
 
@@ -83,8 +84,8 @@ Add as many as you like:
 > comment and silently truncate the value.
 
 A malformed `TARGETS` fails soft: it logs once and polls nobody, instead of throwing on every tick.
-A missing `CR_API_TOKEN` skips each tick with a heartbeat log, so a misconfigured deploy shows up
-loudly rather than as a silent dashboard.
+A missing `CR_API_TOKEN` skips each tick with a heartbeat log, so a misconfigured deploy keeps
+writing a line every minute instead of going quiet.
 
 ### 3. Run locally
 
@@ -110,17 +111,16 @@ from:
 
 Two caveats. `TARGETS` only validates that the webhook is a URL, so a webhook on `ptb.discord.com`,
 `canary.discord.com`, or `discordapp.com` needs its host added by hand. And this is a dev-only
-convenience — Deno Deploy never loads it, `deno task test` runs without `-P`, and `ffi` is open in
+convenience. Deno Deploy never loads it, `deno task test` runs without `-P`, and `ffi` is open in
 the same set (sharp's libvips addon needs it, and native code runs outside Deno's permission
-system). Treat the list as a tripwire that catches an unnoticed new outbound host, not as a security
-boundary.
+system). The list catches an unnoticed new outbound host. It is not a security boundary.
 
 ### 4. Deploy
 
 Set `CR_API_TOKEN` and `TARGETS` in the Deno Deploy project (dashboard), then connect the project to
-this GitHub repo — Deno Deploy builds and deploys on every push, so there's no local deploy command.
-Deno KV and `Deno.cron` are provisioned automatically — no namespace to create. The `images/` card
-art is committed to the repo and deployed with it; the renderer depends on it in production.
+this GitHub repo. Deno Deploy builds and deploys on every push, so there's no local deploy command.
+It also provisions Deno KV and `Deno.cron` for you, with no namespace to create. The `images/` card
+art lives in the repo and ships with it; the renderer depends on it in production.
 
 ## Commands
 
@@ -137,7 +137,7 @@ deno task lint-agent  # Same three checks, oxlint in --format=agent
 deno task sync-types  # Regenerate the vendored deno.d.ts, after a Deno version change
 ```
 
-`deno task lint` covers linting _and_ typechecking — there's no separate `tsc` step. CI runs install,
+`deno task lint` covers linting _and_ typechecking. There's no separate `tsc` step. CI runs install,
 format check, lint, and test on every pull request and every push to `main`.
 
 ## Configuration reference
@@ -148,9 +148,9 @@ format check, lint, and test on every pull request and every push to `main`.
 | `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player               |
 | Deno KV        | KV store | Holds the `["lastBattle", tag]` values, 30-day TTL                           |
 
-Both env vars are read and validated once at module load (`src/env.ts`) — from `.env` locally, from
-the project settings in production. Nothing secret is stored in KV, which is why the lastBattle
-route is safe to expose.
+`src/env.ts` reads and validates both env vars once at module load, from `.env` locally and from the
+project settings in production. KV holds nothing secret, which is why the lastBattle route is safe
+to expose.
 
 ## Project layout
 
@@ -191,9 +191,9 @@ The `src/` modules, each with a `*.test.ts` beside it:
 | `env.ts`          | Env vars read and validated once at module load                                         |
 | `log.ts`          | Leveled, colored console output                                                         |
 
-Deck grids are composited from the local `images/` mirror rather than fetched per render, and
-shipped at native resolution with no downscale step — a shipped 8-card grid is 1080 px wide and
-about 3.28 MiB, stored uncompressed to keep encode CPU down. Nothing is cached between renders:
+`src/deck-image.ts` composites deck grids from the local `images/` mirror rather than fetching per
+render, and ships them at native resolution with no downscale step. An 8-card grid is 1080 px wide
+and about 3.28 MiB, stored uncompressed to keep encode CPU down. Nothing is cached between renders:
 Deno Deploy gives the app a fresh isolate every tick, so there is no state for a cache to live in.
 A CDN fetch is the fallback for a card too new to be in the mirror; if rendering fails outright, the
 battle still posts as a text-only embed.
