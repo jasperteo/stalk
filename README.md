@@ -8,6 +8,8 @@ new result to that player's own webhook — the outcome, crown score, and HP mar
 text, then an embed per side with trophies, tower troop, and the full deck rendered as a card-image
 grid.
 
+![stalk architecture diagram](docs/architecture.png)
+
 ## How it works
 
 1. `Deno.cron` fires every minute and polls every tracked player concurrently. One player's failure
