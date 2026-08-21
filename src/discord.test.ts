@@ -45,7 +45,7 @@ function contextFor(overrides: Record<string, unknown> = {}) {
 	return battleContext(battle, battle.team[0]);
 }
 
-/** The text-only message body for a battle, built directly — no render failure to stage, no POST. */
+/** The text-only message body for a battle, built directly. No render failure to stage, no POST. */
 function fallbackFor(overrides: Record<string, unknown> = {}) {
 	return buildFallbackMessage(contextFor(overrides)) as unknown as Payload;
 }
@@ -94,7 +94,7 @@ function fieldValue(payload: Payload, name: string, embed = 0) {
 	return payload.embeds[embed]?.fields?.find((field) => field.name === name)?.value;
 }
 
-/** Every field name on an embed, in order — for asserting which fields were emitted at all. */
+/** Every field name on an embed, in order, for asserting which fields were emitted at all. */
 function fieldNames(payload: Payload, embed = 0) {
 	return payload.embeds[embed]?.fields?.map((field) => field.name) ?? [];
 }
@@ -293,9 +293,9 @@ describe("notifyBattle", () => {
 
 			const payload = sentPayload();
 
-			// Embed 0 is the tracked player's, embed 1 the opponent's — each labels the same pair of
-			// numbers from its own side, so the two embeds' values are mirror images. Soft, so a swapped
-			// perspective reports all four cells at once rather than only the first mismatch.
+			// Embed 0 is the tracked player's, embed 1 the opponent's. Each labels the same pair of
+			// numbers from its own side, so the two embeds' values are mirror images. Soft, so a
+			// swapped perspective reports all four cells at once rather than only the first mismatch.
 			expect.soft(fieldValue(payload, "Trophies", 0)).toBe("5,000 → 5,010 (+10)");
 			expect.soft(fieldValue(payload, "Opponent Trophies", 0)).toBe("4,800 → 4,795 (-5)");
 			expect.soft(fieldValue(payload, "Trophies", 1)).toBe("4,800 → 4,795 (-5)");

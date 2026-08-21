@@ -18,7 +18,7 @@ async function importLog() {
 }
 
 describe("log", () => {
-	// The badges are padded to a shared fixed width so lines align — the table keeps them
+	// The badges are padded to a shared fixed width so lines align. The table keeps them
 	// column-aligned here too, making a drifted pad width visible at a glance.
 	test.for([
 		{ level: "info", badge: "info ", via: "info" },

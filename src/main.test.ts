@@ -45,13 +45,13 @@ function battlelogFetchByTag(logs: Record<string, unknown[]>) {
 
 /**
  * Spies `Deno.openKv` (via `spyMemoryKv`, redirecting to a fresh isolated `:memory:` store),
- * `Deno.cron` (capturing its handler instead of really scheduling it) and `Deno.serve` (capturing
- * its handler instead of really binding a port — every import would otherwise fight over the same
- * one), then resets the module registry and freshly imports `main.ts` so its top-level `await
+ * `Deno.cron` (capturing its handler instead of really scheduling it), and `Deno.serve` (capturing
+ * its handler instead of really binding a port; every import would otherwise fight over the same
+ * one). It then resets the module registry and freshly imports `main.ts` so its top-level `await
  * Deno.openKv()`/`Deno.cron(...)`/`Deno.serve(...)` side effects run against our spies.
  *
  * `announceListen` invokes the captured `onListen` callback, which in production fires once per
- * isolate — i.e. once per cron tick on Deploy. `log` comes back too because `vi.resetModules()`
+ * isolate, i.e. once per cron tick on Deploy. `log` comes back too because `vi.resetModules()`
  * re-evaluates the manual `@/log.ts` mock, handing out a fresh `log` each time: a statically
  * imported one would be a stale instance main.ts is no longer bound to.
  */
@@ -61,7 +61,7 @@ async function importMain() {
 	let cronHandler: CronHandler | undefined;
 
 	// `Deno.cron` is overloaded (with and without an options argument), and `mockImplementation`
-	// types its parameters against the options overload — so capture positionally-untyped rest args
+	// types its parameters against the options overload. So capture positionally-untyped rest args
 	// and take the handler from the end, where every overload puts it.
 	vi.spyOn(Deno, "cron").mockImplementation((...args: unknown[]) => {
 		cronHandler = args.at(-1) as CronHandler;
@@ -205,8 +205,8 @@ describe("main with multiple targets", () => {
 		);
 		await tick();
 
-		// TAG_B is omitted from the router, so its fetch 500s — standing in for that player's API
-		// being down — while TAG gets a new battle to post.
+		// TAG_B is omitted from the router, so its fetch 500s, standing in for that player's API being
+		// down, while TAG gets a new battle to post.
 		vi.stubGlobal(
 			"fetch",
 			battlelogFetchByTag({
@@ -222,8 +222,8 @@ describe("main with multiple targets", () => {
 		});
 
 		// The whole tally, not fragments of it: the badge colors are identity functions under the log
-		// mock, so the line is exact — which also pins that every POLL_OUTCOMES entry is reported (at
-		// 0 when unused) and in the declared order.
+		// mock, so the line is exact. This also pins that every POLL_OUTCOMES entry is reported (at 0
+		// when unused) and in the declared order.
 		expect(log.info).toHaveBeenCalledWith(
 			"poll-battlelogs: 2 targets — posted 1, seeded 0, skipped 0, drifted 0, failed 1"
 		);
@@ -253,7 +253,7 @@ describe("main with multiple targets", () => {
 		);
 		await tick();
 
-		// Drift is its own column, not folded into `skipped` — the two seeded targets are what a quiet
+		// Drift is its own column, not folded into `skipped`. The two seeded targets are what a quiet
 		// tick looks like, and TAG_C must not be counted among them.
 		expect(log.info).toHaveBeenCalledWith(
 			"poll-battlelogs: 3 targets — posted 0, seeded 2, skipped 0, drifted 1, failed 0"

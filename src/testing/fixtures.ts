@@ -45,11 +45,11 @@ function rawBattle(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * A battle that passes the cheap eligibility check but fails full `BattleSchema` validation — the
- * API-schema-drift case, which `latestBattle` reports and `poll` surfaces as the "drifted" outcome.
- * A non-URL `iconUrls.medium` is the drift: eligibility only reads `team[].cards` (count, not
- * contents) and `battleTime`, never `iconUrls`, so this entry still wins selection and only then
- * fails.
+ * A battle that passes the cheap eligibility check but fails full `BattleSchema` validation. This
+ * is the API-schema-drift case, which `latestBattle` reports and `poll` surfaces as the "drifted"
+ * outcome. A non-URL `iconUrls.medium` is the drift: eligibility only reads `team[].cards` (count,
+ * not contents) and `battleTime`, never `iconUrls`, so this entry still wins selection and only
+ * then fails.
  */
 function driftedBattle(overrides: Record<string, unknown> = {}) {
 	return rawBattle({

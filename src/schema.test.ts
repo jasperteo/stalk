@@ -91,8 +91,8 @@ describe("LastBattleSchema", () => {
 	});
 
 	// The property that matters now that the output is an Instant rather than a canonical string: a
-	// value stored by any version — compact as the API sends it, or the extended form poll.ts writes
-	// — parses to the same instant, so it compares directly against a freshly fetched battle.
+	// value stored by any version, whether compact as the API sends it or the extended form poll.ts
+	// writes, parses to the same instant, so it compares directly against a freshly fetched battle.
 	test("parses the compact and extended forms to the same instant", () => {
 		expect(v.parse(LastBattleSchema, "20240115T143022.000Z")).toEqual(
 			v.parse(LastBattleSchema, "2024-01-15T14:30:22.000Z")
@@ -129,8 +129,8 @@ describe("isEligibleBattle", () => {
 		expect(isEligibleBattle(duelBattle())).toBe(false);
 	});
 
-	// Pinned because the gate, not BattleSchema, is what must reject this — see
-	// EligibleBattleSchema's JSDoc for the stuck state that would otherwise result.
+	// Pinned because the gate, not BattleSchema, is what must reject this. See EligibleBattleSchema's
+	// JSDoc for the stuck state that would otherwise result.
 	test("rejects an entry with no opponent, so the scan skips it rather than reporting drift", () => {
 		expect(isEligibleBattle(rawBattle({ opponent: [] }))).toBe(false);
 	});

@@ -7,9 +7,9 @@ import { onTestFinished, vi } from "vitest";
  * manipulation.
  *
  * The module under test never closes the store it opens (production holds one handle for the
- * isolate's lifetime), so this closes it via `onTestFinished` — scoped to the calling test rather
- * than a module-level `afterEach` over shared state, so the handle can't outlive or leak between
- * tests.
+ * isolate's lifetime), so this closes it via `onTestFinished`. That scopes the close to the calling
+ * test rather than a module-level `afterEach` over shared state, so the handle can't outlive or
+ * leak between tests.
  */
 function spyMemoryKv() {
 	// `restoreMocks` puts the real `Deno.openKv` back before each test, so capturing it here (rather

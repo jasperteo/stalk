@@ -4,7 +4,7 @@
  * Dev-only preview tool: renders DECK and writes it next to this script for visual inspection. Edit
  * DECK below to whatever cards you want to preview. Rendering reads each tile from the local
  * `images/` mirror by card id (`<id>.png`/`<id>-evo.png`/`<id>-hero.png`), so a fully-local deck
- * never touches the network — but it's still not wired into `deno task test` (it writes a file and
+ * never touches the network. But it's still not wired into `deno task test` (it writes a file and
  * isn't a hermetic assertion), so run it manually via `deno task preview`. To tune spacing, edit
  * COLUMN_GAP/ROW_GAP directly in deck-image.ts and rerun.
  */
@@ -15,7 +15,7 @@ import type { Card } from "@/schema.ts";
 
 /**
  * A throwaway placeholder the `Card` type requires. Only read on the CDN-fallback path (a card
- * missing from `images/`), which a fully-local deck never reaches — so it just needs to be a valid
+ * missing from `images/`), which a fully-local deck never reaches. So it just needs to be a valid
  * URL, never one that actually resolves.
  */
 const DUMMY_ICON = "https://example.invalid/card.png";

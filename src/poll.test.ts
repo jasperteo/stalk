@@ -12,7 +12,7 @@ const TAG = "#ABC123";
 const TARGET: Target = { tag: TAG, webhook: WEBHOOK };
 const TOKEN = "test-token";
 
-/** Targets sharing one webhook — only the tags vary in the fan-out tests. */
+/** Targets sharing one webhook. Only the tags vary in the fan-out tests. */
 function targetsFor(...tags: string[]): Target[] {
 	return tags.map((tag) => ({ tag, webhook: WEBHOOK }));
 }
@@ -26,7 +26,7 @@ function battlelogFetch(entries: unknown[]) {
  * resets the module registry and freshly imports `poll.ts` so its top-level `await Deno.openKv()`
  * runs against the spy.
  *
- * Returns `tick`, a one-target `pollAll` — the tests drive the real tick entry point rather than
+ * Returns `tick`, a one-target `pollAll`. The tests drive the real tick entry point rather than
  * `poll` (which is module-private now), so each call re-reads lastBattle exactly as production does
  * and sequences of polls need no lastBattle plumbing.
  *
@@ -83,7 +83,7 @@ describe("poll", () => {
 		vi.mocked(notifyBattle).mockRejectedValueOnce(new Error("webhook down"));
 		expect(await tick()).toBe("failed");
 
-		// The failed post must not advance lastBattle — the battle is still owed.
+		// The failed post must not advance lastBattle. The battle is still owed.
 		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-01T00:00:00.000Z"]]));
 
 		// The retry posts the same battle and only then advances lastBattle.
@@ -103,8 +103,8 @@ describe("poll", () => {
 		vi.spyOn(kv, "set").mockRejectedValueOnce(new Error("kv write failed"));
 		expect(await tick()).toBe("failed");
 
-		// The post happened, but the failed write leaves the old lastBattle — the battle is not marked
-		// done.
+		// The post happened, but the failed write leaves the old lastBattle. The battle is not
+		// marked done.
 		expect(notifyBattle).toHaveBeenCalledTimes(1);
 		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-01T00:00:00.000Z"]]));
 
@@ -149,7 +149,7 @@ describe("poll", () => {
 		expect(notifyBattle).toHaveBeenCalledTimes(1);
 	});
 
-	// Only reachable if the battlelog's newest-first order breaks — see the guard in poll.ts.
+	// Only reachable if the battlelog's newest-first order breaks. See the guard in poll.ts.
 	test("skips an eligible battle older than the stored lastBattle, without rewinding it", async () => {
 		const { tick, listLastBattles, log } = await importPoll();
 
@@ -208,7 +208,7 @@ describe("poll", () => {
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
 		expect(await tick()).toBe("seeded");
 
-		// First run and an expired entry are indistinguishable and both normal, so neither may warn —
+		// First run and an expired entry are indistinguishable and both normal, so neither may warn.
 		// `readLastBattle` skips the parse entirely on `undefined` to keep that check exact.
 		expect(log.warn).not.toHaveBeenCalled();
 	});
@@ -247,7 +247,7 @@ describe("poll", () => {
 
 describe("pollAll", () => {
 	// The whole reason poll() takes its lastBattle value as an argument. KV reads are the free tier's
-	// binding limit, so a tick's read cost has to be flat in the number of targets — a regression to a
+	// binding limit, so a tick's read cost has to be flat in the number of targets. A regression to a
 	// per-player kv.get would be invisible in every other test here, since the outcomes are identical.
 	test("reads every lastBattle in one KV command regardless of target count", async () => {
 		const { pollAll, kv } = await importPoll();
@@ -267,7 +267,7 @@ describe("pollAll", () => {
 	test("one target's failure doesn't reject the tick", async () => {
 		const { pollAll } = await importPoll();
 
-		// Every fetch 500s, so all three polls fail — pollAll must still resolve, not reject.
+		// Every fetch 500s, so all three polls fail. pollAll must still resolve, not reject.
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(() => Promise.resolve(new Response("down", { status: 500 })))
@@ -279,7 +279,7 @@ describe("pollAll", () => {
 	});
 
 	// The lastBattle read runs before any poll(), so it is the one failure that isn't already
-	// contained by poll()'s own catch — and it hits every target at once. It must not reject the tick.
+	// contained by poll()'s own catch, and it hits every target at once. It must not reject the tick.
 	test("reports every target failed when the lastBattle read fails, without seeding any lastBattle", async () => {
 		const { pollAll, listLastBattles, kv, log } = await importPoll();
 

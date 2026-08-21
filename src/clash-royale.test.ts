@@ -54,7 +54,7 @@ describe("latestBattle", () => {
 	});
 
 	// The battlelog arrives newest-first (verified against the live proxy), so selection trusts
-	// position rather than comparing timestamps — pinned here because it is an assumption about an
+	// position rather than comparing timestamps. Pinned here because it is an assumption about an
 	// undocumented API ordering, not a property of the data.
 	test("takes the first eligible entry, not the chronologically newest", () => {
 		const first = battle("20240101T000000.000Z");
@@ -83,7 +83,7 @@ describe("latestBattle", () => {
 		);
 	});
 
-	test("an 8-card deck is still eligible — the duel check must not be off by one", () => {
+	test("an 8-card deck is still eligible; the duel check must not be off by one", () => {
 		const eightCards = rawBattle({
 			team: [rawPlayer({ cards: Array.from({ length: DECK_SIZE }, () => rawCard()) })],
 		});
@@ -91,7 +91,7 @@ describe("latestBattle", () => {
 		expect(latestBattle([eightCards]).battle).toBeDefined();
 	});
 
-	test("a 9-card deck is already ineligible — one more than a real deck trips the duel check", () => {
+	test("a 9-card deck is already ineligible; one more than a real deck trips the duel check", () => {
 		const nineCards = rawBattle({
 			team: [rawPlayer({ cards: Array.from({ length: DECK_SIZE + 1 }, () => rawCard()) })],
 		});

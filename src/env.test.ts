@@ -5,7 +5,7 @@ import { WEBHOOK } from "@/testing/fixtures.ts";
 
 vi.mock(import("@/log.ts"));
 
-// `vi.stubEnv` mutates `process.env`, which Deno's node-compat live-backs with the real env — so
+// `vi.stubEnv` mutates `process.env`, which Deno's node-compat live-backs with the real env. So
 // env.ts's `Deno.env.get` sees the stub, and `unstubEnvs` in vitest.config.ts restores the
 // original values before each test (stubbing to `undefined` deletes the variable).
 //
@@ -28,7 +28,7 @@ describe("config", () => {
 		const { config, log } = await importEnv();
 
 		expect(config).toBeUndefined();
-		// Unset reports at info, never error — see parseEnv's JSDoc for why the two are split.
+		// Unset reports at info, never error. See parseEnv's JSDoc for why the two are split.
 		expect(log.info).toHaveBeenCalledWith(expect.stringContaining(TOKEN_VAR));
 		expect(log.error).not.toHaveBeenCalled();
 	});

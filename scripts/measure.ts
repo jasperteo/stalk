@@ -6,7 +6,7 @@
  * `IMAGES_DIR` (not the CDN), so it measures exactly the directory the renderer reads and stays
  * offline and hermetic enough to run on a whim.
  *
- * Usage: `deno task measure 26000032 26000032-evo` — bare card ids resolve to `images/<id>.png`; a
+ * Usage: `deno task measure 26000032 26000032-evo`. Bare card ids resolve to `images/<id>.png`; a
  * `-evo`/`-hero` suffix picks that variant. With no args it measures every icon in `images/` and
  * prints the aggregate row, which is what ROW_GAP's floor and the grid's cell width come from.
  */
@@ -25,7 +25,7 @@ type Measurement = {
 	trimmedHeight: number;
 	left: number;
 	right: number;
-	/** Transparent band above the art — `trimToArt` cuts this. */
+	/** Transparent band above the art. `trimToArt` cuts this. */
 	top: number;
 	/**
 	 * Transparent band below the art, from the card's lowest opaque pixel to the image's bottom edge.
@@ -37,7 +37,7 @@ type Measurement = {
 function measure(name: string, image: RawImage): Measurement {
 	const { width, height } = image;
 	// The exact bounds scan the renderer trims with (`trimToArt` in deck-image.ts wraps this same
-	// function), so these margins are precisely what it sees — no risk of the two drifting.
+	// function), so these margins are precisely what it sees. No risk of the two drifting.
 	const { minX, minY, maxX, maxY } = scanArtBounds(image);
 
 	if (maxX < 0) {
