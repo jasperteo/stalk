@@ -31,11 +31,10 @@ const levelColor = {
 const hl = { entity: brightMagenta, value: brightBlue, strong: bold };
 
 /**
- * How much of an error body to echo into a log line. Generous, because the useful diagnostic — a
- * Discord malformed-embed detail, or a Clash Royale API error message — can be buried deep inside a
- * nested JSON body, and that log line is the only record of it. Still capped, since an edge proxy's
- * 5xx returns a multi-KB HTML page that would otherwise flood the Deploy logs every tick of an
- * outage.
+ * How much of an error body to echo into a log line. Generous, because a Discord malformed-embed
+ * detail, or a Clash Royale API error message, can be buried deep inside a nested JSON body, and
+ * that log line is the only record of it. Still capped, since an edge proxy's 5xx returns a
+ * multi-KB HTML page that would otherwise flood the Deploy logs every tick of an outage.
  */
 const ERROR_BODY_CHARS = 2000;
 
@@ -47,8 +46,8 @@ const ERROR_BODY_CHARS = 2000;
  *   can route to `console.info` under its own badge.
  * @param tint Whether to paint the message itself, not just the badge. Extra args stay unpainted
  *   regardless, so an Error keeps its native console inspection.
- * @returns The logger, with its badge already painted — computed once here, which is what keeps
- *   every paint call after the `setColorEnabled` gate above.
+ * @returns The logger, with its badge already painted. Computing it once here is what keeps every
+ *   paint call after the `setColorEnabled` gate above.
  */
 function leveled(
 	write: (...data: unknown[]) => void,
@@ -65,7 +64,7 @@ function leveled(
 
 /**
  * Console wrapper: every line carries a colored level badge so local dev and Deno Deploy logs read
- * as one stream. warn/error/debug also tint their message — debug because it's verbose diagnostic
+ * as one stream. warn/error/debug also tint their message, debug because it's verbose diagnostic
  * detail rather than something to act on. Extra args are left unpainted, so an Error handed to
  * `log.error` keeps its native console inspection (stack trace, etc.).
  */

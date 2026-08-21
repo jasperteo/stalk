@@ -22,7 +22,7 @@ const ROYALE_API_ICON = "https://cdn.royaleapi.com/static/img/branding/royaleapi
 
 /**
  * Abort the webhook POST after this long; generous because the multipart body carries the deck PNGs
- * stored uncompressed (see `GRID_COMPRESSION`) — about 6.6 MiB for the pair of grids a post
+ * stored uncompressed (see `GRID_COMPRESSION`), about 6.6 MiB for the pair of grids a post
  * carries.
  */
 const WEBHOOK_TIMEOUT_MS = 15_000;
@@ -31,7 +31,7 @@ const SPACER_FIELD = { name: "\u{200B}", value: "\u{200B}" } as const;
 
 /**
  * Suppresses every mention Discord would otherwise parse out of `content`. Absent this field
- * Discord's default is to parse all of them — users, roles, `@everyone`/`@here` — and `content`
+ * Discord's default is to parse all of them: users, roles, `@everyone`/`@here`. And `content`
  * carries the opponent's display name, which is free text chosen by a stranger the matchmaker
  * picked. This app never intends to mention anyone, so an empty `parse` list costs nothing and
  * stops the ping behavior from depending on an upstream name filter we don't control.
@@ -78,7 +78,7 @@ function formatDeck(cards: Card[]) {
  *
  * @param label The field's display name, so the same builder serves both the player's row and the
  *   opponent's.
- * @returns The embed field, or `undefined` on modes without trophies — the caller filters it out.
+ * @returns The embed field, or `undefined` on modes without trophies. The caller filters it out.
  */
 function buildTrophyField(player: Player, label: string) {
 	if (player.startingTrophies === undefined) {
@@ -100,7 +100,7 @@ function buildTrophyField(player: Player, label: string) {
  * The pair of inline trophy rows for an embed from `subject`'s point of view, so the opponent's
  * embed stays labelled from the opponent's side.
  *
- * @param subject The player whose embed this is — labelled "Trophies".
+ * @param subject The player whose embed this is, labelled "Trophies".
  * @param other The other side, labelled "Opponent Trophies". Swapping the two is what flips the
  *   point of view for the opponent's embed.
  */
@@ -112,8 +112,8 @@ function buildTrophyFields(subject: Player, other: Player) {
 }
 
 /**
- * The player's tower troops as one comma-joined text field — the fallback embed's stand-in for the
- * thumbnail {@link towerThumbnail} would otherwise carry.
+ * The player's tower troops as one comma-joined text field. The fallback embed uses it in place of
+ * the thumbnail {@link towerThumbnail} would otherwise carry.
  *
  * @param label The field's display name, labelling this side like {@link buildTrophyField} does.
  * @returns The embed field, or `undefined` on modes with no tower troop.
@@ -161,7 +161,7 @@ function towerThumbnail(player: Player) {
  *
  * @param mine Crowns the tracked player took.
  * @param theirs Crowns the opponent took.
- * @returns The matching {@link OUTCOMES} entry — result word, verb, and embed color.
+ * @returns The matching {@link OUTCOMES} entry: result word, verb, and embed color.
  */
 function outcomeFor(mine: number, theirs: number) {
 	if (mine > theirs) {
@@ -178,7 +178,7 @@ function outcomeFor(mine: number, theirs: number) {
 /**
  * Lowest HP among a player's surviving towers (HP > 0).
  *
- * @returns The weakest survivor's HP, or `0` when none survive — a total wipe has no margin to
+ * @returns The weakest survivor's HP, or `0` when none survive. A total wipe has no margin to
  *   report.
  */
 function weakestSurvivingTowerHp(player: Player) {
@@ -196,8 +196,8 @@ function weakestSurvivingTowerHp(player: Player) {
  * tracked player's.
  *
  * @param me The tracked player (`battle.team[0]`), already narrowed by the caller.
- * @returns Both sides, the shared `content` line, and `embedBase` — everything the two message
- *   shapes need in common.
+ * @returns Both sides, the shared `content` line, and `embedBase`. That is everything the two
+ *   message shapes need in common.
  */
 function battleContext(battle: Battle, me: Player) {
 	const [opponent] = battle.opponent;
@@ -236,7 +236,7 @@ type BattleContext = ReturnType<typeof battleContext>;
 
 /**
  * The one place a webhook body is serialized, so no payload shape can forget
- * {@link ALLOWED_MENTIONS} — both the multipart `payload_json` part and the text-only fallback go
+ * {@link ALLOWED_MENTIONS}. Both the multipart `payload_json` part and the text-only fallback go
  * through here. Adding the field per call site instead would leave a third shape unprotected, and
  * silently so, by default.
  */
@@ -307,7 +307,7 @@ function buildFallbackMessage({ me, opponent, content, embedBase }: BattleContex
  * accepted before the response failed, so those still throw and let the cron tick retry the whole
  * post instead.
  *
- * 400 is overloaded — Discord returns it for an oversized attachment _and_ for a malformed embed
+ * 400 is overloaded. Discord returns it for an oversized attachment _and_ for a malformed embed
  * body. Only the first is fixed by dropping the image, so a malformed-embed 400 costs one extra
  * doomed POST before the throw. Worth it to keep oversized payloads self-healing.
  */
@@ -316,7 +316,7 @@ const PAYLOAD_REJECTED = new Set([400, 413]);
 /**
  * POSTs one prepared request to the webhook.
  *
- * @returns The response unjudged — the caller decides what a non-ok status means, since only it
+ * @returns The response unjudged. The caller decides what a non-ok status means, since only it
  *   knows whether a retry is still available.
  */
 async function postWebhook(webhookUrl: string, request: RequestInit) {
@@ -331,10 +331,10 @@ async function postWebhook(webhookUrl: string, request: RequestInit) {
  * `BattleSchema` types both sides as one-element tuples, and 2v2s are filtered out upstream
  * anyway.
  *
- * Multipart when the deck images render — fetch derives the boundary from the FormData body, so no
- * manual Content-Type — otherwise the JSON text fallback. A payload Discord rejects outright (see
- * {@link PAYLOAD_REJECTED}) retries once with the text-only fallback, instead of failing the whole
- * tick and re-posting the identical oversized request every minute.
+ * Multipart when the deck images render, otherwise the JSON text fallback. On the multipart path
+ * fetch derives the boundary from the FormData body, so there is no manual Content-Type. A payload
+ * Discord rejects outright (see {@link PAYLOAD_REJECTED}) retries once with the text-only fallback,
+ * instead of failing the whole tick and re-posting the identical oversized request every minute.
  *
  * @throws When Discord still rejects the post after that retry (a 5xx/429, or a non-payload 4xx).
  */
@@ -351,7 +351,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		body: payloadJson(buildFallbackMessage(ctx)),
 	});
 
-	// The only state that varies. Whether an image was sent is just `form !== undefined` — no
+	// The only state that varies. Whether an image was sent is just `form !== undefined`. No
 	// separate flag to keep in sync with it.
 	let form: FormData | undefined;
 
@@ -366,7 +366,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		form === undefined ? textRequest() : { method: "POST", body: form }
 	);
 
-	// Only retry when Discord rejected the image payload itself — see PAYLOAD_REJECTED.
+	// Only retry when Discord rejected the image payload itself. See PAYLOAD_REJECTED.
 	if (form !== undefined && !response.ok && PAYLOAD_REJECTED.has(response.status)) {
 		const rejected = await response.text();
 		log.warn(
@@ -389,8 +389,8 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 export { notifyBattle };
 
 /**
- * @internal Exported for tests only — lets the presentation tests assert on a message object
- *   directly, instead of stubbing `fetch` and decoding a multipart body to read one embed field.
+ * @internal Exported for tests only. The presentation tests assert on a message object directly,
+ *   instead of stubbing `fetch` and decoding a multipart body to read one embed field.
  *   `payloadJson` stays private, so no new call site can serialize a body without
  *   {@link ALLOWED_MENTIONS}.
  */

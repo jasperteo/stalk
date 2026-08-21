@@ -26,15 +26,16 @@ type PollOutcome = (typeof POLL_OUTCOMES)[number];
 type LastBattle = v.InferOutput<typeof LastBattleSchema>;
 
 /**
- * Interprets one raw stored lastBattle value. Absence — `stored` is `undefined`, meaning first run
- * or an expired entry — is never corrupt, so it skips the parse straight to `undefined`;
- * {@link listLastBattles} omits the key entirely rather than yielding null, which is what makes
- * that check exact. A _present_ value that fails to parse is corrupt: log and return `undefined` so
- * the caller re-seeds instead of re-posting every tick against a value that can never match.
+ * Interprets one raw stored lastBattle value. Absence means `stored` is `undefined`, which is a
+ * first run or an expired entry. Absence is never corrupt, so it skips the parse straight to
+ * `undefined`; {@link listLastBattles} omits the key entirely rather than yielding null, which is
+ * what makes that check exact. A _present_ value that fails to parse is corrupt: log and return
+ * `undefined` so the caller re-seeds instead of re-posting every tick against a value that can
+ * never match.
  *
  * @param stored The raw KV value, exactly as {@link listLastBattles} read it.
  * @param tag Only for the corrupt-value log line.
- * @returns The parsed lastBattle time, or `undefined` for both cases above — the caller treats both
+ * @returns The parsed lastBattle time, or `undefined` for both cases above. The caller treats both
  *   as first-run.
  */
 function readLastBattle(stored: unknown, tag: string): LastBattle | undefined {
@@ -53,7 +54,7 @@ function readLastBattle(stored: unknown, tag: string): LastBattle | undefined {
 }
 
 /**
- * Polls one target against the lastBattle value {@link pollAll} read for it this tick — see
+ * Polls one target against the lastBattle value {@link pollAll} read for it this tick. See
  * {@link pollAll} for why `stored` is a parameter here rather than a fetch, and why this function
  * never rejects.
  *
@@ -116,8 +117,8 @@ async function poll(target: Target, token: string, stored: unknown): Promise<Pol
 }
 
 /**
- * Read-only dump of every stored lastBattle value, keyed by tag. Values stay raw and uninterpreted
- * — {@link readLastBattle} is where corrupt-vs-absent gets decided. Used by {@link pollAll} and
+ * Read-only dump of every stored lastBattle value, keyed by tag. Values stay raw and uninterpreted.
+ * {@link readLastBattle} is where corrupt-vs-absent gets decided. Used by {@link pollAll} and
  * main.ts's debug route.
  *
  * @returns Tag → raw stored value. A tag with nothing stored is **absent from the map**, not
@@ -136,20 +137,20 @@ async function listLastBattles() {
 }
 
 /**
- * Polls every target for one cron tick — the tick's entry point, so the KV handle stays private to
- * this module.
+ * Polls every target for one cron tick. This is the tick's entry point, so the KV handle stays
+ * private to this module.
  *
  * One `list` for the whole set, rather than a `kv.get` per player: KV reads are the free tier's
  * binding limit (450k/month), and a per-player read at one tick a minute costs ~43.8k of them per
- * player per month. Writes are untouched — each player still writes its own key on success, so
+ * player per month. Writes are untouched. Each player still writes its own key on success, so
  * concurrent polls never share a value.
  *
  * Never rejects, which is what lets main.ts's cron handler await it with no catch of its own and
  * still reach its tally line. {@link poll} contains each target's own errors, resolving "failed"
- * rather than rejecting — which is why the fan-out below can use `Promise.all` and not
- * `allSettled`; the lastBattle read — the one failure that precedes every poll — is contained here.
- * Any `await` added to this function outside that try reintroduces a rejected tick and silently
- * costs the tally.
+ * rather than rejecting, which is why the fan-out below can use `Promise.all` and not `allSettled`.
+ * The lastBattle read, the one failure that precedes every poll, is contained here. Any `await`
+ * added to this function outside that try reintroduces a rejected tick and silently costs the
+ * tally.
  *
  * @returns One outcome per target, index-aligned with `targets` (`Promise.all` preserves order).
  */
@@ -162,7 +163,7 @@ async function pollAll(targets: Target[], token: string): Promise<PollOutcome[]>
 		// The one error that hits every target at once, so it must not escape as a rejected tick:
 		// main.ts would lose both the tally line and this log. Reporting every target "failed" leaves
 		// every lastBattle untouched, so the next tick retries. Falling through with an empty map
-		// instead would be far worse — every player would read as a first run and get seeded straight
+		// instead would be far worse. Every player would read as a first run and get seeded straight
 		// past their newest battle, with no post.
 		log.error("Reading lastBattle failed; every target failed this tick:", error);
 		return targets.map(() => "failed");

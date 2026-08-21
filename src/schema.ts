@@ -25,7 +25,7 @@ const TagSchema = v.pipe(
 
 /**
  * Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that and
- * rejects invalid dates, which is why the parse doubles as the validation — there is no cheaper
+ * rejects invalid dates, which is why the parse doubles as the validation. There is no cheaper
  * check to swap in. Valibot's `iso*` actions don't apply: they all reject the compact form, and
  * even on the extended form they are regex shape checks that accept impossible dates like Feb 31.
  *
@@ -86,7 +86,7 @@ const PlayerSchema = v.object({
 	startingTrophies: v.optional(v.number()),
 	trophyChange: v.optional(v.number()),
 	/**
-	 * Tower HP remaining at match end. The API omits destroyed towers, so we backfill them as 0 — a
+	 * Tower HP remaining at match end. The API omits destroyed towers, so we backfill them as 0. A
 	 * tower is destroyed exactly when its HP hits 0. King defaults to 0; the princess array is always
 	 * padded to its full two.
 	 */
@@ -104,7 +104,7 @@ const BattleSchema = v.object({
 	battleTime: BattleTimeSchema,
 	gameMode: v.optional(v.object({ name: v.string() })),
 	/**
-	 * Exactly one player per side — which {@link EligibleBattleSchema} already enforces before this
+	 * Exactly one player per side, which {@link EligibleBattleSchema} already enforces before this
 	 * schema ever runs. Declared as a tuple rather than `v.pipe(v.array(…), v.length(1))` so the
 	 * _type_ carries it too: `v.length` is an action and leaves the output `Player[]`, whereas a
 	 * tuple's index 0 is a known position, so `noUncheckedIndexedAccess` doesn't widen `team[0]` to
@@ -124,20 +124,20 @@ const BattleSchema = v.object({
 /**
  * Cards in one deck; a Duel concatenates 2–3 decks into `cards`, so a longer array is the tell.
  *
- * @internal Exported for tests only — production reads it through
- *   {@link EligibleBattleSchema} in this file.
+ * @internal Exported for tests only. Production reads it through {@link EligibleBattleSchema} in
+ *   this file.
  */
 const DECK_SIZE = 8;
 
 /**
  * The cheap 1v1 gate run over the whole battlelog before full validation: exactly one `team` entry
  * whose `cards` is at most one deck, against exactly one `opponent`. A Duel is also a single `team`
- * entry, but concatenates 2–3 decks (16 or 24 cards) into `cards` — the card count, not
+ * entry, but concatenates 2–3 decks (16 or 24 cards) into `cards`. The card count, not
  * `gameMode.name` (which varies across duel variants), is the structural tell.
  *
  * The `opponent` check is what keeps {@link BattleSchema}'s one-per-side tuples from creating a
- * stuck state: without it, an entry missing its opponent would pass this gate, win selection, then
- * fail full validation as `drifted` — which holds lastBattle in place and retries forever against a
+ * stuck state. Without it, an entry missing its opponent would pass this gate, win selection, then
+ * fail full validation as `drifted`. That holds lastBattle in place and retries forever against a
  * shape that can never become valid. Checked here instead, such an entry is merely ineligible, so
  * the scan walks past it like a 2v2. It only reads the length, leaving the contents to
  * `BattleSchema`, so genuine drift inside an opponent still reports as drift.
@@ -146,8 +146,8 @@ const DECK_SIZE = 8;
  * abort-early config internally, and `v.object` checks entries in declaration order, stopping at
  * the first issue. So a 2v2 or Duel entry fails the cheap structural check before ever paying for
  * the `Temporal` parse. A malformed `battleTime` also counts as ineligible, so such an entry is
- * skipped rather than reported as schema drift — which is what makes the ordering (and abort-early
- * itself) purely an optimization: reordering the fields, or a future valibot internals change that
+ * skipped rather than reported as schema drift. That is what makes the ordering (and abort-early
+ * itself) purely an optimization. Reordering the fields, or a future valibot internals change that
  * stops short-circuiting on the first issue, would cost speed, not correctness.
  */
 const EligibleBattleSchema = v.object({
@@ -160,7 +160,7 @@ const EligibleBattleSchema = v.object({
 });
 
 /**
- * Whether a raw battlelog entry is a 1v1 worth fully validating — see {@link EligibleBattleSchema}
+ * Whether a raw battlelog entry is a 1v1 worth fully validating. See {@link EligibleBattleSchema}
  * for what passes and what a failure means.
  */
 function isEligibleBattle(entry: unknown): boolean {
@@ -169,7 +169,7 @@ function isEligibleBattle(entry: unknown): boolean {
 
 /**
  * A stored lastBattle KV value. Reuses BattleTimeSchema, so the stored string parses into the same
- * `Temporal.Instant` a freshly fetched battle carries and the two compare directly — rather than
+ * `Temporal.Instant` a freshly fetched battle carries and the two compare directly, rather than
  * trusting a raw `kv.get<string>` cast. It also still validates: a corrupt stored value fails here,
  * which is what lets `readLastBattle` re-seed instead of re-posting forever.
  */
@@ -178,7 +178,7 @@ const LastBattleSchema = BattleTimeSchema;
 /**
  * The write side of {@link LastBattleSchema}: formats an `Instant` into the string KV actually
  * stores, since KV can't structured-clone an `Instant` directly. Fixed `fractionalSecondDigits` so
- * the same instant always serializes to the same bytes — a read/write cycle never churns the stored
+ * the same instant always serializes to the same bytes. A read/write cycle never churns the stored
  * value, and `main.ts`'s lastBattle dump stays aligned.
  */
 function serializeLastBattle(instant: Temporal.Instant) {
@@ -209,8 +209,8 @@ type Battle = v.InferOutput<typeof BattleSchema>;
 type Target = v.InferOutput<typeof TargetSchema>;
 type Card = v.InferOutput<typeof CardSchema>;
 /**
- * The levels `CardSchema` admits — the key type for the per-level lookup tables in `deck-image.ts`
- * and `discord.ts`.
+ * The levels `CardSchema` admits, and the key type for the per-level lookup tables in
+ * `deck-image.ts` and `discord.ts`.
  */
 type EvolutionLevel = NonNullable<Card["evolutionLevel"]>;
 

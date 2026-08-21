@@ -20,8 +20,8 @@ type BattleLog = v.InferOutput<typeof BattleLogSchema>;
 /**
  * Fetches a player's raw battle-log entries. Schema validation is deferred to {@link latestBattle}.
  *
- * @returns The entries in the API's own order — newest-first, which is what {@link latestBattle}
- *   selects on.
+ * @returns The entries in the API's own order, which is newest-first. That ordering is what
+ *   {@link latestBattle} selects on.
  * @throws When the API response isn't ok.
  */
 async function fetchBattlelog(playerTag: string, token: string): Promise<BattleLog> {
@@ -45,7 +45,7 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<BattleL
 type BattleSelection = { battle: Battle | undefined; drifted: boolean };
 
 /**
- * Picks the newest eligible (1v1) battle and fully validates only that one — a tick posts at most
+ * Picks the newest eligible (1v1) battle and fully validates only that one. A tick posts at most
  * one battle, so matches in between are skipped by design.
  *
  * The log arrives newest-first, so the first eligible entry _is_ the newest and the scan stops
@@ -53,8 +53,8 @@ type BattleSelection = { battle: Battle | undefined; drifted: boolean };
  * changed, we would post an older battle and advance lastBattle past the newer ones. Leading 2v2s
  * and Duels are still walked past, so the assumption only saves scanning the tail.
  *
- * @returns The battle, plus `drifted` when an entry was selected but failed full validation — API
- *   schema drift, which the caller surfaces separately from "no new battles".
+ * @returns The battle, plus `drifted` when an entry was selected but failed full validation. That
+ *   is API schema drift, which the caller surfaces separately from "no new battles".
  */
 function latestBattle(entries: BattleLog): BattleSelection {
 	const newest = entries.find((entry) => isEligibleBattle(entry));

@@ -3,7 +3,7 @@
  *
  * Composites Clash Royale cards into a bottom-aligned 4-column PNG grid via sharp.
  *
- * `docs/deck-rendering.md` is the authority on every constant's value and rationale — benchmarks,
+ * `docs/deck-rendering.md` is the authority on every constant's value and rationale: benchmarks,
  * size tables, change history. Comments here cover only what a future edit must not silently
  * break.
  */
@@ -20,9 +20,10 @@ import type { Card, EvolutionLevel } from "@/schema.ts";
 // ════════════════════════════════════════════ RUNTIME ════════════════════════════════════════════
 
 /**
- * Lazily imports and configures sharp on first render — `cache(false)`, `concurrency(1)`. `Lazy`
- * specifically (not a bare promise memo) for its rejection semantics: it clears its state on a
- * rejected initializer, so a transient dlopen failure doesn't silently poison every later render.
+ * Lazily imports and configures sharp on first render with `cache(false)` and `concurrency(1)`.
+ * `Lazy` specifically (not a bare promise memo) for its rejection semantics: it clears its state on
+ * a rejected initializer, so a transient dlopen failure doesn't silently poison every later
+ * render.
  *
  * @see docs/deck-rendering.md#sharp-runtime-config
  */
@@ -70,7 +71,7 @@ const COLUMN_GAP = 12;
 const ROW_GAP = -16;
 /** Alpha at or below this counts as transparent when scanning for a card's art bounds. */
 const ALPHA_THRESHOLD = 8;
-/** Stride of the raw bitmaps this module works in — {@link decodeToRaw} always yields RGBA. */
+/** Stride of the raw bitmaps this module works in. {@link decodeToRaw} always yields RGBA. */
 const BYTES_PER_PIXEL = 4;
 /**
  * PNG zlib compressionLevel (0–9) for the shipped grid. 0 trades upload size for encode CPU, the
@@ -86,7 +87,7 @@ const ICON_TIMEOUT_MS = 10_000;
 
 /**
  * A decoded, row-major RGBA bitmap: the shape {@link scanArtBounds} walks. `data` is a `Buffer` so
- * {@link cropRaw}'s output composites without a cast — see its doc comment.
+ * {@link cropRaw}'s output composites without a cast. See its doc comment.
  */
 type RawImage = {
 	data: Buffer;
@@ -103,7 +104,7 @@ type Region = {
 };
 
 /**
- * A trimmed icon ready to composite, plus the transparent bottom margin it kept —
+ * A trimmed icon ready to composite, plus the transparent bottom margin it kept.
  * {@link renderDeckGrid} reads that padding to cap how far the row below can overlap before it
  * clips. `data` is a `Buffer`, produced by {@link cropRaw}.
  */
@@ -127,7 +128,7 @@ type GridPlan = {
 /**
  * Decodes an encoded icon to the raw RGBA bitmap `scanArtBounds` walks.
  *
- * @returns Always 4-channel RGBA — `ensureAlpha` guarantees it even for an opaque source, which is
+ * @returns Always 4-channel RGBA. `ensureAlpha` guarantees it even for an opaque source, which is
  *   the `BYTES_PER_PIXEL` stride every scan and crop downstream assumes.
  * @internal Exported for `scripts/measure.ts` and tests, so measured margins come from the
  *   renderer's own decode.
@@ -148,7 +149,7 @@ async function decodeToRaw(bytes: Uint8Array): Promise<RawImage> {
  * then column scans restricted to that row range for minX/maxX.
  *
  * @returns The opaque bounding box; `maxX === -1` (with `minX === width`, `minY === height`) when
- *   the bitmap is fully transparent — the sentinel callers must handle.
+ *   the bitmap is fully transparent. Callers must handle that sentinel.
  * @internal Exported for `scripts/measure.ts`.
  */
 function scanArtBounds({ data, width, height }: RawImage) {
@@ -202,10 +203,10 @@ function scanArtBounds({ data, width, height }: RawImage) {
 }
 
 /**
- * Copies a rectangle out of a raw RGBA bitmap, row by row — a plain memcpy in-process rather than a
- * second `sharp(...).extract()` pipeline. Stays on {@link RawImage}'s `Buffer`, which is also what
- * `.composite()`'s `OverlayOptions.input` declares — the `sharp()` constructor admits typed arrays
- * too, so `Buffer` is the one shape that satisfies both without a cast.
+ * Copies a rectangle out of a raw RGBA bitmap, row by row. That is a plain memcpy in-process rather
+ * than a second `sharp(...).extract()` pipeline. Stays on {@link RawImage}'s `Buffer`, which is also
+ * what `.composite()`'s `OverlayOptions.input` declares. The `sharp()` constructor admits typed
+ * arrays too, so `Buffer` is the one shape that satisfies both without a cast.
  *
  * Zero-fills via `Buffer.alloc`, not `allocUnsafe`: `subarray` clamps silently on a short row, so
  * an out-of-bounds region would otherwise leave uninitialized heap bytes in the tail of a row
@@ -213,8 +214,8 @@ function scanArtBounds({ data, width, height }: RawImage) {
  * is cheap insurance against a future caller that doesn't share {@link scanArtBounds}'s
  * guarantees.
  *
- * @returns The cropped pixels, tightly packed at `region.width` stride — no source-width padding
- *   carried along.
+ * @returns The cropped pixels, tightly packed at `region.width` stride, with no source-width
+ *   padding carried along.
  * @throws When `region` falls outside the source bitmap.
  */
 function cropRaw({ data, width }: RawImage, region: Region) {
@@ -270,11 +271,11 @@ function tileName(card: Card) {
 }
 
 /**
- * CDN art URL for the card as played — the fallback when the local mirror has no file yet, rather
- * than silently substituting the wrong (un-evolved) art.
+ * CDN art URL for the card as played. This is the fallback when the local mirror has no file yet,
+ * rather than silently substituting the wrong (un-evolved) art.
  *
- * @throws When `evolutionLevel` is set but the API lists no matching variant — rejects the whole
- *   render, via {@link loadTile}.
+ * @throws When `evolutionLevel` is set but the API lists no matching variant. The throw rejects the
+ *   whole render, via {@link loadTile}.
  */
 function iconUrl(card: Card) {
 	if (!card.evolutionLevel) {
@@ -329,7 +330,8 @@ function trimRaw(raw: RawImage): Tile {
 }
 
 /**
- * Decodes an encoded icon, then trims it — see {@link trimRaw}. The local-art path's entry point.
+ * Decodes an encoded icon, then trims it as {@link trimRaw} describes. The local-art path's entry
+ * point.
  *
  * @internal Exported for tests only.
  */
@@ -339,7 +341,7 @@ async function trimToArt(bytes: Uint8Array) {
 
 /**
  * Fetches a fallback card icon and trims it exactly like a local one, resizing only if the trimmed
- * tile still overflows the cell — trim before resize, never the reverse.
+ * tile still overflows the cell. Trim before resize, never the reverse.
  *
  * @throws When the CDN response isn't ok.
  * @see docs/deck-rendering.md#cdn-fallback
@@ -384,7 +386,7 @@ async function fetchTile(url: string) {
  *
  * @returns The tile, plus `cdnFallback` reporting whether the CDN path ran so
  *   {@link renderDeckGrid} can count it.
- * @throws On any error but `NotFound` — a decode failure or a bad CDN response propagates and
+ * @throws On any error but `NotFound`. A decode failure or a bad CDN response propagates and
  *   rejects the whole render.
  * @see docs/deck-rendering.md#cdn-fallback
  */
@@ -407,8 +409,8 @@ async function loadTile(card: Card) {
 // ════════════════════════════════════════════ LAYOUT ═════════════════════════════════════════════
 
 /**
- * Pure grid geometry for a given number of tiles: overall size and each row's top. No I/O —
- * isolated from {@link renderDeckGrid} so it's unit-testable on its own.
+ * Pure grid geometry for a given number of tiles: overall size and each row's top. It does no I/O,
+ * and stays isolated from {@link renderDeckGrid} so it's unit-testable on its own.
  *
  * @param tileCount How many tiles will be placed; only the count matters, never their sizes, which
  *   is what keeps the grid's dimensions constant across decks.
@@ -433,7 +435,7 @@ function planGrid(tileCount: number): GridPlan {
  * Renders a deck as a 4-column PNG grid (2 rows for a full 8-card deck); short decks leave trailing
  * cells empty.
  *
- * @returns The encoded PNG at native resolution — never scaled.
+ * @returns The encoded PNG at native resolution, never scaled.
  * @throws On an empty deck or a tile load/decode failure; the caller posts the text-only fallback.
  * @see docs/deck-rendering.md#output-size
  * @see docs/deck-rendering.md#no-cache
@@ -508,7 +510,7 @@ async function renderDeckGrid(cards: Card[]) {
 export { renderDeckGrid };
 
 /**
- * @internal Outside the production path — `renderDeckGrid` above is the only export `discord.ts`
+ * @internal Outside the production path. `renderDeckGrid` above is the only export `discord.ts`
  *   calls. Each declaration names its own consumer (`scripts/measure.ts`, tests, or both).
  */
 export { CELL_HEIGHT, CELL_WIDTH, decodeToRaw, IMAGES_DIR, planGrid, scanArtBounds, trimToArt };
