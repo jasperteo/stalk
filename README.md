@@ -8,7 +8,10 @@ new result to that player's own webhook. The message text carries the outcome, c
 margin. Below it sits one embed per side, with trophies, tower troop, and the full deck rendered as
 a card-image grid.
 
-![stalk architecture diagram](docs/architecture.png)
+<picture>
+	<source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.png">
+	<img alt="stalk architecture diagram" src="docs/architecture-light.png">
+</picture>
 
 ## How it works
 
