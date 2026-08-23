@@ -337,7 +337,7 @@ describe("renderDeckGrid", () => {
 
 		await renderDeckGrid(cards);
 
-		// The *identical* deck, rendered again: a fresh isolate per tick means a cross-tick cache
+		// The *identical* deck, rendered again: a cold start per tick means a cross-tick cache
 		// could never hit, so renderDeckGrid deliberately keeps none, and no per-tile cache either
 		// (local reads ride the OS page cache). Re-rendering a different deck would pass either way,
 		// so this only pins the decision when the decks match.

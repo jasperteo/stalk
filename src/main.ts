@@ -57,7 +57,7 @@ function formatTally(outcomes: PollOutcome[]) {
 }
 
 // Voided, not awaited: the registration promise only surfaces registration errors, and the job runs
-// for the isolate's lifetime.
+// for the process's lifetime.
 void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 	// Heartbeat so a misconfigured deploy shows up as a loud skipped tick in the logs, instead of
 	// failing silently with nothing to see on the dashboard.

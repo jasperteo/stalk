@@ -7,10 +7,10 @@ import { TargetsEnvSchema, TokenEnvSchema } from "@/schema.ts";
  * Reads and validates a single env var, logging once and falling back on a missing/invalid value.
  *
  * Unset and malformed are reported differently on purpose. An unset var is a deploy that isn't
- * configured yet, not a mistake in a value someone wrote. Deno Deploy also evaluates this module in
- * a fresh isolate every tick, so logging it at `error` would print an error line a minute for a
- * state that is merely incomplete. Consumers supply the loudness where it's warranted: `main.ts`
- * warns every tick on a missing token.
+ * configured yet, not a mistake in a value someone wrote. Deno Deploy also evaluates this module
+ * fresh on every tick, so logging it at `error` would print an error line a minute for a state that
+ * is merely incomplete. Consumers supply the loudness where it's warranted: `main.ts` warns every
+ * tick on a missing token.
  *
  * @template TOutput The schema's output type. Tying `fallback` to it is what lets callers
  *   destructure the result without re-narrowing. Both paths hand back the same type.

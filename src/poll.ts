@@ -6,7 +6,7 @@ import { hl, log } from "@/log.ts";
 import { LastBattleSchema, serializeLastBattle } from "@/schema.ts";
 import type { Target } from "@/schema.ts";
 
-/** One KV handle for the isolate's lifetime; Deno.openKv() opens the Deploy-managed store. */
+/** One KV handle for the process's lifetime; Deno.openKv() opens the Deploy-managed store. */
 const kv = await Deno.openKv();
 
 /** LastBattle keys are `["lastBattle", tag]`, namespaced per tag so multiple players share one KV. */

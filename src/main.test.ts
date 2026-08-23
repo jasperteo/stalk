@@ -51,9 +51,9 @@ function battlelogFetchByTag(logs: Record<string, unknown[]>) {
  * Deno.openKv()`/`Deno.cron(...)`/`Deno.serve(...)` side effects run against our spies.
  *
  * `announceListen` invokes the captured `onListen` callback, which in production fires once per
- * isolate, i.e. once per cron tick on Deploy. `log` comes back too because `vi.resetModules()`
- * re-evaluates the manual `@/log.ts` mock, handing out a fresh `log` each time: a statically
- * imported one would be a stale instance main.ts is no longer bound to.
+ * instance start, i.e. once per cron tick on Deploy. `log` comes back too because
+ * `vi.resetModules()` re-evaluates the manual `@/log.ts` mock, handing out a fresh `log` each time:
+ * a statically imported one would be a stale instance main.ts is no longer bound to.
  */
 async function importMain() {
 	const getKv = spyMemoryKv();
