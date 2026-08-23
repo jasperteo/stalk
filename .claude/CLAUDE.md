@@ -69,7 +69,7 @@ re-derive them.
   of trimmed copies plus the 3.43 MB composed canvas plus the 3.44 MB encoded PNG, ~14 MB, and a post
   carries two. Measured, not just derived: marginal peak RSS is 28 MiB per concurrent post from 1
   to 8 posts, easing to ~21 MiB at 16 as GC keeps up over the longer wall time, and 16 concurrent
-  posts peak at 429–483 MiB RSS. So isolate memory runs out first, somewhere around
+  posts peak at 429–483 MiB RSS. So instance memory runs out first, somewhere around
   **15 targets**, well before CPU or the KV read budget. The figure is post-`toBuffer()`, which
   removed a transient duplicate that used to stack on top of it. See
   [Output method](../docs/deck-rendering.md#output-method-tobuffer-vs-touint8array). The fix, when
@@ -85,12 +85,14 @@ re-derive them.
 
 ## Architecture
 
-Deno Deploy gives the app a fresh isolate per cron tick, so no module-level state survives from one
-tick to the next. The evidence is `Deno.serve`'s `onListen` callback, which logs on every tick in
-production and only fires when the listener binds, once per module evaluation. This is the premise
-behind the valibot bundling argument in [Dependencies](#dependencies) (module eval cost is paid
-every tick, not once) and the reason `src/deck-image.ts` keeps no render cache (see [Deck rendering
-notes](#deck-rendering-notes) and [the deck-rendering doc](../docs/deck-rendering.md#no-cache)).
+Deno Deploy runs the app as a standard Deno process in a Linux microVM and stops an idle instance
+after as little as 5 seconds, so at one tick a minute the app cold-starts on essentially every tick
+and no module-level state survives from one tick to the next. The evidence is `Deno.serve`'s
+`onListen` callback, which logs on every tick in production and only fires when the listener binds,
+once per module evaluation. This is the premise behind the valibot bundling argument in
+[Dependencies](#dependencies) (module eval cost is paid every tick, not once) and the reason
+`src/deck-image.ts` keeps no render cache (see [Deck rendering notes](#deck-rendering-notes) and
+[the deck-rendering doc](../docs/deck-rendering.md#no-cache)).
 
 Cron tick → `config` (from `env.ts`, validated once at module load; `undefined` when the token is
 missing, which logs a heartbeat and skips) → `pollAll(targets, token)` → one `listLastBattles()`
@@ -161,7 +163,7 @@ relevant section where one exists. What to know before editing:
   output site cut peak RSS 2.4× with no change in render time or output bytes. See
   [Output method](../docs/deck-rendering.md#output-method-tobuffer-vs-touint8array).
 - **No cache.** `renderDeckGrid` renders straight through every call; an earlier LRU keyed by the
-  deck's ordered mirror filenames was deleted because the fresh-isolate-per-tick fact above means
+  deck's ordered mirror filenames was deleted because the cold-start-per-tick fact above means
   cross-tick reuse, its whole premise, can't happen. See
   [No cache](../docs/deck-rendering.md#no-cache) for the ceiling on same-tick reuse and the cheap
   fallback (in-flight dedupe) if that ever turns out to matter. There is no per-tile cache; the OS
@@ -230,7 +232,7 @@ Three gotchas:
 - **It is loaded lazily through a `Lazy`** (`sharpModule` in `deck-image.ts`). `Lazy` was picked
   for its rejection semantics rather than the memo alone. It clears its state when the initializer
   rejects, so the next render retries. Caching the rejection would let one transient dlopen
-  failure silently poison every later render for the isolate's lifetime.
+  failure silently poison every later render for the instance's lifetime.
 - **`toUint8Array()` is `toBuffer()` plus a memcpy.** The name suggests a different return shape;
   both resolve a `Buffer` on Deno, and its `.d.mts` declares the wider `Uint8Array<ArrayBufferLike>`
   that `BlobPart` rejects. Nothing in the codebase calls it. See the deck-rendering notes above.

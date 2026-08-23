@@ -26,13 +26,13 @@ single pipeline above.
 ## sharp runtime config
 
 `sharpModule`, a `Lazy` from `@std/async` holding sharp's constructor, imports `sharp` on first
-render rather than at every isolate cold boot, and memoizes the resolved module. Two calls follow
+render rather than at every cold boot, and memoizes the resolved module. Two calls follow
 immediately on load:
 
 - **`sharp.cache(false)`** disables libvips' own operation cache. This module keeps no cache of its
-  own either (see [No cache](#no-cache)). Deno Deploy gives the app a fresh isolate per cron tick,
-  so libvips' cache can never accumulate a hit across renders that matter; it would only hold memory
-  it never reuses.
+  own either (see [No cache](#no-cache)). Deno Deploy cold-starts the app on essentially every cron
+  tick, so libvips' cache can never accumulate a hit across renders that matter; it would only hold
+  memory it never reuses.
 - **`sharp.concurrency(1)`** collapses libvips' per-pipeline thread pool to a single thread, trading
   wall time for total CPU. This is a cron job. Nothing is waiting synchronously on one render, so
   wall time is nearly worthless while CPU time is what Deno Deploy bills. `renderDeckGrid` already
@@ -60,12 +60,12 @@ removes.
 `sharp.concurrency(2)` is the documented hedge if wall time ever starts to matter, and it is a
 better hedge than it used to read here. It takes **60% of the CPU win for under 20% of the added
 latency** (0.15 s of the 0.25 s saved, at 0.6 ms of the 3.2 ms cost). **Revisit this whole trade if
-Deno Deploy ever bills isolate wall time rather than CPU. The trade inverts.**
+Deno Deploy ever bills instance wall time rather than CPU. The trade inverts.**
 
 Only a _successful_ load is memoized, which is why `Lazy` is used rather than a bare promise memo:
 it clears its state when the initializer rejects, so the next render retries. Caching the rejection
 instead is the bare `sharpModule ??= import(...)` shape. It would let one transient dlopen failure
-poison every later render for the isolate's lifetime, and silently: `discord.ts` catches a failed
+poison every later render for the instance's lifetime, and silently: `discord.ts` catches a failed
 render and posts the text-only fallback, so the symptom would be decks quietly vanishing from every
 post rather than a visible crash.
 
@@ -241,11 +241,13 @@ its images.
 
 `renderDeckGrid` renders straight through, every call, with nothing memoized. An earlier version
 kept an LRU of finished grids keyed by the deck's ordered mirror filenames, on the theory that
-players repeat decks constantly. That theory was true across ticks and irrelevant within one:
-**Deno Deploy gives this app a fresh isolate per cron tick**, so no module-level state survives from
-one tick to the next regardless of what this module does. See
-[Architecture](../.claude/CLAUDE.md#architecture) for the `onListen` evidence behind that. A cache
-built to skip re-rendering repeated decks was paying upkeep against reuse that could never happen.
+players repeat decks constantly. That theory was true across ticks and irrelevant within one.
+**Deno Deploy cold-starts this app on essentially every cron tick.** It runs the app as a standard
+Deno process in a Linux microVM and stops an idle instance after as little as 5 seconds, so at one
+tick a minute no module-level state survives from one tick to the next, regardless of what this
+module does. See [Architecture](../.claude/CLAUDE.md#architecture) for the `onListen` evidence
+behind that. A cache built to skip re-rendering repeated decks was paying upkeep against reuse that
+could never happen.
 
 Within a single tick, the ceiling on renders is `2 * targets`: guarantee 1 caps a tick at one post
 per player, and each post renders exactly two grids, one per side. (The `PAYLOAD_REJECTED` retry in
@@ -260,15 +262,15 @@ the tests covering all of it. Not worth carrying.
 
 If head-to-head battles between tracked players ever turn out to be common enough to matter, the
 right fix is not this LRU back again. It's a bare `Map<string, Promise<Buffer>>` keyed the same way,
-populated before awaiting and read by the second caller within the same tick, then discarded with
-the isolate at tick end. That's in-flight _dedupe_, not a _cache_: it collapses two concurrent
-renders of the same deck into one, which is the only kind of reuse a fresh-isolate-per-tick world
-can ever pay back. About 10 lines, no eviction policy, no byte budget, nothing to tune.
+populated before awaiting and read by the second caller within the same tick, then discarded when
+the instance stops at tick end. That's in-flight _dedupe_, not a _cache_: it collapses two
+concurrent renders of the same deck into one, which is the only kind of reuse a cold-start-per-tick
+world can ever pay back. About 10 lines, no eviction policy, no byte budget, nothing to tune.
 
 **There is no per-tile cache either**, and that one needs no fix at all: `loadTile` reads the same
 handful of files out of `images/` on every render, and the OS page cache already serves them from
-memory after the first read. A tile memo would duplicate the kernel's work in the isolate's heap,
-inside an isolate that only lives for one tick.
+memory after the first read. A tile memo would duplicate the kernel's work in the instance's heap,
+inside an instance that only lives for one tick.
 
 ## CDN fallback
 

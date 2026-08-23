@@ -200,9 +200,9 @@ The `src/` modules, each with a `*.test.ts` beside it:
 `src/deck-image.ts` composites deck grids from the local `images/` mirror rather than fetching per
 render, and ships them at native resolution with no downscale step. An 8-card grid is 1080 px wide
 and about 3.28 MiB, stored uncompressed to keep encode CPU down. Nothing is cached between renders:
-Deno Deploy gives the app a fresh isolate every tick, so there is no state for a cache to live in.
-A CDN fetch is the fallback for a card too new to be in the mirror; if rendering fails outright, the
-battle still posts as a text-only embed.
+Deno Deploy cold-starts the app on essentially every tick, so there is no state for a cache to live
+in. A CDN fetch is the fallback for a card too new to be in the mirror; if rendering fails outright,
+the battle still posts as a text-only embed.
 
 Working on the code? `.claude/CLAUDE.md` documents the toolchain setup, the guarantees, and the
 traps. [`docs/deck-rendering.md`](docs/deck-rendering.md) documents every deck-rendering
