@@ -347,7 +347,11 @@ async function trimToArt(bytes: Uint8Array) {
  * @see docs/deck-rendering.md#cdn-fallback
  */
 async function fetchTile(url: string) {
-	const response = await fetch(url, { signal: AbortSignal.timeout(ICON_TIMEOUT_MS) });
+	const response = await fetch(url, {
+		headers: { Accept: "image/*" },
+		method: "GET",
+		signal: AbortSignal.timeout(ICON_TIMEOUT_MS),
+	});
 
 	if (!response.ok) {
 		// Drain so the connection is released rather than pinned by an unread body.

@@ -203,6 +203,8 @@ describe("renderDeckGrid", () => {
 
 		// The fallback fetches the card's own icon URL, with the render's abort signal attached.
 		expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.clashroyale.com/fresh-release.png");
+		expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("GET");
+		expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({ Accept: "image/*" });
 		expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
 	});
 
