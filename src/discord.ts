@@ -313,15 +313,19 @@ function buildFallbackMessage({ me, opponent, content, embedBase }: BattleContex
  */
 const PAYLOAD_REJECTED = new Set([400, 413]);
 
+/** `method` and `signal` are always {@link postWebhook}'s, never a caller's, to set. */
+type WebhookRequest = Omit<RequestInit, "method" | "signal">;
+
 /**
  * POSTs one prepared request to the webhook.
  *
  * @returns The response unjudged. The caller decides what a non-ok status means, since only it
  *   knows whether a retry is still available.
  */
-async function postWebhook(webhookUrl: string, request: RequestInit) {
+async function postWebhook(webhookUrl: string, request: WebhookRequest) {
 	return await fetch(webhookUrl, {
 		...request,
+		method: "POST",
 		signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
 	});
 }
@@ -345,8 +349,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 
 	// Built on demand, not up front: the image path is the common case and never sends this, so
 	// eagerly formatting both decks into an embed body would be wasted on almost every post.
-	const textRequest = (): RequestInit => ({
-		method: "POST",
+	const textRequest = (): WebhookRequest => ({
 		headers: { "Content-Type": "application/json" },
 		body: payloadJson(buildFallbackMessage(ctx)),
 	});
@@ -361,10 +364,7 @@ async function notifyBattle(webhookUrl: string, battle: Battle) {
 		log.error("Deck image render failed, posting text-only fallback:", error);
 	}
 
-	let response = await postWebhook(
-		webhookUrl,
-		form === undefined ? textRequest() : { method: "POST", body: form }
-	);
+	let response = await postWebhook(webhookUrl, form === undefined ? textRequest() : { body: form });
 
 	// Only retry when Discord rejected the image payload itself. See PAYLOAD_REJECTED.
 	if (form !== undefined && !response.ok && PAYLOAD_REJECTED.has(response.status)) {
