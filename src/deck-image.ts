@@ -399,14 +399,14 @@ async function loadTile(card: Card) {
 		const bytes = await Deno.readFile(new URL(tileName(card), IMAGES_DIR));
 		return { tile: await trimToArt(bytes), cdnFallback: false };
 	} catch (error) {
-		if (!(error instanceof Deno.errors.NotFound)) {
-			throw error;
+		if (error instanceof Deno.errors.NotFound) {
+			log.warn(
+				`no local art for card ${hl.entity(String(card.id))} (${card.name}); falling back to the CDN`
+			);
+			return { tile: await fetchTile(iconUrl(card)), cdnFallback: true };
 		}
 
-		log.warn(
-			`no local art for card ${hl.entity(String(card.id))} (${card.name}); falling back to the CDN`
-		);
-		return { tile: await fetchTile(iconUrl(card)), cdnFallback: true };
+		throw error;
 	}
 }
 
