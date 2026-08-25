@@ -132,6 +132,7 @@ describe("fetchBattlelog", () => {
 			"https://proxy.royaleapi.dev/v1/players/%23ABC123/battlelog",
 			{
 				headers: { Authorization: "Bearer my-token", Accept: "application/json" },
+				method: "GET",
 				signal: expect.any(AbortSignal) as AbortSignal,
 			}
 		);

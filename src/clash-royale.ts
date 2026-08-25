@@ -27,6 +27,7 @@ type BattleLog = v.InferOutput<typeof BattleLogSchema>;
 async function fetchBattlelog(playerTag: string, token: string): Promise<BattleLog> {
 	const response = await fetch(`${PROXY_BASE}/players/${encodeURIComponent(playerTag)}/battlelog`, {
 		headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+		method: "GET",
 		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 	});
 
