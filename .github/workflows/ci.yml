@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, socket-ci]
   pull_request:
 
 jobs:
@@ -10,9 +10,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+      - uses: SocketDev/action@v1.3.2
+        with:
+          mode: firewall-free
       - uses: pnpm/setup@v2.0.2
         with:
-          cache: true
+          cache: false
+          install: false
+      - name: Firewall version
+        run: sfw --version
+      - name: Proxy environment
+        run: sfw sh -c 'env | grep -iE "proxy|cert|cainfo" | sort' || true
+      - name: Install dependencies
+        run: sfw --verbose pnpm ci
+        env:
+          SFW_DEBUG: "true"
+      - name: Firewall report
+        if: always()
+        run: cat "$SFW_JSON_REPORT_PATH" || echo "no report at $SFW_JSON_REPORT_PATH"
       - name: Format check
         run: pnpm fmt --check
       - name: Lint and typecheck
