@@ -10,9 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+      - uses: SocketDev/action@v1.3.2
+        with:
+          mode: firewall-free
       - uses: pnpm/setup@v2.0.2
         with:
           cache: true
+          install: false
+      - name: Install dependencies
+        run: sfw env -u SSL_CERT_FILE -u SSL_CERT_DIR pnpm ci
+        env:
+          NO_PROXY: npm.jsr.io
       - name: Format check
         run: pnpm fmt --check
       - name: Lint and typecheck
