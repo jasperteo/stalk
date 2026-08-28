@@ -21,8 +21,12 @@ jobs:
         run: sfw --version
       - name: Proxy environment
         run: sfw sh -c 'env | grep -iE "proxy|cert|cainfo" | sort' || true
+      - name: System CA bundle
+        run: ls -l /etc/ssl/certs/ca-certificates.crt && grep -c 'BEGIN CERTIFICATE' /etc/ssl/certs/ca-certificates.crt
+      - name: Stripped environment
+        run: sfw env -u SSL_CERT_FILE -u SSL_CERT_DIR sh -c 'env | grep -iE "proxy|cert|cainfo" | sort' || true
       - name: Install dependencies
-        run: sfw --verbose pnpm ci
+        run: sfw env -u SSL_CERT_FILE -u SSL_CERT_DIR pnpm ci
         env:
           SFW_DEBUG: "true"
       - name: Firewall report
