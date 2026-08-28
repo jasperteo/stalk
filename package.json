@@ -1,18 +1,40 @@
 {
 	"name": "stalk",
 	"type": "module",
+	"scripts": {
+		"start": "deno run -P --env-file=.env src/main.ts",
+		"fmt": "deno x oxfmt",
+		"lint": "deno x oxlint && deno lint && deno check --unstable-tsgo .",
+		"lint-agent": "deno x oxlint --format=agent && deno lint && deno check --unstable-tsgo .",
+		"test": "deno x vitest",
+		"preview": "deno run -P --env-file=.env scripts/preview.ts",
+		"measure": "deno run -P scripts/measure.ts",
+		"sync-types": "deno types > deno.d.ts"
+	},
 	"dependencies": {
-		"@std/async": "jsr:^1.5.0",
-		"@std/fmt": "jsr:^1.0.10",
-		"hono": "^4.13.1",
-		"sharp": "^0.35.3",
+		"@std/async": "npm:@jsr/std__async@^1.5.0",
+		"@std/fmt": "npm:@jsr/std__fmt@^1.0.10",
+		"hono": "^4.13.5",
+		"sharp": "^0.35.4",
 		"valibot": "^1.4.2"
 	},
 	"devDependencies": {
-		"@types/node": "^26.2.0",
-		"oxfmt": "^0.63.0",
-		"oxlint": "^1.78.0",
+		"@types/node": "^26.4.0",
+		"oxfmt": "^0.65.0",
+		"oxlint": "^1.80.0",
 		"oxlint-tsgolint": "^7.0.2001",
-		"vitest": "5.0.0-beta.6"
+		"vitest": "5.0.0-rc.2"
+	},
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": "12.0.0",
+			"onFail": "download"
+		},
+		"runtime": {
+			"name": "deno",
+			"version": "2.9.6",
+			"onFail": "download"
+		}
 	}
 }

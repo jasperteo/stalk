@@ -51,7 +51,8 @@ player.
 
 ### Prerequisites
 
-- [Deno](https://deno.com/) 2.x
+- [Deno](https://deno.com/) 2.9.6 and [pnpm](https://pnpm.io/) 12.x — both pinned by
+  `package.json`'s `devEngines`, and pnpm will fetch the pinned Deno for you
 - A [Clash Royale API](https://developer.clashroyale.com/) token, whitelisted to the
   [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy) IP
 - A Discord channel [webhook URL](https://support.discord.com/hc/en-us/articles/228383668) per
@@ -60,8 +61,18 @@ player.
 ### 1. Install
 
 ```sh
-deno install
+pnpm install
 ```
+
+pnpm owns `node_modules`; Deno only consumes it. Two files configure that. `.npmrc` points the
+`@jsr` scope at `https://npm.jsr.io/`, which is how the JSR-only `@std/*` packages resolve — they're
+declared in `package.json` as npm aliases (`"@std/async": "npm:@jsr/std__async@^1.5.0"`), so the
+import specifier stays `@std/async` while the package on disk is `@jsr/std__async`. Registry and
+auth settings belong in `.npmrc`; it's the only pnpm config file that still reads them. Everything
+else lives in `pnpm-workspace.yaml`, where `virtualStoreType: global` shares one virtual store
+across every project on the machine, leaving `node_modules` holding only symlinks into it. pnpm
+disables that automatically when it detects CI, where a cold cache would make it a slowdown rather
+than a speed-up.
 
 ### 2. Configure
 
@@ -96,7 +107,7 @@ writing a line every minute instead of going quiet.
 ### 3. Run locally
 
 ```sh
-deno task dev
+pnpm start
 ```
 
 Runs with `.env` loaded, serving `GET /` (health check) and `GET /kv/last-battle` (a read-only dump
@@ -117,7 +128,7 @@ from:
 
 Two caveats. `TARGETS` only validates that the webhook is a URL, so a webhook on `ptb.discord.com`,
 `canary.discord.com`, or `discordapp.com` needs its host added by hand. And this is a dev-only
-convenience. Deno Deploy never loads it, `deno task test` runs without `-P`, and `ffi` is open in
+convenience. Deno Deploy never loads it, `pnpm test` runs without `-P`, and `ffi` is open in
 the same set (sharp's libvips addon needs it, and native code runs outside Deno's permission
 system). The list catches an unnoticed new outbound host. It is not a security boundary.
 
@@ -131,19 +142,19 @@ art lives in the repo and ships with it; the renderer depends on it in productio
 ## Commands
 
 ```sh
-deno task dev     # Local dev server
+pnpm start  # Local dev server
 
-deno task test     # Vitest suite
-deno task preview  # Render a hardcoded deck to scripts/preview.png, for eyeballing layout changes
-deno task measure  # Report the transparent margins baked into the card icons
+pnpm test     # Vitest suite
+pnpm preview  # Render a hardcoded deck to scripts/preview.png, for eyeballing layout changes
+pnpm measure  # Report the transparent margins baked into the card icons
 
-deno task fmt         # Format (oxfmt)
-deno task lint        # oxlint && deno lint && deno check
-deno task lint-agent  # Same three checks, oxlint in --format=agent
-deno task sync-types  # Regenerate the vendored deno.d.ts, after a Deno version change
+pnpm fmt         # Format (oxfmt)
+pnpm lint        # oxlint && deno lint && deno check
+pnpm lint-agent  # Same three checks, oxlint in --format=agent
+pnpm sync-types  # Regenerate the vendored deno.d.ts, after a Deno version change
 ```
 
-`deno task lint` covers linting _and_ typechecking. There's no separate `tsc` step. CI runs install,
+`pnpm lint` covers linting _and_ typechecking. There's no separate `tsc` step. CI runs install,
 format check, lint, and test on every pull request and every push to `main`.
 
 ## Configuration reference
@@ -167,17 +178,19 @@ stalk/
 │   └── testing/            # KV spy + raw API fixtures
 ├── images/                 # 180 card-art PNGs, keyed by card id (plus -evo/-hero variants)
 ├── scripts/
-│   ├── preview.ts          # deno task preview — render a deck to preview.png
-│   └── measure.ts          # deno task measure — card icons' transparent margins
+│   ├── preview.ts          # pnpm preview — render a deck to preview.png
+│   └── measure.ts          # pnpm measure — card icons' transparent margins
 ├── docs/
 │   └── deck-rendering.md   # every deck constant's value and rationale
 ├── .github/
 │   └── workflows/
 │       └── ci.yml          # install, fmt --check, lint, test — on PRs and main
-├── deno.jsonc              # tasks, dev permission set, @/ alias, Deno compilerOptions
-├── package.json            # runtime deps (the @/ alias is the only import in deno.jsonc)
-├── deno.lock
-├── deno.d.ts               # vendored Deno types, for oxlint (deno task sync-types)
+├── deno.jsonc              # dev permission set, @/ alias, Deno compilerOptions, deploy config
+├── package.json            # scripts, deps, devEngines pins (@/ alias lives in deno.jsonc)
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml     # virtualStoreType, minimumReleaseAge
+├── .npmrc                  # @jsr scope → npm.jsr.io
+├── deno.d.ts               # vendored Deno types, for oxlint (pnpm sync-types)
 ├── tsconfig.json           # read by oxlint/tsgolint, not by Deno
 ├── oxlint.config.ts
 ├── oxfmt.config.ts

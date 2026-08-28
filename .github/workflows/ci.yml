@@ -10,20 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: socketdev/action@v1.3.2
+      - uses: pnpm/setup@v2.0.2
         with:
-          mode: firewall-free
-      - uses: denoland/setup-deno@v2.0.5
-        with:
-          deno-version: v2.9.5
           cache: true
-      - name: Install dependencies
-        run: sfw deno ci
       - name: Format check
-        run: deno task fmt --check
+        run: pnpm fmt --check
       - name: Lint and typecheck
-        run: deno task lint
+        run: pnpm lint
       - name: Test
-        run: deno task test
+        run: pnpm test
         env:
           CI: "1"

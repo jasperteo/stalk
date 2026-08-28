@@ -10,23 +10,27 @@ and deployment.
 ## Commands
 
 ```sh
-deno task dev     # Local dev server (-P loads deno.jsonc's "permissions" set)
+pnpm start  # Local dev server (-P loads deno.jsonc's "permissions" set)
 
-deno task test     # Vitest suite
-deno task preview  # Render a hardcoded deck to scripts/preview.png (manual, offline)
-deno task measure  # Report card icons' transparent margins (no args = every icon + aggregate)
+pnpm test     # Vitest suite
+pnpm preview  # Render a hardcoded deck to scripts/preview.png (manual, offline)
+pnpm measure  # Report card icons' transparent margins (no args = every icon + aggregate)
 
-deno task fmt         # oxfmt
-deno task lint        # oxlint && deno lint && deno check --unstable-tsgo .
-deno task lint-agent  # Same three checks, oxlint in --format=agent — prefer this one as an agent
-deno task sync-types  # Regenerate deno.d.ts (run when the Deno version changes)
+pnpm fmt         # oxfmt
+pnpm lint        # oxlint && deno lint && deno check --unstable-tsgo .
+pnpm lint-agent  # Same three checks, oxlint in --format=agent — prefer this one as an agent
+pnpm sync-types  # Regenerate deno.d.ts (run when the Deno version changes)
 ```
 
-**`deno task lint` (or its agent-formatted twin `deno task lint-agent`) is the single check
-command.** Do not run a separate `tsc --noEmit` or a standalone `deno check`. The task already
-chains oxlint (type-aware, via oxlint-tsgolint), `deno lint` (Deno-idiom rules), and
-`deno check --unstable-tsgo`. CI (`.github/workflows/ci.yml`) runs `deno ci`,
-`deno task fmt --check`, `deno task lint`, and `deno task test`.
+Scripts live in `package.json` `scripts`, not `deno.jsonc` `tasks`. They still run under Deno: the
+binaries are invoked as `deno x <bin>`, which resolves the pnpm-installed copy in `node_modules`.
+
+**`pnpm lint` (or its agent-formatted twin `pnpm lint-agent`) is the single check command.** Do not
+run a separate `tsc --noEmit` or a standalone `deno check`. The script already chains oxlint
+(type-aware, via oxlint-tsgolint), `deno lint` (Deno-idiom rules), and `deno check --unstable-tsgo`.
+CI (`.github/workflows/ci.yml`) runs `pnpm fmt --check`, `pnpm lint`, and `pnpm test`. There is no
+install step: `pnpm/setup` installs the dependencies itself, and it provisions Deno too, reading
+`devEngines.runtime` from `package.json` — hence no `denoland/setup-deno` either.
 
 ## Guarantees
 
@@ -186,20 +190,26 @@ oxlint and Deno need different libs, so neither config can be dropped:
 `deno.d.ts` is a vendored copy of Deno's own `lib.deno.d.ts`, consumed only as ambient types. It's
 excluded from `deno check`/`deno lint` (`deno.jsonc`) and from oxlint's file walk
 (`oxlint.config.ts` `ignorePatterns`) so it's never linted or double-declared. Re-sync with
-`deno task sync-types` after a Deno version bump.
+`pnpm sync-types` after a Deno version bump.
 
 ### Dependencies
 
-Runtime deps live in **`package.json`**, not `deno.jsonc`. The `imports` map holds only the `@/`
-alias. A JSR-only package is declared with a bare `jsr:` specifier (`"@std/async": "jsr:^1.5.0"`,
-`"@std/fmt": "jsr:^1.0.10"`); Deno resolves `jsr:` specifiers natively and materializes them into
-`node_modules/@std/*` (symlinked into `node_modules/.deno`), and `preferPackageJson` makes
-`package.json` the source of truth. This way both Deno and oxlint/tsgolint (which only understands
-`node_modules`, not Deno's import map) resolve the same specifiers with no separate materialization
-step. Run `deno install` after cloning.
+Runtime deps live in **`package.json`**, now the only dependency manifest; `deno.jsonc`'s `imports`
+map holds only the `@/` alias. **pnpm installs and lays out `node_modules`; Deno only consumes
+it.** A JSR-only package is declared as an npm alias onto the JSR mirror
+(`"@std/async": "npm:@jsr/std__async@^1.5.0"`, `"@std/fmt": "npm:@jsr/std__fmt@^1.0.10"`), with
+`.npmrc` pointing the `@jsr` scope at `https://npm.jsr.io/` (registry and auth settings are the
+only thing pnpm still reads from `.npmrc`; everything else is `pnpm-workspace.yaml`). The
+alias is what keeps the import specifier `@std/async` while the package on disk is
+`@jsr/std__async`. Both Deno and oxlint/tsgolint (which only understands `node_modules`, not Deno's
+import map) then resolve against that one tree. Run `pnpm install` after cloning.
+
+This is a change of spelling, not of what ships. The old `deno.lock` already resolved those `jsr:`
+specifiers through the same `@jsr` npm mirror, down to the `npm.jsr.io` tarball URLs, so the module
+graph is byte-for-byte what it was. Do not read the alias as a cold-start regression.
 
 **Prefer the npm-native package wherever one exists.** `valibot` and `hono` are deliberately _not_
-declared with `jsr:` specifiers, and moving them back to "match `@std/fmt`" is a silent cold-start
+declared against the JSR mirror, and moving them back to "match `@std/fmt`" is a silent cold-start
 regression, not a consistency fix. JSR publishes transpiled source with the original file layout,
 so the JSR mirror of valibot is 557 separate modules behind a single barrel export, and since its
 `exports` map has exactly one entry, `import * as v` resolves, links and evaluates all 557. The npm
@@ -210,20 +220,20 @@ free tier's monthly CPU budget.
 The rule generalizes by _entry-point shape_, not by registry: bundling only helps a library whose
 entry is a single barrel over its whole export list. `hono` ships unbundled on npm too (372 files,
 75 subpath exports, a 120-byte root entry), so importing it reaches only a couple dozen modules and
-the packaging barely matters. It moved for consistency, worth ~0.7 ms. `@std/fmt` stays on `jsr:`
-because it has no npm publication at all, and it costs nothing regardless: its four subpath entries
-are already self-contained single files with zero relative imports.
+the packaging barely matters. It moved for consistency, worth ~0.7 ms. `@std/fmt` stays on the JSR
+mirror because it has no first-party npm publication at all, and it costs nothing regardless: its
+four subpath entries are already self-contained single files with zero relative imports.
 
 `@std/async` fits the same doctrine with no new reasoning needed. Only `Lazy` is used, from
 `deck-image.ts`, and `@std/async/lazy` is the same self-contained shape as `@std/fmt`'s subpath
 entries, not valibot's JSR-mirror barrel: its `lazy.js` has zero runtime imports and defines a
 single class. Its package-level deps (`@std/data-structures`, `@std/assert`, `@std/internal`) land
-in `deno.lock`'s install graph, but nothing imports them, so they never enter the module graph.
+in `pnpm-lock.yaml`'s install graph, but nothing imports them, so they never enter the module graph.
 They are install cost only.
 
 `sharp` is the one dependency with a native component, a libvips addon shipped via
-platform-filtered `optionalDependencies` (Deno Deploy resolves the linux binaries from `deno.lock`
-at deploy time).
+platform-filtered `optionalDependencies` (Deno Deploy resolves the linux binaries from
+`pnpm-lock.yaml` at deploy time).
 Three gotchas:
 
 - **Its ESM entry exports only `default` at runtime.** The named exports its `.d.mts` declares
@@ -265,7 +275,7 @@ non-DOM global set. It says nothing about the underlying runtime. Discovery is s
 - `src/deck-image.test.ts` uses a default tile fixture that is **fully opaque**, so most tests
   exercise `trimToArt`/`cropRaw` with the crop equal to the whole frame. `describe("trimToArt")`
   covers a real crop via `insetFixture`. What stays uncovered is real card art, so verify crop
-  changes against it (`deno task preview`, or diff `cropRaw` against `sharp().extract()` across
+  changes against it (`pnpm preview`, or diff `cropRaw` against `sharp().extract()` across
   `images/`).
 
 **A throwaway probe script that imports project deps must live inside the repo root.** Deno resolves

@@ -107,7 +107,7 @@ sampling `Deno.memoryUsage().rss` per render, 3 runs per configuration (peak RSS
 **2.4× less peak RSS, no change in render time.** The render-time column spans 0.9 ms across
 configurations that differ by 255 MiB of RSS, which is noise, not signal. V8's heap stays ~9.8 MiB
 in every configuration, so the whole difference is off-heap. Pixels are untouched: the grid
-`deno task preview` writes still hashes to
+`pnpm preview` writes still hashes to
 `613718b7499c7bb03629789e8b80346390c7e7f78fd5906977a35f4e4579c548`, unchanged since the switch.
 
 Two things follow on the type side. `toBuffer()` is declared `Promise<Buffer<ArrayBuffer>>` with the
@@ -135,7 +135,7 @@ cards are in the deck. That means no per-deck layout recalculation, and no upsca
 tile.
 
 `CELL_WIDTH = 261`, `CELL_HEIGHT = 405` are the upper bound of every local icon's _tile_ size, the
-dimensions `trimRaw` actually produces. That is not quite what `deno task measure` prints, so read
+dimensions `trimRaw` actually produces. That is not quite what `pnpm measure` prints, so read
 the two columns carefully:
 
 - **Width** is the trimmed art, `maxX - minX + 1`, exactly the aggregate's `trimmed width`. Across
@@ -281,7 +281,7 @@ after `ICON_TIMEOUT_MS = 10_000` ms so a hung fetch can't stall the cron tick.
 **Trim before resize, never the reverse.** `fetchTile` decodes the fetched icon, trims it to its
 opaque art bounds exactly like the local path does, and _only then_ checks whether the trimmed
 tile still overflows the cell, resizing only if it does. `CELL_WIDTH`/`CELL_HEIGHT` bound every
-local icon's **trimmed** size (that's precisely what `deno task measure` reports), not its raw
+local icon's **trimmed** size (that's precisely what `pnpm measure` reports), not its raw
 canvas size. If you instead fit the untrimmed canvas to the cell, the resize scales the
 transparent margin down together with the art. A CDN tile whose art needed no scaling at all would
 still come out visibly smaller than its local-mirror neighbors, because part of the "size" it was

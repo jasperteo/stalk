@@ -1,19 +1,4 @@
 {
-	"nodeModulesDir": "auto",
-	"preferPackageJson": true,
-	"minimumDependencyAge": 0,
-
-	"tasks": {
-		"dev": "deno run -P --env-file=.env src/main.ts",
-		"fmt": "oxfmt",
-		"lint": "oxlint && deno lint && deno check --unstable-tsgo .",
-		"lint-agent": "oxlint --format=agent && deno lint && deno check --unstable-tsgo .",
-		"test": "vitest",
-		"preview": "deno run -P --env-file=.env scripts/preview.ts",
-		"measure": "deno run -P scripts/measure.ts",
-		"sync-types": "deno types > deno.d.ts",
-	},
-
 	"compilerOptions": {
 		"lib": ["deno.window", "deno.unstable"],
 
@@ -54,7 +39,7 @@
 	"unstable": ["kv", "cron"],
 
 	"deploy": {
-		"install": "deno install --prod --entrypoint src/main.ts",
+		"install": "pnpm install --frozen-lockfile -P",
 		"runtime": { "mode": "dynamic", "entrypoint": "src/main.ts" },
 	},
 }
