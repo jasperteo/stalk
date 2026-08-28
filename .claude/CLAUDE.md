@@ -28,9 +28,9 @@ binaries are invoked as `deno x <bin>`, which resolves the pnpm-installed copy i
 **`pnpm lint` (or its agent-formatted twin `pnpm lint-agent`) is the single check command.** Do not
 run a separate `tsc --noEmit` or a standalone `deno check`. The script already chains oxlint
 (type-aware, via oxlint-tsgolint), `deno lint` (Deno-idiom rules), and `deno check --unstable-tsgo`.
-CI (`.github/workflows/ci.yml`) runs `sfw pnpm ci`, `pnpm fmt --check`, `pnpm lint`, and
-`pnpm test`. It installs Deno through `pnpm/setup`, which reads `devEngines.runtime` from
-`package.json` — there is no `denoland/setup-deno` step.
+CI (`.github/workflows/ci.yml`) runs `pnpm fmt --check`, `pnpm lint`, and `pnpm test`. There is no
+install step: `pnpm/setup` installs the dependencies itself, and it provisions Deno too, reading
+`devEngines.runtime` from `package.json` — hence no `denoland/setup-deno` either.
 
 ## Guarantees
 
