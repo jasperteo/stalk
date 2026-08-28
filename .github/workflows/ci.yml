@@ -13,17 +13,17 @@ jobs:
       - uses: socketdev/action@v1.3.2
         with:
           mode: firewall-free
-      - uses: denoland/setup-deno@v2.0.5
+      - uses: pnpm/setup@v2.0.2
         with:
-          deno-version: v2.9.5
           cache: true
+          install: false
       - name: Install dependencies
-        run: sfw deno ci
+        run: sfw pnpm ci
       - name: Format check
-        run: deno task fmt --check
+        run: pnpm fmt --check
       - name: Lint and typecheck
-        run: deno task lint
+        run: pnpm lint
       - name: Test
-        run: deno task test
+        run: pnpm test
         env:
           CI: "1"

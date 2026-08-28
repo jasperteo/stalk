@@ -1,0 +1,7 @@
+minimumReleaseAge: 0
+
+registries:
+  https://npm.jsr.io/:
+    scopes: ["@jsr"]
+
+virtualStoreType: global
