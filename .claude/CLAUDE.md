@@ -28,9 +28,10 @@ binaries are invoked as `deno x <bin>`, which resolves the pnpm-installed copy i
 **`pnpm lint` (or its agent-formatted twin `pnpm lint-agent`) is the single check command.** Do not
 run a separate `tsc --noEmit` or a standalone `deno check`. The script already chains oxlint
 (type-aware, via oxlint-tsgolint), `deno lint` (Deno-idiom rules), and `deno check --unstable-tsgo`.
-CI (`.github/workflows/ci.yml`) runs `pnpm fmt --check`, `pnpm lint`, and `pnpm test`. There is no
-install step: `pnpm/setup` installs the dependencies itself, and it provisions Deno too, reading
-`devEngines.runtime` from `package.json` — hence no `denoland/setup-deno` either.
+CI (`.github/workflows/ci.yml`) runs `pnpm fmt --check`, `pnpm lint`, and `pnpm test`. `pnpm/setup`
+provisions pnpm and Deno both, reading `devEngines.runtime` from `package.json` — hence no
+`denoland/setup-deno`. It runs with `install: false` though: the install is its own step, wrapped in
+Socket Firewall. Read [Socket Firewall in CI](#socket-firewall-in-ci) before editing that line.
 
 ## Guarantees
 
@@ -252,6 +253,29 @@ references (`deno check` doesn't).
 
 **The `@/` alias is declared in three places that must stay in sync:** `deno.jsonc` `imports`,
 `tsconfig.json` `paths`, and vitest via `resolve: { tsconfigPaths: true }` in `vitest.config.ts`.
+
+### Socket Firewall in CI
+
+The install step is `sfw env -u SSL_CERT_FILE -u SSL_CERT_DIR pnpm ci`, with `NO_PROXY: npm.jsr.io`.
+`sfw` runs a MITM proxy: it points `HTTP(S)_PROXY` at itself, hands the child its own CA, and
+inspects traffic to the registries in its hardcoded table. Both wrappers are load-bearing, and
+neither is visible from the line itself.
+
+**Stripping `SSL_CERT_FILE` is not tidiness.** sfw sets it to a file holding only its own CA, and
+Linux pnpm loads its entire root store from that variable, so the public roots vanish.
+`registry.npmjs.org` still verifies, because sfw MITMs it with that CA — but any host sfw tunnels
+presents a real chain and dies on `invalid peer certificate: UnknownIssuer`. macOS pnpm uses the
+platform verifier and ignores the variable, so this reproduces only in CI: a local `sfw pnpm ci`
+passes. Verify a change to this line on a Linux runner, not locally.
+
+**`npm.jsr.io` is not in sfw's registry table, and the free tier cannot add it.** The
+registry-mapping feature exists in the binary, but the free config schema accepts only its six
+`SFW_*` variables. An unrecognized host takes `unknownHostAction`, which the free tier sets to
+`ignore` while the same binary's global default is `block`, so the jsr traffic is tunnelled straight
+through. `NO_PROXY` pins that routing instead of leaving it to a default that could flip.
+
+**Socket guards the npm dependencies only.** `@std/async` and `@std/fmt` resolve through
+`npm.jsr.io`, so they pass unscanned. A green CI run is not coverage of those two.
 
 ## Testing
 

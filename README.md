@@ -184,7 +184,7 @@ stalk/
 │   └── deck-rendering.md   # every deck constant's value and rationale
 ├── .github/
 │   └── workflows/
-│       └── ci.yml          # install, fmt --check, lint, test — on PRs and main
+│       └── ci.yml          # Socket-proxied install, fmt --check, lint, test — PRs and main
 ├── deno.jsonc              # dev permission set, @/ alias, Deno compilerOptions, deploy config
 ├── package.json            # scripts, deps, devEngines pins (@/ alias lives in deno.jsonc)
 ├── pnpm-lock.yaml
