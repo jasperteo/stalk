@@ -105,16 +105,16 @@ read → `poll()` per player concurrently → fetch
 battle log → compare newest eligible battle against the stored lastBattle value → post → advance
 lastBattle.
 
-| File                  | Role                                                                                                                                                                                                                                                                                                                                        |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/main.ts`         | Wiring only. Runs as a script (`deno run`, not `deno serve` — hence no default export). `Deno.serve` binds Hono (`GET /` health, `GET /kv/last-battle` lastBattle dump); `Deno.cron` drives polling and logs a per-tick outcome tally.                                                                                                      |
-| `src/poll.ts`         | The polling domain. Owns the KV handle (private; reads go through `listLastBattles()`) and the `["lastBattle", tag]` key with its 30-day TTL. `pollAll` is the tick entry point: one lastBattle read, then a concurrent `poll()` per target, each resolving one of `POLL_OUTCOMES`: `posted` / `seeded` / `skipped` / `drifted` / `failed`. |
-| `src/clash-royale.ts` | Battle-log fetch via the RoyaleAPI proxy, with an abort timeout. `latestBattle` takes the first eligible entry (the log arrives newest-first, with 2v2s and Duels excluded) and fully validates only that one.                                                                                                                              |
-| `src/discord.ts`      | Builds and posts the webhook message: content line (result, crowns, HP margin — doubles as the push notification), then one embed per side with deck grid, trophies, and tower-troop thumbnail.                                                                                                                                             |
-| `src/deck-image.ts`   | Composites cards into a bottom-aligned 4-column PNG grid via sharp.                                                                                                                                                                                                                                                                         |
-| `src/schema.ts`       | Valibot schemas for the API shapes and both env vars. `isEligibleBattle` rejects 2v2s and Duels (a Duel concatenates 2–3 decks into one `cards` array) before full validation. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`.                                                                          |
-| `src/env.ts`          | Reads and validates env once at module load; exports `config`.                                                                                                                                                                                                                                                                              |
-| `src/log.ts`          | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette), `hl` (inline value highlighters), and `ERROR_BODY_CHARS` (upstream error-body truncation cap, shared with `clash-royale.ts`).                                                                                                         |
+| File                  | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.ts`         | Wiring only. Runs as a script (`deno run`, not `deno serve` — hence no default export). `Deno.serve` binds Hono (`GET /` health, `GET /kv/last-battle` lastBattle dump); `Deno.cron` drives polling and logs a per-tick outcome tally.                                                                                                                                                                                                                  |
+| `src/poll.ts`         | The polling domain. Owns the KV handle (private; reads go through `listLastBattles()`) and the `["lastBattle", tag]` key with its 30-day TTL. `pollAll` is the tick entry point: one lastBattle read, then a concurrent `poll()` per target, each resolving one of `POLL_OUTCOMES`: `posted` / `seeded` / `skipped` / `drifted` / `failed`.                                                                                                             |
+| `src/clash-royale.ts` | Battle-log fetch via the RoyaleAPI proxy, with an abort timeout. `latestBattle` takes the first eligible entry (the log arrives newest-first, with 2v2s and Duels excluded) and fully validates only that one.                                                                                                                                                                                                                                          |
+| `src/discord.ts`      | Builds and posts the webhook message: content line (result, crowns, HP margin — doubles as the push notification), then one embed per side with deck grid, trophies, and tower-troop thumbnail.                                                                                                                                                                                                                                                         |
+| `src/deck-image.ts`   | Composites cards into a bottom-aligned 4-column PNG grid via sharp.                                                                                                                                                                                                                                                                                                                                                                                     |
+| `src/schema.ts`       | Valibot schemas for the API shapes and both env vars. `isEligibleBattle` rejects 2v2s and Duels (a Duel concatenates 2–3 decks into one `cards` array) before full validation. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`. Also owns `EVOLUTIONS`/`evolutionOf`, the one table mapping each `evolutionLevel` to its art suffix, `iconUrls` key, and display prefix — see [Evolution levels](#evolution-levels). |
+| `src/env.ts`          | Reads and validates env once at module load; exports `config`.                                                                                                                                                                                                                                                                                                                                                                                          |
+| `src/log.ts`          | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette), `hl` (inline value highlighters), and `truncatedBody` (reads a failed response's body under a private truncation cap, shared with `clash-royale.ts` and `discord.ts`).                                                                                                                                                                            |
 
 Internal imports use the `@/` map with explicit `.ts` extensions.
 
@@ -173,6 +173,24 @@ relevant section where one exists. What to know before editing:
   [No cache](../docs/deck-rendering.md#no-cache) for the ceiling on same-tick reuse and the cheap
   fallback (in-flight dedupe) if that ever turns out to matter. There is no per-tile cache; the OS
   page cache covers local reads.
+
+### Evolution levels
+
+`EVOLUTIONS` in `src/schema.ts` is the single table deciding what an `evolutionLevel` means: the
+local-art filename suffix (`deck-image.ts`'s `tileName`), the `iconUrls` variant the CDN fallback
+picks (`iconUrl`), and the display prefix (`discord.ts`'s `formatDeck`). It replaced three parallel
+tables across two modules.
+
+**Level 0 is a real entry**, standing for an ordinary card, which is what lets all three consumers
+look a card up unconditionally instead of each branching on whether it evolved. `evolutionOf(card)`
+is the only accessor.
+
+The `satisfies Record<EvolutionLevel | 0, …>` clause is what enforces that: adding a level to
+`CardSchema`'s picklist without describing it here fails to compile at the table and at
+`evolutionOf`, both in this file, so there is one place to go and fix it. (Consumers error too, but
+only as fallout from `evolutionOf`'s return type.) Fanning out to every consumer is what the old
+three-table design did; failing in one file is the improvement. `EvolutionLevel` exists to guard
+exactly this and is not exported, since nothing outside `schema.ts` needs it.
 
 ## Toolchain
 
@@ -258,8 +276,8 @@ references (`deno check` doesn't).
 
 The install step is `sfw env -u SSL_CERT_FILE -u SSL_CERT_DIR pnpm ci`, with `NO_PROXY: npm.jsr.io`.
 `sfw` runs a MITM proxy: it points `HTTP(S)_PROXY` at itself, hands the child its own CA, and
-inspects traffic to the registries in its hardcoded table. Both wrappers are load-bearing, and
-neither is visible from the line itself.
+inspects traffic to the registries in its hardcoded table. Neither wrapper is optional, and the
+install line shows neither reason.
 
 **Stripping `SSL_CERT_FILE` is not tidiness.** sfw sets it to a file holding only its own CA, and
 Linux pnpm loads its entire root store from that variable, so the public roots vanish.
