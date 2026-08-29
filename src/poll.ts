@@ -3,8 +3,8 @@ import * as v from "valibot";
 import { fetchBattlelog, latestBattle } from "@/clash-royale.ts";
 import { notifyBattle } from "@/discord.ts";
 import { hl, log } from "@/log.ts";
-import { LastBattleSchema, serializeLastBattle } from "@/schema.ts";
 import type { Target } from "@/schema.ts";
+import { LastBattleSchema, serializeLastBattle } from "@/schema.ts";
 
 /** One KV handle for the process's lifetime; Deno.openKv() opens the Deploy-managed store. */
 const kv = await Deno.openKv();

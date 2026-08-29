@@ -11,7 +11,8 @@
  * prints the aggregate row, which is what ROW_GAP's floor and the grid's cell width come from.
  */
 
-import { decodeToRaw, IMAGES_DIR, scanArtBounds, type RawImage } from "@/deck-image.ts";
+import type { RawImage } from "@/deck-image.ts";
+import { decodeToRaw, IMAGES_DIR, scanArtBounds } from "@/deck-image.ts";
 import { hl, log } from "@/log.ts";
 
 /** One icon's raw canvas, the trimmed art inside it, and the transparent margins between them. */

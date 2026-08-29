@@ -2,8 +2,8 @@ import { Hono } from "hono";
 
 import { config } from "@/env.ts";
 import { hl, levelColor, log } from "@/log.ts";
-import { listLastBattles, POLL_OUTCOMES, pollAll } from "@/poll.ts";
 import type { PollOutcome } from "@/poll.ts";
+import { listLastBattles, POLL_OUTCOMES, pollAll } from "@/poll.ts";
 
 // ════════════════════════════════════════════ SERVER ═════════════════════════════════════════════
 

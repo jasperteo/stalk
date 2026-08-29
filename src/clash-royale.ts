@@ -1,8 +1,8 @@
 import * as v from "valibot";
 
 import { ERROR_BODY_CHARS, log } from "@/log.ts";
-import { BattleSchema, isEligibleBattle } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
+import { BattleSchema, isEligibleBattle } from "@/schema.ts";
 
 /**
  * RoyaleAPI proxy: Deno Deploy has no static egress IP to whitelist on the CR token, so requests

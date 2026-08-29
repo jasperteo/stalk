@@ -6,8 +6,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { renderDeckGrid } from "@/deck-image.ts";
 import { battleContext, buildFallbackMessage, notifyBattle } from "@/discord.ts";
 import { log } from "@/log.ts";
-import { BattleSchema } from "@/schema.ts";
 import type { Battle } from "@/schema.ts";
+import { BattleSchema } from "@/schema.ts";
 import { BOB, rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.ts";
 
 vi.mock(import("@/deck-image.ts"), () => ({ renderDeckGrid: vi.fn<typeof renderDeckGrid>() }));
