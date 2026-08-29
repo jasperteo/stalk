@@ -32,4 +32,14 @@ const levelColor = {
 	debug: (s: string) => s,
 };
 
-export { hl, levelColor, log };
+/**
+ * Mirrors the real helper rather than spying on it: no test asserts on the call, but the
+ * error-message assertions read what it returns. The cap matches `log.ts`'s `ERROR_BODY_CHARS`,
+ * which that module keeps private.
+ */
+const truncatedBody = async (response: Response) => {
+	const body = await response.text();
+	return body.slice(0, 2000);
+};
+
+export { hl, levelColor, log, truncatedBody };

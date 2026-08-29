@@ -74,6 +74,29 @@ const CardSchema = v.object({
 	}),
 });
 
+/**
+ * How each `evolutionLevel` manifests: the local-art filename suffix, the `iconUrls` variant the
+ * CDN fallback prefers, and the display prefix. Level 0 stands for an ordinary card, which is what
+ * lets consumers look a card up unconditionally instead of each branching on whether it evolved.
+ *
+ * One table rather than one per consumer. Adding a level to {@link CardSchema} fails to compile
+ * here, at the single place that decides what a level means, instead of silently falling through to
+ * base art in the renderer and a bare name in the Discord message.
+ */
+const EVOLUTIONS = {
+	0: { suffix: "", iconKey: "medium", prefix: "" },
+	1: { suffix: "-evo", iconKey: "evolutionMedium", prefix: "Evo " },
+	2: { suffix: "-hero", iconKey: "heroMedium", prefix: "Hero " },
+} as const satisfies Record<
+	EvolutionLevel | 0,
+	{ suffix: string; iconKey: keyof Card["iconUrls"]; prefix: string }
+>;
+
+/** The {@link EVOLUTIONS} entry for a card as it was played; an ordinary card resolves to level 0. */
+function evolutionOf(card: Card) {
+	return EVOLUTIONS[card.evolutionLevel ?? 0];
+}
+
 const PlayerSchema = v.object({
 	tag: TagSchema,
 	name: v.string(),
@@ -209,18 +232,19 @@ type Battle = v.InferOutput<typeof BattleSchema>;
 type Target = v.InferOutput<typeof TargetSchema>;
 type Card = v.InferOutput<typeof CardSchema>;
 /**
- * The levels `CardSchema` admits, and the key type for the per-level lookup tables in
- * `deck-image.ts` and `discord.ts`.
+ * The levels `CardSchema` admits. Its one use is guarding {@link EVOLUTIONS}, which is what makes a
+ * level added here fail to compile until that table describes it.
  */
 type EvolutionLevel = NonNullable<Card["evolutionLevel"]>;
 
 export {
 	BattleSchema,
 	DECK_SIZE,
+	evolutionOf,
 	isEligibleBattle,
 	LastBattleSchema,
 	serializeLastBattle,
 	TargetsEnvSchema,
 	TokenEnvSchema,
 };
-export type { Battle, Card, EvolutionLevel, Player, Target };
+export type { Battle, Card, Player, Target };

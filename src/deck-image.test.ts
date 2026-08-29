@@ -423,7 +423,7 @@ describe("trimToArt", () => {
 	});
 
 	test("keeps the whole frame for a fully transparent tile", async () => {
-		// scanArtBounds' `maxX === -1` sentinel. Shouldn't happen for real card art, but the fallback
+		// scanArtBounds returns `undefined` here. Shouldn't happen for real card art, but the fallback
 		// has to be the untouched frame: cropping to an empty region would hand `.composite()` a
 		// zero-byte input and reject the whole render over one blank tile.
 		const blank = await insetFixture(CANVAS_WIDTH, CANVAS_HEIGHT, {

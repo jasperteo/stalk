@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-import { ERROR_BODY_CHARS, log } from "@/log.ts";
+import { log, truncatedBody } from "@/log.ts";
 import type { Battle } from "@/schema.ts";
 import { BattleSchema, isEligibleBattle } from "@/schema.ts";
 
@@ -32,10 +32,8 @@ async function fetchBattlelog(playerTag: string, token: string): Promise<BattleL
 	});
 
 	if (!response.ok) {
-		const body = await response.text();
-
 		throw new Error(
-			`Clash Royale API ${String(response.status)} for ${playerTag}: ${body.slice(0, ERROR_BODY_CHARS)}`
+			`Clash Royale API ${String(response.status)} for ${playerTag}: ${await truncatedBody(response)}`
 		);
 	}
 

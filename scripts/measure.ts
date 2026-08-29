@@ -39,11 +39,13 @@ function measure(name: string, image: RawImage): Measurement {
 	const { width, height } = image;
 	// The exact bounds scan the renderer trims with (`trimToArt` in deck-image.ts wraps this same
 	// function), so these margins are precisely what it sees. No risk of the two drifting.
-	const { minX, minY, maxX, maxY } = scanArtBounds(image);
+	const bounds = scanArtBounds(image);
 
-	if (maxX < 0) {
+	if (bounds === undefined) {
 		throw new Error(`${name} is fully transparent`);
 	}
+
+	const { minX, minY, maxX, maxY } = bounds;
 
 	return {
 		name,

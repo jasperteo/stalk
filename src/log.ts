@@ -31,12 +31,26 @@ const levelColor = {
 const hl = { entity: brightMagenta, value: brightBlue, strong: bold };
 
 /**
- * How much of an error body to echo into a log line. Generous, because a Discord malformed-embed
- * detail, or a Clash Royale API error message, can be buried deep inside a nested JSON body, and
- * that log line is the only record of it. Still capped, since an edge proxy's 5xx returns a
- * multi-KB HTML page that would otherwise flood the Deploy logs every tick of an outage.
+ * How much of an error body to echo into a log line. Not exported: {@link truncatedBody} is the only
+ * consumer, so the cap cannot drift from the code that applies it. Generous, because a Discord
+ * malformed-embed detail, or a Clash Royale API error message, can be buried deep inside a nested
+ * JSON body, and that log line is the only record of it. Still capped, since an edge proxy's 5xx
+ * returns a multi-KB HTML page that would otherwise flood the Deploy logs every tick of an outage.
  */
 const ERROR_BODY_CHARS = 2000;
+
+/**
+ * Reads a failed response's body, capped at {@link ERROR_BODY_CHARS}. Applying the cap here rather
+ * than restating `.slice(0, ERROR_BODY_CHARS)` at each call site keeps the policy next to the
+ * constant that sets it. Callers supply their own message prefix.
+ *
+ * Consumes the body, which also releases the connection, so call it once per response and only on
+ * the failure path.
+ */
+async function truncatedBody(response: Response) {
+	const body = await response.text();
+	return body.slice(0, ERROR_BODY_CHARS);
+}
 
 /**
  * Builds one leveled logger: a bold, colored, 5-wide badge (so lines align) in front of every
@@ -76,4 +90,4 @@ const log = {
 	debug: leveled(console.debug, "debug", true),
 };
 
-export { ERROR_BODY_CHARS, hl, levelColor, log };
+export { hl, levelColor, log, truncatedBody };

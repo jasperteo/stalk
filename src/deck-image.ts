@@ -15,7 +15,8 @@ import { format as formatBytes } from "@std/fmt/bytes";
 import { format as formatDuration } from "@std/fmt/duration";
 
 import { hl, log } from "@/log.ts";
-import type { Card, EvolutionLevel } from "@/schema.ts";
+import type { Card } from "@/schema.ts";
+import { evolutionOf } from "@/schema.ts";
 
 // ════════════════════════════════════════════ RUNTIME ════════════════════════════════════════════
 
@@ -95,6 +96,14 @@ type RawImage = {
 	height: number;
 };
 
+/** An inclusive opaque bounding box in raw-bitmap pixel coordinates. */
+type Bounds = {
+	minX: number;
+	minY: number;
+	maxX: number;
+	maxY: number;
+};
+
 /** A crop rectangle in raw-bitmap pixel coordinates. */
 type Region = {
 	left: number;
@@ -148,11 +157,10 @@ async function decodeToRaw(bytes: Uint8Array): Promise<RawImage> {
  * visiting every pixel. Runs four directional scans: row-major top-down/bottom-up for minY/maxY,
  * then column scans restricted to that row range for minX/maxX.
  *
- * @returns The opaque bounding box; `maxX === -1` (with `minX === width`, `minY === height`) when
- *   the bitmap is fully transparent. Callers must handle that sentinel.
+ * @returns The opaque bounding box, or `undefined` when the bitmap is fully transparent.
  * @internal Exported for `scripts/measure.ts`.
  */
-function scanArtBounds({ data, width, height }: RawImage) {
+function scanArtBounds({ data, width, height }: RawImage): Bounds | undefined {
 	const rowStride = width * BYTES_PER_PIXEL;
 
 	const rowHasOpaque = (y: number) => {
@@ -181,7 +189,7 @@ function scanArtBounds({ data, width, height }: RawImage) {
 	}
 
 	if (minY < 0) {
-		return { minX: width, minY: height, maxX: -1, maxY: -1 };
+		return undefined;
 	}
 
 	let maxY = height - 1;
@@ -245,49 +253,26 @@ function cropRaw({ data, width }: RawImage, region: Region) {
 
 // ═══════════════════════════════════════════ CARD ART ════════════════════════════════════════════
 
-/**
- * Local-art filename suffix per `evolutionLevel` (1 = Evolution, 2 = Hero); ordinary cards use the
- * bare `<id>.png`. The `satisfies` clause makes a new schema level fail to compile here rather than
- * silently fall through to the base art.
- */
-const EVOLUTION_SUFFIX = {
-	1: "-evo",
-	2: "-hero",
-} as const satisfies Record<EvolutionLevel, string>;
-
-/**
- * Which `iconUrls` variant each `evolutionLevel` prefers on the CDN-fallback path; guarded like
- * {@link EVOLUTION_SUFFIX}.
- */
-const EVOLUTION_ICON = {
-	1: "evolutionMedium",
-	2: "heroMedium",
-} as const satisfies Record<EvolutionLevel, keyof Card["iconUrls"]>;
-
 /** The local mirror filename for the card as it was played: `<id>`, `<id>-evo`, or `<id>-hero`. */
 function tileName(card: Card) {
-	const suffix = card.evolutionLevel ? EVOLUTION_SUFFIX[card.evolutionLevel] : "";
-	return `${String(card.id)}${suffix}.png`;
+	return `${String(card.id)}${evolutionOf(card).suffix}.png`;
 }
 
 /**
  * CDN art URL for the card as played. This is the fallback when the local mirror has no file yet,
  * rather than silently substituting the wrong (un-evolved) art.
  *
- * @throws When `evolutionLevel` is set but the API lists no matching variant. The throw rejects the
- *   whole render, via {@link loadTile}.
+ * @throws When `evolutionLevel` is set but the API lists no matching variant. An ordinary card
+ *   cannot reach the throw, since `medium` is the one `iconUrls` entry the schema requires. The
+ *   throw rejects the whole render, via {@link loadTile}.
  */
 function iconUrl(card: Card) {
-	if (!card.evolutionLevel) {
-		return card.iconUrls.medium;
-	}
-
-	const key = EVOLUTION_ICON[card.evolutionLevel];
-	const variant = card.iconUrls[key];
+	const { iconKey } = evolutionOf(card);
+	const variant = card.iconUrls[iconKey];
 
 	if (variant === undefined) {
 		throw new Error(
-			`card ${String(card.id)} (${card.name}) played at evolutionLevel ${String(card.evolutionLevel)} but the API lists no ${key} icon`
+			`card ${String(card.id)} (${card.name}) played at evolutionLevel ${String(card.evolutionLevel)} but the API lists no ${iconKey} icon`
 		);
 	}
 
@@ -307,10 +292,10 @@ function iconUrl(card: Card) {
  */
 function trimRaw(raw: RawImage): Tile {
 	const { width, height } = raw;
-	const { minX, minY, maxX, maxY } = scanArtBounds(raw);
+	const bounds = scanArtBounds(raw);
 
-	// Fully-transparent sentinel (shouldn't happen for card art): keep the whole frame.
-	if (maxX < 0) {
+	// Fully transparent (shouldn't happen for card art): keep the whole frame.
+	if (bounds === undefined) {
 		return {
 			data: cropRaw(raw, { left: 0, top: 0, width, height }),
 			width,
@@ -319,6 +304,7 @@ function trimRaw(raw: RawImage): Tile {
 		};
 	}
 
+	const { minX, minY, maxX, maxY } = bounds;
 	const region = { left: minX, top: minY, width: maxX - minX + 1, height: height - minY };
 
 	return {
@@ -388,8 +374,7 @@ async function fetchTile(url: string) {
  * card released after the last mirror sync: warn (the signal to add its art) and fall back to the
  * CDN icon.
  *
- * @returns The tile, plus `cdnFallback` reporting whether the CDN path ran so
- *   {@link renderDeckGrid} can count it.
+ * @returns The trimmed tile, from the local mirror or the CDN fallback.
  * @throws On any error but `NotFound`. A decode failure or a bad CDN response propagates and
  *   rejects the whole render.
  * @see docs/deck-rendering.md#cdn-fallback
@@ -397,13 +382,13 @@ async function fetchTile(url: string) {
 async function loadTile(card: Card) {
 	try {
 		const bytes = await Deno.readFile(new URL(tileName(card), IMAGES_DIR));
-		return { tile: await trimToArt(bytes), cdnFallback: false };
+		return await trimToArt(bytes);
 	} catch (error) {
 		if (error instanceof Deno.errors.NotFound) {
 			log.warn(
 				`no local art for card ${hl.entity(String(card.id))} (${card.name}); falling back to the CDN`
 			);
-			return { tile: await fetchTile(iconUrl(card)), cdnFallback: true };
+			return fetchTile(iconUrl(card));
 		}
 
 		throw error;
@@ -454,45 +439,40 @@ async function renderDeckGrid(cards: Card[]) {
 	// Not raced against `sharpModule.get()`: every tile load already awaits it internally (via
 	// `decodeToRaw`), so by the time the tiles resolve, sharp is already loaded and this await just
 	// returns the cached promise.
-	const loaded = await Promise.all(cards.map((card) => loadTile(card)));
+	const tiles = await Promise.all(cards.map((card) => loadTile(card)));
 	const sharp = await sharpModule.get();
-
-	let fallbacks = 0;
-	const tiles: Tile[] = [];
-	for (const entry of loaded) {
-		if (entry.cdnFallback) fallbacks++;
-		tiles.push(entry.tile);
-	}
 
 	const composeStart = performance.now();
 	const { width, height, rowTops } = planGrid(tiles.length);
-	const rows = rowTops.length;
 
-	const overlays = tiles.map((tile, index) => {
-		const row = Math.floor(index / COLUMNS);
+	// Walked a row at a time rather than over the flat tile list, so `cellY` comes from the iteration
+	// rather than a `rowTops[row]` lookup, which would need a nullish fallback whose only plausible
+	// value (0) is itself a real row position. `slice` clamps on the last row, which is what leaves a
+	// short deck's trailing cells empty.
+	const overlays = rowTops.flatMap((cellY, row) =>
+		tiles.slice(row * COLUMNS, (row + 1) * COLUMNS).map((tile, column) => {
+			// Warn on any row but the last: the row below overlaps by ROW_GAP (negative), and this
+			// tile's kept bottom padding must cover it or the row below would clip its art.
+			if (row < rowTops.length - 1 && tile.bottomPadding < -ROW_GAP) {
+				log.warn(
+					`card art bottom padding ${hl.strong(String(tile.bottomPadding))}px < row overlap ${hl.strong(String(-ROW_GAP))}px; grid rows may clip`
+				);
+			}
 
-		// Warn on any row but the last: the row below overlaps by ROW_GAP (negative), and this
-		// tile's kept bottom padding must cover it or the row below would clip its art.
-		if (row < rows - 1 && tile.bottomPadding < -ROW_GAP) {
-			log.warn(
-				`card art bottom padding ${hl.strong(String(tile.bottomPadding))}px < row overlap ${hl.strong(String(-ROW_GAP))}px; grid rows may clip`
-			);
-		}
+			// Centre horizontally, align to the cell's bottom so every card rests on the shared
+			// baseline and taller frames extend upward.
+			const cellX = column * (CELL_WIDTH + COLUMN_GAP);
+			const left = cellX + Math.floor((CELL_WIDTH - tile.width) / 2);
+			const top = cellY + (CELL_HEIGHT - tile.height);
 
-		// Centre horizontally, align to the cell's bottom so every card rests on the shared baseline
-		// and taller frames extend upward.
-		const cellX = (index % COLUMNS) * (CELL_WIDTH + COLUMN_GAP);
-		const cellY = rowTops[row] ?? 0;
-		const left = cellX + Math.floor((CELL_WIDTH - tile.width) / 2);
-		const top = cellY + (CELL_HEIGHT - tile.height);
-
-		return {
-			input: tile.data,
-			raw: { width: tile.width, height: tile.height, channels: 4 as const },
-			left,
-			top,
-		};
-	});
+			return {
+				input: tile.data,
+				raw: { width: tile.width, height: tile.height, channels: 4 as const },
+				left,
+				top,
+			};
+		})
+	);
 
 	const png = await sharp({
 		create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
@@ -505,7 +485,7 @@ async function renderDeckGrid(cards: Card[]) {
 	const elapsed = formatDuration(Math.round(end - start), { ignoreZero: true });
 	const composeElapsed = formatDuration(Math.round(end - composeStart), { ignoreZero: true });
 	log.debug(
-		`deck grid: ${String(tiles.length)} tiles (${String(fallbacks)} from CDN), ${hl.value(formatBytes(png.length))}, in ${elapsed} (compose+encode ${composeElapsed})`
+		`deck grid: ${String(tiles.length)} tiles, ${hl.value(formatBytes(png.length))}, in ${elapsed} (compose+encode ${composeElapsed})`
 	);
 
 	return png;

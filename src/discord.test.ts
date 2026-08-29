@@ -41,11 +41,17 @@ function makeBattle(overrides: Record<string, unknown> = {}): Battle {
  * down are for the tests that are genuinely about the send path.
  */
 function contextFor(overrides: Record<string, unknown> = {}) {
-	const battle = makeBattle(overrides);
-	return battleContext(battle, battle.team[0]);
+	return battleContext(makeBattle(overrides));
 }
 
-/** The text-only message body for a battle, built directly. No render failure to stage, no POST. */
+/**
+ * The text-only message body for a battle, built directly. No render failure to stage, no POST.
+ *
+ * The cast goes through `unknown` because {@link Payload} is the _post_-serialization shape, where
+ * `timestamp` is a string; in memory it is still a `Temporal.Instant`, so the two are not
+ * comparable and a single `as Payload` will not compile. That is the two shapes being correctly
+ * different, not a missing type: production's own embed type lives in `discord.ts`.
+ */
 function fallbackFor(overrides: Record<string, unknown> = {}) {
 	return buildFallbackMessage(contextFor(overrides)) as unknown as Payload;
 }

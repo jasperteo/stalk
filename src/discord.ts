@@ -6,8 +6,9 @@
  */
 
 import { renderDeckGrid } from "@/deck-image.ts";
-import { ERROR_BODY_CHARS, hl, log } from "@/log.ts";
-import type { Battle, Card, EvolutionLevel, Player } from "@/schema.ts";
+import { hl, log, truncatedBody } from "@/log.ts";
+import type { Battle, Card, Player } from "@/schema.ts";
+import { evolutionOf } from "@/schema.ts";
 
 // ═══════════════════════════════════════════ CONSTANTS ═══════════════════════════════════════════
 
@@ -38,16 +39,6 @@ const SPACER_FIELD = { name: "\u{200B}", value: "\u{200B}" } as const;
  */
 const ALLOWED_MENTIONS = { parse: [] } as const;
 
-/**
- * Evolutions render as "Evo <name>", Heroes as "Hero <name>"; ordinary cards stay bare. The
- * `satisfies` clause makes a new schema level fail to compile, like `EVOLUTION_SUFFIX` in
- * deck-image.ts.
- */
-const EVOLUTION_PREFIX = {
-	1: "Evo ",
-	2: "Hero ",
-} as const satisfies Record<EvolutionLevel, string>;
-
 // ═════════════════════════════════════════ EMBED FIELDS ══════════════════════════════════════════
 
 /** Deep link to a player's RoyaleAPI battle log; the site's URLs carry the tag without its "#". */
@@ -66,11 +57,7 @@ function formatDeck(cards: Card[]) {
 		return "—";
 	}
 
-	return cards
-		.map(
-			(card) => `${card.evolutionLevel ? EVOLUTION_PREFIX[card.evolutionLevel] : ""}${card.name}`
-		)
-		.join(" · ");
+	return cards.map((card) => `${evolutionOf(card).prefix}${card.name}`).join(" · ");
 }
 
 /**
@@ -108,7 +95,7 @@ function buildTrophyFields(subject: Player, other: Player) {
 	return [
 		buildTrophyField(subject, "Trophies"),
 		buildTrophyField(other, "Opponent Trophies"),
-	].filter(Boolean);
+	].filter((field) => field !== undefined);
 }
 
 /**
@@ -195,11 +182,14 @@ function weakestSurvivingTowerHp(player: Player) {
  * because the "Match History" link must deep-link that side's own battle log, not always the
  * tracked player's.
  *
- * @param me The tracked player (`battle.team[0]`), already narrowed by the caller.
+ * `battle.team[0]` is always the tracked player: `BattleSchema` types both sides as one-element
+ * tuples, and 2v2s are filtered out upstream anyway. So the destructure below needs no guard.
+ *
  * @returns Both sides, the shared `content` line, and `embedBase`. That is everything the two
  *   message shapes need in common.
  */
-function battleContext(battle: Battle, me: Player) {
+function battleContext(battle: Battle) {
+	const [me] = battle.team;
 	const [opponent] = battle.opponent;
 	const won = me.crowns > opponent.crowns;
 	const outcome = outcomeFor(me.crowns, opponent.crowns);
@@ -213,7 +203,9 @@ function battleContext(battle: Battle, me: Player) {
 
 	// Content doubles as the push-notification text, which bare embeds wouldn't provide.
 	const scoreLine = `${me.name}  ${String(me.crowns)} — ${String(opponent.crowns)}  ${opponent.name}`;
-	const content = [`# ${outcome.result}`, `## ${scoreLine}`, margin].filter(Boolean).join("\n");
+	const content = [`# ${outcome.result}`, `## ${scoreLine}`, margin]
+		.filter((line) => line !== undefined)
+		.join("\n");
 
 	const footer = { text: battle.gameMode?.name.replaceAll("_", " ") ?? battle.type };
 
@@ -234,20 +226,44 @@ function battleContext(battle: Battle, me: Player) {
 
 type BattleContext = ReturnType<typeof battleContext>;
 
+/** `inline` is set only on the trophy rows, the one pair meant to sit side by side. */
+type EmbedField = { name: string; value: string; inline?: boolean };
+
+/**
+ * The embed as this module holds it, before serialization. Discord's own embed object allows far
+ * more; narrowing it to the two shapes actually built is what turns {@link payloadJson} into a
+ * checked contract instead of a `JSON.stringify` that takes anything. `thumbnail` and `image` are
+ * optional because only {@link buildForm}'s embed carries them; {@link buildFallbackMessage} folds
+ * the same information into `fields`.
+ *
+ * `timestamp` is a `Temporal.Instant`, not the ISO string Discord receives. It becomes that string
+ * inside {@link payloadJson}, where `JSON.stringify` reaches `Temporal.Instant.prototype.toJSON`.
+ */
+type Embed = {
+	author: { name: string; icon_url: string; url: string };
+	title: string;
+	color: number;
+	footer: { text: string };
+	timestamp: Temporal.Instant;
+	fields: EmbedField[];
+	thumbnail?: { url: string };
+	image?: { url: string };
+};
+
 /**
  * The one place a webhook body is serialized, so no payload shape can forget
  * {@link ALLOWED_MENTIONS}. Both the multipart `payload_json` part and the text-only fallback go
  * through here. Adding the field per call site instead would leave a third shape unprotected, and
  * silently so, by default.
  */
-function payloadJson(message: { content: string; embeds: unknown[] }) {
+function payloadJson(message: { content: string; embeds: Embed[] }) {
 	return JSON.stringify({ ...message, allowed_mentions: ALLOWED_MENTIONS });
 }
 
 /**
  * Renders both deck grids and packs them with the JSON payload into multipart form data.
  *
- * @throws When a deck fails to render. {@link notifyBattle} catches this to reach the text-only
+ * @throws When a deck fails to render. {@link tryBuildForm} catches this to reach the text-only
  *   fallback, so an image problem costs the post its pictures, never the notification.
  */
 async function buildForm({ me, opponent, content, embedBase }: BattleContext) {
@@ -281,6 +297,23 @@ async function buildForm({ me, opponent, content, embedBase }: BattleContext) {
 }
 
 /**
+ * {@link buildForm}, with a render failure turned into an absent form rather than a throw. That is
+ * what lets {@link notifyBattle} hold the form in a `const` and treat "no images" as one state,
+ * whatever produced it.
+ *
+ * @returns The multipart body, or `undefined` when a deck failed to render. The caller posts
+ *   text-only either way, so the two causes need no distinguishing beyond this log line.
+ */
+async function tryBuildForm(ctx: BattleContext) {
+	try {
+		return await buildForm(ctx);
+	} catch (error) {
+		log.error("Deck image render failed, posting text-only fallback:", error);
+		return undefined;
+	}
+}
+
+/**
  * Text-only single embed, used when deck rendering fails so an image problem never drops the
  * notification. Decks and tower troops become text fields.
  */
@@ -294,7 +327,7 @@ function buildFallbackMessage({ me, opponent, content, embedBase }: BattleContex
 		SPACER_FIELD,
 		{ name: "Opponent Deck", value: formatDeck(opponent.cards) },
 		buildSupportField(opponent, "Opponent Tower Troop"),
-	].filter(Boolean);
+	].filter((field) => field !== undefined);
 
 	return { content, embeds: [{ ...embedBase(me), fields }] };
 }
@@ -331,9 +364,22 @@ async function postWebhook(webhookUrl: string, request: WebhookRequest) {
 }
 
 /**
- * Posts a single battle to the webhook. `battle.team[0]` is always the tracked player:
- * `BattleSchema` types both sides as one-element tuples, and 2v2s are filtered out upstream
- * anyway.
+ * Settles a webhook response that has no retry left behind it: throw on a non-ok status, otherwise
+ * drain the body so the connection is released rather than pinned by an unread one. Both of
+ * {@link notifyBattle}'s post paths end here, which is what keeps the two from drifting apart.
+ *
+ * @throws When Discord rejected the post.
+ */
+async function finishPost(response: Response) {
+	if (!response.ok) {
+		throw new Error(`Discord webhook ${String(response.status)}: ${await truncatedBody(response)}`);
+	}
+
+	await response.body?.cancel();
+}
+
+/**
+ * Posts a single battle to the webhook.
  *
  * Multipart when the deck images render, otherwise the JSON text fallback. On the multipart path
  * fetch derives the boundary from the FormData body, so there is no manual Content-Type. A payload
@@ -343,47 +389,39 @@ async function postWebhook(webhookUrl: string, request: WebhookRequest) {
  * @throws When Discord still rejects the post after that retry (a 5xx/429, or a non-payload 4xx).
  */
 async function notifyBattle(webhookUrl: string, battle: Battle) {
-	const [me] = battle.team;
+	const ctx = battleContext(battle);
 
-	const ctx = battleContext(battle, me);
+	// `undefined` when the deck render failed. Note this says the images were *built*, not that they
+	// were delivered: the payload-rejection path below has a form in hand and still ends up posting
+	// text-only.
+	const form = await tryBuildForm(ctx);
 
-	// Built on demand, not up front: the image path is the common case and never sends this, so
-	// eagerly formatting both decks into an embed body would be wasted on almost every post.
-	const textRequest = (): WebhookRequest => ({
-		headers: { "Content-Type": "application/json" },
-		body: payloadJson(buildFallbackMessage(ctx)),
-	});
+	if (form !== undefined) {
+		const response = await postWebhook(webhookUrl, { body: form });
 
-	// The only state that varies. Whether an image was sent is just `form !== undefined`. No
-	// separate flag to keep in sync with it.
-	let form: FormData | undefined;
+		// Everything but a rejection of the payload itself is final, success included. A 5xx/429 may
+		// already have been accepted, so a retry could double-post; a non-payload 4xx would fail
+		// identically. Only the PAYLOAD_REJECTED statuses fall through to the smaller body below, and
+		// none of them is a 2xx, so this covers an ok response too.
+		if (!PAYLOAD_REJECTED.has(response.status)) {
+			await finishPost(response);
+			return;
+		}
 
-	try {
-		form = await buildForm(ctx);
-	} catch (error) {
-		log.error("Deck image render failed, posting text-only fallback:", error);
-	}
-
-	let response = await postWebhook(webhookUrl, form === undefined ? textRequest() : { body: form });
-
-	// Only retry when Discord rejected the image payload itself. See PAYLOAD_REJECTED.
-	if (form !== undefined && !response.ok && PAYLOAD_REJECTED.has(response.status)) {
-		const rejected = await response.text();
 		log.warn(
-			`Discord rejected the deck image (${hl.strong(String(response.status))}), retrying text-only: ${rejected.slice(0, ERROR_BODY_CHARS)}`
-		);
-
-		response = await postWebhook(webhookUrl, textRequest());
-	}
-
-	if (!response.ok) {
-		const body = await response.text();
-		throw new Error(
-			`Discord webhook ${String(response.status)}: ${body.slice(0, ERROR_BODY_CHARS)}`
+			`Discord rejected the deck image (${hl.strong(String(response.status))}), retrying text-only: ${await truncatedBody(response)}`
 		);
 	}
 
-	await response.body?.cancel();
+	// Reached when the deck render failed, or when Discord rejected the images. Both want the same
+	// text-only body, and neither has a retry left after it. Building it here rather than up front is
+	// what keeps `buildFallbackMessage` off the image path, which is the common case.
+	await finishPost(
+		await postWebhook(webhookUrl, {
+			headers: { "Content-Type": "application/json" },
+			body: payloadJson(buildFallbackMessage(ctx)),
+		})
+	);
 }
 
 export { notifyBattle };
