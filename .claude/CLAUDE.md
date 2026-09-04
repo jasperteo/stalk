@@ -217,10 +217,10 @@ Runtime deps live in **`package.json`**, now the only dependency manifest; `deno
 map holds only the `@/` alias. **pnpm installs and lays out `node_modules`; Deno only consumes
 it.** A JSR-only package is declared as an npm alias onto the JSR mirror
 (`"@std/async": "npm:@jsr/std__async@^1.5.0"`, `"@std/fmt": "npm:@jsr/std__fmt@^1.0.10"`), with
-`.npmrc` pointing the `@jsr` scope at `https://npm.jsr.io/` (registry and auth settings are the
-only thing pnpm still reads from `.npmrc`; everything else is `pnpm-workspace.yaml`). The
-alias is what keeps the import specifier `@std/async` while the package on disk is
-`@jsr/std__async`. Both Deno and oxlint/tsgolint (which only understands `node_modules`, not Deno's
+`pnpm-workspace.yaml`'s `registries` block routing the `@jsr` scope to `https://npm.jsr.io/` (the
+URL-keyed form added in pnpm 11.23.0; it replaced `.npmrc`'s `@jsr:registry=` line, and only
+credentials would still need an `.npmrc`, which this project has none of). The alias is what keeps
+the import specifier `@std/async` while the package on disk is `@jsr/std__async`. Both Deno and oxlint/tsgolint (which only understands `node_modules`, not Deno's
 import map) then resolve against that one tree. Run `pnpm install` after cloning.
 
 This is a change of spelling, not of what ships. The old `deno.lock` already resolved those `jsr:`

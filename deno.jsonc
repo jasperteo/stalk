@@ -39,7 +39,7 @@
 	"unstable": ["kv", "cron"],
 
 	"deploy": {
-		"install": "pnpm install --frozen-lockfile -P",
+		"install": "pnpm ci -P",
 		"runtime": { "mode": "dynamic", "entrypoint": "src/main.ts" },
 	},
 }

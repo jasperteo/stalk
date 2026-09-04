@@ -64,13 +64,13 @@ player.
 pnpm install
 ```
 
-pnpm owns `node_modules`; Deno only consumes it. Two files configure that. `.npmrc` points the
-`@jsr` scope at `https://npm.jsr.io/`, which is how the JSR-only `@std/*` packages resolve — they're
-declared in `package.json` as npm aliases (`"@std/async": "npm:@jsr/std__async@^1.5.0"`), so the
-import specifier stays `@std/async` while the package on disk is `@jsr/std__async`. Registry and
-auth settings belong in `.npmrc`; it's the only pnpm config file that still reads them. Everything
-else lives in `pnpm-workspace.yaml`, where `virtualStoreType: global` shares one virtual store
-across every project on the machine, leaving `node_modules` holding only symlinks into it. pnpm
+pnpm owns `node_modules`; Deno only consumes it. `pnpm-workspace.yaml` configures that. Its
+`registries` block routes the `@jsr` scope to `https://npm.jsr.io/`, which is how the JSR-only
+`@std/*` packages resolve — they're declared in `package.json` as npm aliases
+(`"@std/async": "npm:@jsr/std__async@^1.5.0"`), so the import specifier stays `@std/async` while the
+package on disk is `@jsr/std__async`. Only credentials would still need an `.npmrc`, and this
+project has none. `virtualStoreType: global` shares one virtual store across every project on the
+machine, leaving `node_modules` holding only symlinks into it. pnpm
 disables that automatically when it detects CI, where a cold cache would make it a slowdown rather
 than a speed-up.
 
@@ -188,8 +188,7 @@ stalk/
 ├── deno.jsonc              # dev permission set, @/ alias, Deno compilerOptions, deploy config
 ├── package.json            # scripts, deps, devEngines pins (@/ alias lives in deno.jsonc)
 ├── pnpm-lock.yaml
-├── pnpm-workspace.yaml     # virtualStoreType, minimumReleaseAge
-├── .npmrc                  # @jsr scope → npm.jsr.io
+├── pnpm-workspace.yaml     # @jsr registry, virtualStoreType, minimumReleaseAge
 ├── deno.d.ts               # vendored Deno types, for oxlint (pnpm sync-types)
 ├── tsconfig.json           # read by oxlint/tsgolint, not by Deno
 ├── oxlint.config.ts
