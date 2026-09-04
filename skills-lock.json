@@ -17,13 +17,13 @@
 			"source": "cursor/plugins",
 			"sourceType": "github",
 			"skillPath": "pstack/skills/unslop/SKILL.md",
-			"computedHash": "3dfc2afeda677e12c6065497a40df7d895859de1c7d1cffb899b1559d129fe4f"
+			"computedHash": "78f45b785f543d1bd82f55cd7be018239c769dc1462848a720b62a6d214ffc6d"
 		},
 		"valibot": {
 			"source": "open-circle/agent-skills",
 			"sourceType": "github",
 			"skillPath": "skills/valibot/SKILL.md",
-			"computedHash": "6798b923c1bbe9b07cb8c40470ada09c377d666045caefda90d95577e16e8744"
+			"computedHash": "dc7ad7dc09548808d26aef0bc58786a4ee3559e153a1e83c9c4574f3a294ea1b"
 		},
 		"vitest": {
 			"source": "antfu/skills",
