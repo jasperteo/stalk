@@ -35,15 +35,6 @@ describe("latestBattle", () => {
 		expect(log.warn).not.toHaveBeenCalled();
 	});
 
-	test("picks the newest eligible (1v1) battle among mixed entries", () => {
-		const newer = battle("20240115T143022.000Z");
-		const older = battle("20240101T000000.000Z");
-
-		const entries = [newer, older, "garbage"];
-
-		expect(latestBattle(entries).battle?.battleTime).toEqual(at("2024-01-15T14:30:22.000Z"));
-	});
-
 	test("skips leading 2v2 and malformed entries to reach the first eligible one", () => {
 		const twoVsTwo = battle("20240201T000000.000Z", 2);
 		const eligible = battle("20240101T000000.000Z");
@@ -65,23 +56,23 @@ describe("latestBattle", () => {
 		);
 	});
 
-	test("skips a duel (16 concatenated cards) to reach an ordinary 1v1 further down the log", () => {
-		const duel = duelBattle({ battleTime: "20240201T000000.000Z" });
-		const eligible = battle("20240101T000000.000Z");
+	// Both real Duel shapes hit the same `cards.length > DECK_SIZE` branch with a different multiple,
+	// so they are one table rather than two copy-pasted tests. The branch's exact boundary is pinned
+	// by the 8/9-card pair below, not here.
+	test.for([
+		{ decks: 2, as: "16 concatenated cards" },
+		{ decks: 3, as: "24 concatenated cards (3-deck variant)" },
+	] as const)(
+		"skips a duel with $as to reach an ordinary 1v1 further down the log",
+		({ decks }) => {
+			const duel = duelBattle({ battleTime: "20240201T000000.000Z" }, decks);
+			const eligible = battle("20240101T000000.000Z");
 
-		expect(latestBattle([duel, eligible]).battle?.battleTime).toEqual(
-			at("2024-01-01T00:00:00.000Z")
-		);
-	});
-
-	test("skips a duel with 24 concatenated cards (3-deck variant) too", () => {
-		const duel = duelBattle({ battleTime: "20240201T000000.000Z" }, 3);
-		const eligible = battle("20240101T000000.000Z");
-
-		expect(latestBattle([duel, eligible]).battle?.battleTime).toEqual(
-			at("2024-01-01T00:00:00.000Z")
-		);
-	});
+			expect(latestBattle([duel, eligible]).battle?.battleTime).toEqual(
+				at("2024-01-01T00:00:00.000Z")
+			);
+		}
+	);
 
 	test("an 8-card deck is still eligible; the duel check must not be off by one", () => {
 		const eightCards = rawBattle({

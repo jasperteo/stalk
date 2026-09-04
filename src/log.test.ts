@@ -47,19 +47,17 @@ describe("log", () => {
 	});
 });
 
-describe("hl", () => {
-	test("entity/value/strong are identity functions when color is disabled", async () => {
-		const { hl } = await importLog();
+// One fact about two export groups: with color disabled, every paint function is identity. Merged
+// into a single test because splitting it paid two `vi.resetModules()` + re-import cycles to assert
+// the same thing twice. This is what justifies the identity stubs in `src/__mocks__/log.ts`, which
+// main.test.ts's exact tally-line assertion depends on.
+describe("hl and levelColor", () => {
+	test("every paint function is identity when color is disabled", async () => {
+		const { hl, levelColor } = await importLog();
 
 		expect(hl.entity("tag")).toBe("tag");
 		expect(hl.value("42")).toBe("42");
 		expect(hl.strong("bold")).toBe("bold");
-	});
-});
-
-describe("levelColor", () => {
-	test("exposes an identity paint function per level when color is disabled", async () => {
-		const { levelColor } = await importLog();
 
 		expect(levelColor.info("x")).toBe("x");
 		expect(levelColor.ok("x")).toBe("x");
