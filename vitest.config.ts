@@ -11,10 +11,10 @@ const vitestConfig = defineConfig({
 		restoreMocks: true,
 		unstubGlobals: true,
 		unstubEnvs: true,
-		// `restoreMocks` only restores `vi.spyOn` originals; `clearMocks` also wipes call history on
-		// the `vi.fn()` instances created inside `vi.mock` factories/manual mocks, which the discord
-		// and main tests assert call counts on across tests.
-		clearMocks: true,
+		// `clearMocks` is not set here because vitest 5 turns it on by default, and the suite needs it:
+		// `restoreMocks` alone only restores `vi.spyOn` originals, where `clearMocks` also wipes call
+		// history on the `vi.fn()` instances created inside `vi.mock` factories and manual mocks, which
+		// the discord and main tests assert call counts on across tests.
 	},
 	resolve: { tsconfigPaths: true },
 });
