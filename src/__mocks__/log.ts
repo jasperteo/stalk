@@ -9,6 +9,8 @@
 
 import { vi } from "vitest";
 
+import type * as LogModule from "@/log.ts";
+
 /** The five leveled methods, each a spy so tests can assert on calls. */
 const log = {
 	info: vi.fn(),
@@ -33,13 +35,10 @@ const levelColor = {
 };
 
 /**
- * Mirrors the real helper rather than spying on it: no test asserts on the call, but the
- * error-message assertions read what it returns. The cap matches `log.ts`'s `ERROR_BODY_CHARS`,
- * which that module keeps private.
+ * The real helper, not a spy and not a copy: no test asserts on the call, but the error-message
+ * assertions read what it returns, and its cap (`ERROR_BODY_CHARS`) is private to `log.ts`.
+ * Reimplementing it here would duplicate that constant where nothing would notice it drifting.
  */
-const truncatedBody = async (response: Response) => {
-	const body = await response.text();
-	return body.slice(0, 2000);
-};
+const { truncatedBody } = await vi.importActual<typeof LogModule>("@/log.ts");
 
 export { hl, levelColor, log, truncatedBody };
