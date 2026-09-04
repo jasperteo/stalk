@@ -4092,8 +4092,8 @@ declare namespace Deno {
 		/**
 		 * A promise that resolves once the child process has exited, with its exit code and terminating
 		 * signal (if any). The promise never rejects; if the process is still running the promise is
-		 * pending. Accessing this property does not, on its own, prevent the Deno process from exiting
-		 * - see {@linkcode ChildProcess.ref}.
+		 * pending. Accessing this property does not, on its own, prevent the Deno process from exiting -
+		 * see {@linkcode ChildProcess.ref}.
 		 */
 		readonly status: Promise<CommandStatus>;
 
@@ -7462,8 +7462,12 @@ interface URLSearchParamsIterator<T> extends IteratorObject<T, BuiltinIteratorRe
 /**
  * URLSearchParams provides methods for working with the query string of a URL.
  *
- * Use this interface to: - Parse query parameters from URLs - Build and modify query strings -
- * Handle form data (when used with FormData) - Safely encode/decode URL parameter values
+ * Use this interface to:
+ *
+ * - Parse query parameters from URLs
+ * - Build and modify query strings
+ * - Handle form data (when used with FormData)
+ * - Safely encode/decode URL parameter values
  *
  * @category URL
  */
@@ -7879,9 +7883,13 @@ interface URL {
 	 * The `searchParams` property of the URL interface provides a direct interface to query
 	 * parameters through a {@linkcode URLSearchParams} object.
 	 *
-	 * This property offers a convenient way to: - Parse URL query parameters - Manipulate query
-	 * strings - Add, modify, or delete URL parameters - Work with form data in a URL-encoded format -
-	 * Handle query string encoding/decoding automatically
+	 * This property offers a convenient way to:
+	 *
+	 * - Parse URL query parameters
+	 * - Manipulate query strings
+	 * - Add, modify, or delete URL parameters
+	 * - Work with form data in a URL-encoded format
+	 * - Handle query string encoding/decoding automatically
 	 *
 	 * @example
 	 * 	```ts
@@ -8029,9 +8037,12 @@ declare var URL: {
 	/**
 	 * Creates a unique, temporary URL that represents a given Blob, File, or MediaSource object.
 	 *
-	 * This method is particularly useful for: - Creating URLs for dynamically generated content -
-	 * Working with blobs in a browser context - Creating workers from dynamically generated code -
-	 * Setting up temporary URL references for file downloads
+	 * This method is particularly useful for:
+	 *
+	 * - Creating URLs for dynamically generated content
+	 * - Working with blobs in a browser context
+	 * - Creating workers from dynamically generated code
+	 * - Setting up temporary URL references for file downloads
 	 *
 	 * Note: Always call URL.revokeObjectURL() when you're done using the URL to prevent memory leaks.
 	 *
@@ -8067,9 +8078,11 @@ declare var URL: {
 	 * Revokes a previously created object URL, freeing the memory associated with it.
 	 *
 	 * Important for memory management in applications that create dynamic URLs. Once an object URL is
-	 * revoked: - It can no longer be used to fetch the content it referenced - The browser/runtime is
-	 * allowed to release the memory or resources associated with it - Workers created via the URL
-	 * will continue to run, but the URL becomes invalid for new creations
+	 * revoked:
+	 *
+	 * - It can no longer be used to fetch the content it referenced
+	 * - The browser/runtime is allowed to release the memory or resources associated with it
+	 * - Workers created via the URL will continue to run, but the URL becomes invalid for new creations
 	 *
 	 * For security and performance in Deno applications, always revoke object URLs as soon as they're
 	 * no longer needed, especially when processing large files or generating many URLs.
@@ -8146,9 +8159,13 @@ interface URLPatternOptions {
  * The URLPattern API provides a web platform primitive for matching URLs based on a convenient
  * pattern syntax.
  *
- * Common use cases for URLPattern include: - Building routers for web applications -
- * Pattern-matching URLs for middleware - Extracting parameters from URL paths - URL-based feature
- * toggles - Routing in serverless and edge functions
+ * Common use cases for URLPattern include:
+ *
+ * - Building routers for web applications
+ * - Pattern-matching URLs for middleware
+ * - Extracting parameters from URL paths
+ * - URL-based feature toggles
+ * - Routing in serverless and edge functions
  *
  * The syntax is based on path-to-regexp, supporting wildcards, named capture groups, regular
  * groups, and group modifiers - similar to Express.js route patterns.
@@ -10694,8 +10711,8 @@ interface DOMMatrixReadOnly {
 	 * The **`rotateFromVector()`** method of the DOMMatrixReadOnly interface is returns a new
 	 * DOMMatrix created by rotating the source matrix by the angle between the specified vector and
 	 * (1, 0). The rotation angle is determined by the angle between the vector (1,0)T and (x,y)T in
-	 * the clockwise direction, or (+/-)arctan(y/x). If x and y are both 0, the angle is specified as
-	 * 0. The original matrix is not altered.
+	 * the clockwise direction, or (+/-)arctan(y/x). If x and y are both 0, the angle is specified as 0.
+	 * The original matrix is not altered.
 	 *
 	 * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/rotateFromVector)
 	 */
@@ -16637,8 +16654,12 @@ interface WorkerOptions {
  * constructor. Workers run in a separate thread, allowing for parallel execution without blocking
  * the main thread.
  *
- * Workers can be used to: - Perform CPU-intensive calculations - Process large datasets - Handle
- * tasks in parallel with the main execution thread - Run code in isolation with its own event loop
+ * Workers can be used to:
+ *
+ * - Perform CPU-intensive calculations
+ * - Process large datasets
+ * - Handle tasks in parallel with the main execution thread
+ * - Run code in isolation with its own event loop
  *
  * @category Workers
  * @example
@@ -17204,29 +17225,37 @@ interface Cache {
 	/**
 	 * Put the provided request/response into the cache.
 	 *
-	 * How is the API different from browsers? 1. You cannot match cache objects using relative paths.
+	 * How is the API different from browsers?
+	 *
+	 * 1. You cannot match cache objects using relative paths.
 	 * 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
 	 */
 	put(request: RequestInfo | URL, response: Response): Promise<void>;
 	/**
 	 * Return cache object matching the provided request.
 	 *
-	 * How is the API different from browsers? 1. You cannot match cache objects using relative paths.
+	 * How is the API different from browsers?
+	 *
+	 * 1. You cannot match cache objects using relative paths.
 	 * 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
 	 */
 	match(request: RequestInfo | URL, options?: CacheQueryOptions): Promise<Response | undefined>;
 	/**
 	 * Delete cache object matching the provided request.
 	 *
-	 * How is the API different from browsers? 1. You cannot delete cache objects using relative
-	 * paths. 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
+	 * How is the API different from browsers?
+	 *
+	 * 1. You cannot delete cache objects using relative paths.
+	 * 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
 	 */
 	delete(request: RequestInfo | URL, options?: CacheQueryOptions): Promise<boolean>;
 	/**
-	 * Return the {@linkcode Request} keys stored in the cache, in insertion order. When a `request` is
-	 * provided, only the matching keys are returned.
+	 * Return the {@linkcode Request} keys stored in the cache, in insertion order. When a `request`
+	 * is provided, only the matching keys are returned.
 	 *
-	 * How is the API different from browsers? 1. You cannot match cache objects using relative paths.
+	 * How is the API different from browsers?
+	 *
+	 * 1. You cannot match cache objects using relative paths.
 	 * 2. You cannot pass options like `ignoreVary`, `ignoreMethod`, `ignoreSearch`.
 	 */
 	keys(request?: RequestInfo | URL, options?: CacheQueryOptions): Promise<ReadonlyArray<Request>>;
@@ -23233,9 +23262,11 @@ declare namespace Intl {
 		value: string;
 
 		/**
-		 * Indicates which date in the range this part comes from. - 'startRange': The part is from the
-		 * start date - 'endRange': The part is from the end date - 'shared': The part is shared between
-		 * both dates (like separators)
+		 * Indicates which date in the range this part comes from.
+		 *
+		 * - 'startRange': The part is from the start date
+		 * - 'endRange': The part is from the end date
+		 * - 'shared': The part is shared between both dates (like separators)
 		 */
 		source: "shared" | "startRange" | "endRange";
 	}
