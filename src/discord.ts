@@ -433,3 +433,10 @@ export { notifyBattle };
  *   {@link ALLOWED_MENTIONS}.
  */
 export { battleContext, buildFallbackMessage };
+
+/**
+ * @internal Exported for tests only. `discord.test.ts` decodes a posted body back into an object
+ *   and derives its assertion type from this one, so a renamed or added embed field breaks the
+ *   tests at compile time instead of leaving them asserting against a stale hand-written shape.
+ */
+export type { Embed };

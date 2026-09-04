@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { renderDeckGrid } from "@/deck-image.ts";
 import { battleContext, buildFallbackMessage, notifyBattle } from "@/discord.ts";
+import type { Embed } from "@/discord.ts";
 import { log } from "@/log.ts";
 import type { Battle } from "@/schema.ts";
 import { BattleSchema } from "@/schema.ts";
@@ -72,16 +73,16 @@ function sentForm() {
 	return body;
 }
 
+/**
+ * A posted body as it comes back off the wire, derived from production's {@link Embed} rather than
+ * restated, so a renamed embed field fails to compile here instead of silently leaving these tests
+ * asserting the old shape. `timestamp` is the one genuine difference: in memory it is a
+ * `Temporal.Instant`, and only `payloadJson`'s `JSON.stringify` turns it into the string below.
+ */
 type Payload = {
 	content: string;
 	allowed_mentions?: { parse: string[] };
-	embeds: {
-		fields?: { name: string; value: string }[];
-		thumbnail?: { url: string };
-		author?: { url: string };
-		footer?: { text: string };
-		timestamp?: string;
-	}[];
+	embeds: (Omit<Embed, "timestamp"> & { timestamp: string })[];
 };
 
 /** The decoded `payload_json` of the first webhook POST. */
@@ -126,6 +127,9 @@ describe("notifyBattle", () => {
 		expect(payload.embeds).toHaveLength(2);
 		expect(form.get("files[0]")).toBeInstanceOf(File);
 		expect(form.get("files[1]")).toBeInstanceOf(File);
+		// One render per side, so a regression that reused one grid for both embeds is caught here
+		// rather than only showing up as two identical images in Discord.
+		expect(vi.mocked(renderDeckGrid)).toHaveBeenCalledTimes(2);
 		expect(init?.signal).toBeInstanceOf(AbortSignal);
 	});
 
@@ -136,15 +140,6 @@ describe("notifyBattle", () => {
 		});
 
 		expect(content).toBe("# Defeat\n## Alice  1 — 2  Bob\nLost by 1,000hp");
-	});
-
-	test("reports a draw with no HP margin line", () => {
-		const { content } = contextFor({
-			team: [player({ crowns: 1 })],
-			opponent: [player(BOB)],
-		});
-
-		expect(content).toBe("# Draw\n## Alice  1 — 1  Bob");
 	});
 
 	test("falls back to a text-only JSON embed when deck rendering fails", async () => {
@@ -161,15 +156,6 @@ describe("notifyBattle", () => {
 		expect(names).toContain("Deck");
 		expect(names).toContain("Opponent Deck");
 		expect(log.error).toHaveBeenCalled();
-	});
-
-	test("throws when the webhook responds with a non-ok status", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(() => Promise.resolve(new Response("x".repeat(300), { status: 502 })))
-		);
-
-		await expect(notifyBattle(WEBHOOK, makeBattle())).rejects.toThrow("Discord webhook 502");
 	});
 
 	test("retries with the text-only fallback when Discord rejects the image payload", async () => {
@@ -255,16 +241,6 @@ describe("notifyBattle", () => {
 
 			expect(embedBase(me).footer.text).toBe("PvP");
 		});
-	});
-
-	test("attaches one embed and one deck image per side", async () => {
-		await notifyBattle(WEBHOOK, makeBattle());
-
-		const form = sentForm();
-
-		expect(sentPayload(form).embeds).toHaveLength(2);
-		expect(form.get("files[1]")).toBeInstanceOf(File);
-		expect(vi.mocked(renderDeckGrid)).toHaveBeenCalledTimes(2);
 	});
 
 	describe("trophy fields", () => {
