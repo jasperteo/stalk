@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 
+import { Lazy } from "@std/async/lazy";
 import sharp from "sharp";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -42,6 +43,12 @@ async function solidPng(width: number, height: number, color: { r: number; g: nu
 		.toBuffer();
 }
 
+/**
+ * Whatever `toBuffer()` resolves to, carried through rather than restated: a bare `Buffer`
+ * annotation widens to `Buffer<ArrayBufferLike>`, which `Response`'s `BodyInit` will not accept.
+ */
+type Fixture = Awaited<ReturnType<typeof solidPng>>;
+
 /** Encodes a raw straight-alpha RGBA buffer to PNG. */
 async function rawToPng(raw: Buffer, width: number, height: number) {
 	return await sharp(raw, { raw: { width, height, channels: 4 } })
@@ -54,8 +61,12 @@ async function rawToPng(raw: Buffer, width: number, height: number) {
  * margin, so `trimToArt` keeps it at full size and its geometry is predictable. Nothing mutates the
  * bytes. The `readFile` mock hands out a fresh `Uint8Array` copy, as the real one would, and
  * `Response` snapshots its body, so both the local-mirror read and the CDN fallback can serve it.
+ *
+ * `Lazy` rather than a top-level `await`, which encoded it during collection on every run: only the
+ * `renderDeckGrid` block needs it, so `vitest -t planGrid` or `-t trimToArt` now skips the encode
+ * entirely. Same reason `deck-image.ts` wraps sharp itself.
  */
-const FIXTURE = await solidPng(TILE_WIDTH, TILE_HEIGHT, { r: 200, g: 30, b: 30 });
+const FIXTURE = new Lazy(() => solidPng(TILE_WIDTH, TILE_HEIGHT, { r: 200, g: 30, b: 30 }));
 
 /**
  * A raw straight-alpha RGBA canvas (`width`×`height`, fully transparent) with an opaque solid-color
@@ -65,10 +76,13 @@ const FIXTURE = await solidPng(TILE_WIDTH, TILE_HEIGHT, { r: 200, g: 30, b: 30 }
  * construction (`rect`'s own coordinates), rather than needing to reverse-engineer them from a real
  * card icon.
  */
+type Mark = { x: number; y: number; color: [r: number, g: number, b: number] };
+
 async function insetFixture(
 	width: number,
 	height: number,
-	rect: { left: number; top: number; width: number; height: number }
+	rect: { left: number; top: number; width: number; height: number },
+	marks: Mark[] = []
 ) {
 	const raw = Buffer.alloc(width * height * 4);
 
@@ -82,7 +96,22 @@ async function insetFixture(
 		}
 	}
 
+	// Painted last, so a mark inside `rect` overwrites the fill. The fill is one flat color, which
+	// makes every pixel in it interchangeable — a crop landing at the wrong offset returns the same
+	// bytes as a correct one. Marks are what give the canvas distinguishable positions.
+	for (const { x, y, color } of marks) {
+		const offset = (y * width + x) * 4;
+		[raw[offset], raw[offset + 1], raw[offset + 2]] = color;
+		raw[offset + 3] = 255;
+	}
+
 	return await rawToPng(raw, width, height);
+}
+
+/** One pixel's RGBA out of a decoded tile, for asserting _where_ cropped bytes came from. */
+function pixelAt({ data, width }: { data: Buffer; width: number }, x: number, y: number) {
+	const offset = (y * width + x) * 4;
+	return [...data.subarray(offset, offset + 4)];
 }
 
 /**
@@ -92,11 +121,9 @@ async function insetFixture(
  */
 const OVERSIZED_WIDTH = CELL_WIDTH + 40;
 const OVERSIZED_HEIGHT = CELL_HEIGHT + 60;
-const OVERSIZED_FIXTURE = await solidPng(OVERSIZED_WIDTH, OVERSIZED_HEIGHT, {
-	r: 30,
-	g: 120,
-	b: 200,
-});
+const OVERSIZED_FIXTURE = new Lazy(() =>
+	solidPng(OVERSIZED_WIDTH, OVERSIZED_HEIGHT, { r: 30, g: 120, b: 200 })
+);
 
 /**
  * Spies `Deno.readFile`, the module's primary tile source (the local `images/` mirror), to serve
@@ -104,10 +131,10 @@ const OVERSIZED_FIXTURE = await solidPng(OVERSIZED_WIDTH, OVERSIZED_HEIGHT, {
  * runs inside Deno, so `Deno` is the real ambient global. `restoreMocks` puts the genuine
  * `readFile` back before each test, so each `beforeEach` installs a fresh spy.
  */
-function localArtReadFile() {
+function localArtReadFile(fixture: Fixture) {
 	return vi
 		.spyOn(Deno, "readFile")
-		.mockImplementation(() => Promise.resolve(new Uint8Array(FIXTURE)));
+		.mockImplementation(() => Promise.resolve(new Uint8Array(fixture)));
 }
 
 /**
@@ -115,20 +142,14 @@ function localArtReadFile() {
  * local mirror; installing it by default (serving the fixture) means tests can assert it is NOT
  * called for a fully-local render, and the fallback tests override it per-case.
  */
-function fetchServingFixture() {
+function fetchServingFixture(fixture: Fixture) {
 	return vi.fn<(url: string | URL, init?: RequestInit) => Promise<Response>>(() =>
-		Promise.resolve(new Response(FIXTURE))
+		Promise.resolve(new Response(fixture))
 	);
 }
 
 let readFileMock: ReturnType<typeof localArtReadFile>;
 let fetchMock: ReturnType<typeof fetchServingFixture>;
-
-beforeEach(() => {
-	readFileMock = localArtReadFile();
-	fetchMock = fetchServingFixture();
-	vi.stubGlobal("fetch", fetchMock);
-});
 
 /**
  * Fully decodes a rendered grid through the renderer's own `decodeToRaw`, so these assertions cover
@@ -141,6 +162,17 @@ async function dimensions(png: Uint8Array) {
 }
 
 describe("renderDeckGrid", () => {
+	// Scoped to this block rather than the file: planGrid is pure geometry and trimToArt encodes its
+	// own inputs, so neither needs these stubs, and a file-scoped hook would force FIXTURE's encode
+	// for them anyway.
+	beforeEach(async () => {
+		const fixture = await FIXTURE.get();
+
+		readFileMock = localArtReadFile(fixture);
+		fetchMock = fetchServingFixture(fixture);
+		vi.stubGlobal("fetch", fetchMock);
+	});
+
 	test("lays out a 4-column grid at the fixed cell resolution", async () => {
 		const eightCards = Array.from({ length: 8 }, () => card());
 
@@ -208,26 +240,25 @@ describe("renderDeckGrid", () => {
 		expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
 	});
 
-	test("clamps an oversized CDN fallback tile to the cell instead of composing it past the cell bounds", async () => {
+	test("renders a CDN tile larger than the cell at the fixed grid size, without rejecting", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
-		fetchMock.mockImplementationOnce(() => Promise.resolve(new Response(OVERSIZED_FIXTURE)));
+		const oversizedBytes = await OVERSIZED_FIXTURE.get();
+		fetchMock.mockImplementationOnce(() => Promise.resolve(new Response(oversizedBytes)));
 
 		const oversized = card({
 			iconUrls: { medium: "https://api.clashroyale.com/oversized.png" },
 		});
-		const [oversizedPng, normalPng] = await Promise.all([
-			renderDeckGrid([oversized]),
-			renderDeckGrid([card()]),
-		]);
 
-		// The grid's own dimensions are fixed by CELL_WIDTH/CELL_HEIGHT regardless of tile content, so
-		// an unclamped oversized tile wouldn't change them either. What the clamp actually prevents is
-		// the tile's overlay offsets going negative (see renderDeckGrid) and the source being visibly
-		// sliced. A successful render at the expected fixed size is the observable proxy available
-		// from outside the module: `fit: "inside"` means a tile that already exceeds the cell now
-		// decodes into a rectangle bounded by CELL_WIDTH×CELL_HEIGHT, which trimToArt (also exercised
-		// directly below) confirms in isolation.
-		await expect(dimensions(oversizedPng)).resolves.toEqual(await dimensions(normalPng));
+		// Deliberately not named as a test of the clamp: the grid's dimensions are fixed by
+		// CELL_WIDTH/CELL_HEIGHT regardless of tile content, so they would match here with or without
+		// it. What this does catch is the oversized path *rejecting* — an unclamped tile drives the
+		// overlay offsets negative (see renderDeckGrid) and sharp refuses the composite. The clamp's
+		// actual behavior is covered by the trim-before-fit test below and by `describe("trimToArt")`.
+		// Compared against planGrid rather than a second live render, which cost a full extra decode
+		// round-trip to restate a constant.
+		const { width, height } = planGrid(1);
+
+		await expect(dimensions(await renderDeckGrid([oversized]))).resolves.toEqual({ width, height });
 	});
 
 	test("trims a CDN fallback icon before checking it against the cell, not after", async () => {
@@ -326,7 +357,10 @@ describe("renderDeckGrid", () => {
 		await expect(renderDeckGrid(cards)).rejects.toThrow("Card icon 500 for");
 
 		// No module-level state outlives a call, so a failed render has no lasting side effect: the
-		// retry is just another independent render.
+		// retry is just another independent render. Distinct from the no-cache test below, which only
+		// covers renders that succeed: a cache that remembered *failures* alone would pass that one and
+		// fail this one. That is the exact regression `sharpModule`'s `Lazy` exists to prevent, so the
+		// suite keeps a test for it at the renderDeckGrid level too.
 		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Buffer);
 	});
 
@@ -410,8 +444,15 @@ describe("trimToArt", () => {
 	const CANVAS_HEIGHT = 40;
 	const RECT = { left: 5, top: 8, width: CANVAS_WIDTH - 5, height: 20 };
 
-	test("crops without throwing when the art touches the right edge of the frame, and the buffer is exactly width*height*4", async () => {
-		const bytes = await insetFixture(CANVAS_WIDTH, CANVAS_HEIGHT, RECT);
+	// Two positional markers, both outside `RECT`'s flat fill in the ways that matter. `ORIGIN` sits
+	// on the crop's own top-left corner and `LAST_ROW` on its final row; neither moves the bounds
+	// `scanArtBounds` derives (ORIGIN is already the rect's corner, and LAST_ROW shares its x and
+	// lies below, while trimToArt keeps the native bottom edge regardless).
+	const ORIGIN: Mark = { x: RECT.left, y: RECT.top, color: [10, 20, 30] };
+	const LAST_ROW: Mark = { x: RECT.left, y: CANVAS_HEIGHT - 1, color: [40, 50, 60] };
+
+	test("crops the art's own region, byte for byte, when it touches the right edge of the frame", async () => {
+		const bytes = await insetFixture(CANVAS_WIDTH, CANVAS_HEIGHT, RECT, [ORIGIN, LAST_ROW]);
 
 		const tile = await trimToArt(bytes);
 
@@ -420,6 +461,14 @@ describe("trimToArt", () => {
 		expect(tile.width).toBe(CANVAS_WIDTH - RECT.left);
 		expect(tile.height).toBe(CANVAS_HEIGHT - RECT.top);
 		expect(tile.data.length).toBe(tile.width * tile.height * 4);
+
+		// Shape alone cannot see `cropRaw`'s copy loop at all: `Buffer.alloc` sizes the destination
+		// before the loop runs, so a loop that skips a row, or reads from the wrong offset, still
+		// yields exactly these dimensions. These two pixels are what pin the bytes. The first fails if
+		// the row start drops `region.left` or `region.top` (both read a transparent pixel instead);
+		// the second fails if the loop stops a row short, leaving alloc's zero-fill behind.
+		expect(pixelAt(tile, 0, 0)).toEqual([...ORIGIN.color, 255]);
+		expect(pixelAt(tile, 0, tile.height - 1)).toEqual([...LAST_ROW.color, 255]);
 	});
 
 	test("keeps the whole frame for a fully transparent tile", async () => {
@@ -440,20 +489,5 @@ describe("trimToArt", () => {
 		expect(tile.data.length).toBe(CANVAS_WIDTH * CANVAS_HEIGHT * 4);
 		// Every row counts as padding, so a blank tile also trips renderDeckGrid's clip warning.
 		expect(tile.bottomPadding).toBe(CANVAS_HEIGHT);
-	});
-
-	test("produces byte-identical buffers across two renders of the same fixture", async () => {
-		// `Buffer.alloc` zero-fills before the copy loop overwrites it; `Buffer.allocUnsafe` would
-		// reuse whatever heap bytes were previously there. Every row this crop copies is fully
-		// in-bounds (the guard above proved that), so the copy loop already overwrites every byte of
-		// the destination. But that guarantee is exactly the one worth pinning down: if a future edit
-		// ever left a row short, allocUnsafe's recycled memory would make the trailing bytes
-		// non-deterministic between calls, where alloc's zero-fill would not.
-		const bytes = await insetFixture(CANVAS_WIDTH, CANVAS_HEIGHT, RECT);
-
-		const first = await trimToArt(bytes);
-		const second = await trimToArt(bytes);
-
-		expect(Buffer.compare(first.data, second.data)).toBe(0);
 	});
 });

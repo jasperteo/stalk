@@ -26,6 +26,12 @@ import { evolutionOf } from "@/schema.ts";
  * a rejected initializer, so a transient dlopen failure doesn't silently poison every later
  * render.
  *
+ * Nothing in the suite enforces that choice: swapping this for a `??=` memo that caches the
+ * rejection passes every test, because making `import("sharp")` fail on demand means mocking a
+ * native module that the very next render still needs for real. So do not "simplify" this to a
+ * plain memo — the tests will not stop you, and the failure only shows up in production as an
+ * instance that renders nothing until it is recycled.
+ *
  * @see docs/deck-rendering.md#sharp-runtime-config
  */
 const sharpModule = new Lazy(async () => {
