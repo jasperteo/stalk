@@ -59,11 +59,15 @@ async function importMain() {
 	const getKv = spyMemoryKv();
 
 	let cronHandler: CronHandler | undefined;
+	let cronArgs: unknown[] | undefined;
 
 	// `Deno.cron` is overloaded (with and without an options argument), and `mockImplementation`
 	// types its parameters against the options overload. So capture positionally-untyped rest args
-	// and take the handler from the end, where every overload puts it.
+	// and take the handler from the end, where every overload puts it. The leading args are kept
+	// too, so the registration itself (name and schedule) can be asserted rather than only its
+	// handler's behavior.
 	vi.spyOn(Deno, "cron").mockImplementation((...args: unknown[]) => {
+		cronArgs = args;
 		cronHandler = args.at(-1) as CronHandler;
 		return Promise.resolve();
 	});
@@ -81,7 +85,9 @@ async function importMain() {
 	await import("@/main.ts");
 	const { log } = await import("@/log.ts");
 
-	if (cronHandler === undefined) throw new Error("Deno.cron handler was never captured");
+	if (cronHandler === undefined || cronArgs === undefined) {
+		throw new Error("Deno.cron was never called");
+	}
 	if (serveOptions === undefined) throw new Error("Deno.serve options were never captured");
 	const { handler, onListen } = serveOptions;
 	if (onListen === undefined) throw new Error("Deno.serve was given no onListen callback");
@@ -90,6 +96,7 @@ async function importMain() {
 	return {
 		app: { fetch: handler },
 		tick: cronHandler,
+		cronArgs,
 		announceListen: () => {
 			onListen(LOCAL_ADDR);
 		},
@@ -108,6 +115,15 @@ describe("main", () => {
 		const response = await app.fetch(new Request("http://localhost/"));
 
 		expect(await response.json()).toEqual({ status: "ok" });
+	});
+
+	test("registers the poll job under its own name, once a minute", async () => {
+		const { cronArgs } = await importMain();
+
+		// Every other test here drives the captured handler directly, so none of them would notice the
+		// registration itself changing: a switch to hourly polling, or a renamed job, would leave the
+		// whole suite green. The tally line pins the name indirectly; nothing pins the schedule.
+		expect(cronArgs.slice(0, 2)).toEqual(["poll-battlelogs", { minute: { every: 1 } }]);
 	});
 
 	test("announces the tracked target count when the listener binds", async () => {
