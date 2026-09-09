@@ -55,8 +55,8 @@ Break one of these and the app misbehaves in a way tests may not catch.
    (450k/month) and a per-player read at one tick a minute burns ~43.8k of them per player per
    month. Writes stay per-tag, so concurrent polls never share a value.
 5. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
-   fetch is only a fallback for a card id with no local file. 180 PNGs (285×420): `<id>.png` plus 42
-   `-evo` and 16 `-hero` variants, covering all 122 playable cards.
+   fetch is only a fallback for a card id with no local file. 182 PNGs (285×420): `<id>.png` plus 42
+   `-evo` and 17 `-hero` variants, covering all 123 playable cards.
 6. **Everything logs through `src/log.ts`.** It is the only module that may import
    `@std/fmt/colors`, so every paint call happens after its `setColorEnabled` gate.
 7. **Every webhook body serializes through `payloadJson` (`discord.ts`).** It is what attaches
