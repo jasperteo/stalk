@@ -16,12 +16,12 @@
 		"@std/fmt": "npm:@jsr/std__fmt@^1.0.10",
 		"hono": "^4.13.7",
 		"sharp": "^0.35.4",
-		"valibot": "^1.4.2"
+		"valibot": "^1.5.0"
 	},
 	"devDependencies": {
-		"@types/node": "^26.4.1",
-		"oxfmt": "^0.66.0",
-		"oxlint": "^1.81.0",
+		"@types/node": "^26.5.1",
+		"oxfmt": "^0.67.0",
+		"oxlint": "^1.82.0",
 		"oxlint-tsgolint": "^7.0.2001",
 		"vitest": "5.0.0"
 	},
