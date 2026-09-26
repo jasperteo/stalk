@@ -17,7 +17,7 @@
 			"source": "cursor/plugins",
 			"sourceType": "github",
 			"skillPath": "pstack/skills/unslop/SKILL.md",
-			"computedHash": "78f45b785f543d1bd82f55cd7be018239c769dc1462848a720b62a6d214ffc6d"
+			"computedHash": "6018ca8c329ba87c6b4298207f58d6b773fe23e44ff52a00a9a4d160c19bedc0"
 		},
 		"valibot": {
 			"source": "open-circle/agent-skills",
