@@ -1,351 +1,107 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repository.
-
-**stalk** is a Deno app on Deno Deploy (Hono for HTTP): `Deno.cron` polls Clash Royale players'
-battle logs every minute via the RoyaleAPI proxy and posts each player's newest 1v1 result to their
-Discord webhook, with a composited deck-grid image per side. See [README.md](../README.md) for setup
-and deployment.
+stalk is a Deno app on Deno Deploy. A `Deno.cron` job runs every minute, fetches each tracked Clash
+Royale player's battle log through the RoyaleAPI proxy, and posts the player's newest 1v1 to their
+Discord webhook with an image of each deck. [README.md](../README.md) covers setup, deployment, and
+how a tick works.
 
 ## Commands
 
 ```sh
-pnpm start  # Local dev server (-P loads deno.jsonc's "permissions" set)
-
-pnpm test     # Vitest suite
-pnpm preview  # Render a hardcoded deck to scripts/preview.png (manual, offline)
-pnpm measure  # Report card icons' transparent margins (no args = every icon + aggregate)
-
+pnpm start       # Local server and cron, with .env loaded
+pnpm test        # Vitest
 pnpm fmt         # oxfmt
-pnpm lint        # oxlint && deno lint && deno check --unstable-tsgo .
-pnpm lint-agent  # Same three checks, oxlint in --format=agent — prefer this one as an agent
-pnpm sync-types  # Regenerate deno.d.ts (run when the Deno version changes)
+pnpm lint-agent  # oxlint (agent output) + deno lint + deno check
+pnpm preview     # Render a sample deck to scripts/preview.png
+pnpm measure     # Card-art margins behind the cell constants in src/deck-image.ts
+pnpm sync-types  # Regenerate deno.d.ts after a Deno version change
 ```
 
-Scripts live in `package.json` `scripts`, not `deno.jsonc` `tasks`. They still run under Deno: the
-binaries are invoked as `deno x <bin>`, which resolves the pnpm-installed copy in `node_modules`.
+- `pnpm lint-agent` is the one check command, type checking included. Don't run `tsc` or a separate
+  `deno check`.
+- `deno` is not on PATH. pnpm installs the pinned Deno at `node_modules/deno/deno`; run one-off
+  commands with `pnpm exec deno ...`.
+- Scripts live in `package.json`, not in `deno.jsonc` tasks.
+- A hook in `.claude/settings.json` runs `pnpm fmt` after every Write and Edit, so a file can change
+  on disk right after you edit it.
+- CI runs `pnpm fmt --check`, `pnpm lint` and `pnpm test`.
 
-**`pnpm lint` (or its agent-formatted twin `pnpm lint-agent`) is the single check command.** Do not
-run a separate `tsc --noEmit` or a standalone `deno check`. The script already chains oxlint
-(type-aware, via oxlint-tsgolint), `deno lint` (Deno-idiom rules), and `deno check --unstable-tsgo`.
-CI (`.github/workflows/ci.yml`) runs `pnpm fmt --check`, `pnpm lint`, and `pnpm test`. `pnpm/setup`
-provisions pnpm and Deno both, reading `devEngines.runtime` from `package.json` — hence no
-`denoland/setup-deno`. It runs with `install: false` though: the install is its own step, wrapped in
-Socket Firewall. Read [Socket Firewall in CI](#socket-firewall-in-ci) before editing that line.
+## Modules
 
-## Guarantees
+| File                  | Role                                                                      |
+| --------------------- | ------------------------------------------------------------------------- |
+| `src/main.ts`         | Wiring: Hono routes, `Deno.serve`, the cron job, the per-tick tally       |
+| `src/poll.ts`         | One tick: read lastBattle from KV, poll each target, write lastBattle     |
+| `src/clash-royale.ts` | Battle-log fetch; picks the newest 1v1 and validates only that entry      |
+| `src/discord.ts`      | Builds and posts the webhook message, with a text-only fallback           |
+| `src/deck-image.ts`   | Renders a deck as a PNG grid with sharp, from the art in `images/`        |
+| `src/schema.ts`       | Valibot schemas for the API and the env vars, plus the `EVOLUTIONS` table |
+| `src/env.ts`          | Reads and validates `CR_API_TOKEN` and `TARGETS` once, into `config`      |
+| `src/log.ts`          | Leveled console output and color helpers                                  |
 
-Break one of these and the app misbehaves in a way tests may not catch.
+Each module's `@module` JSDoc explains its design, and each constant's JSDoc explains its value.
 
-1. **At most one battle posts per tick, and it is the newest one.** Intermediate battles are
-   skipped by design; lastBattle jumps straight to the newest. This is the delivery contract, not a
-   validation shortcut: it keeps a tick to one fetch, one full validation, one post per player.
-2. **lastBattle advances only after a successful post** (`poll.ts`). At-least-once delivery: if the
-   webhook succeeds but the KV put throws, the next tick re-posts a duplicate rather than dropping
-   the battle.
-3. **Neither `poll()` nor `pollAll()` ever rejects.** `poll()` catches its own errors and resolves a
-   `POLL_OUTCOMES` value, which is why `pollAll` uses `Promise.all` rather than `allSettled`. One
-   player's failure can't sink the others. `pollAll` also catches the lastBattle read, the one
-   failure that precedes every poll, reporting every target `failed`. `main.ts`'s cron handler
-   awaits `pollAll` with no catch of its own, so an `await` added to `pollAll` outside that try
-   reintroduces a rejected tick and loses the tally line.
-4. **A tick reads every lastBattle value in one KV command.** `pollAll` calls
-   `listLastBattles()` once and hands each `poll()` its own lastBattle value; nothing in the polling
-   path may go back to a per-player `kv.get`. KV reads are the free tier's binding limit
-   (450k/month) and a per-player read at one tick a minute burns ~43.8k of them per player per
-   month. Writes stay per-tag, so concurrent polls never share a value.
-5. **`images/` is a deploy-required asset.** The renderer hard-depends on it in production; CDN
-   fetch is only a fallback for a card id with no local file. 182 PNGs (285×420): `<id>.png` plus 42
-   `-evo` and 17 `-hero` variants, covering all 123 playable cards.
-6. **Everything logs through `src/log.ts`.** It is the only module that may import
-   `@std/fmt/colors`, so every paint call happens after its `setColorEnabled` gate.
-7. **Every webhook body serializes through `payloadJson` (`discord.ts`).** It is what attaches
-   `allowed_mentions: { parse: [] }`, and `content` carries an opponent display name chosen by a
-   stranger. A new payload shape that calls `JSON.stringify` directly re-enables `@everyone` parsing
-   on that name, and the existing tests only cover the two shapes that exist today.
+## Rules that span modules
 
-### Known ceilings
+No single file shows these, and tests don't catch every way to break them.
 
-Neither is a problem at the current scale; both are recorded so the next person doesn't have to
-re-derive them.
-
-- **`pollAll`'s fan-out is unbounded** (`Promise.all` over every target). Each in-flight post holds
-  **~28 MB of pixels**. Per grid that is ~3.83 MB of decoded tiles (8 × 285×420×4) plus ~3.38 MB
-  of trimmed copies plus the 3.43 MB composed canvas plus the 3.44 MB encoded PNG, ~14 MB, and a post
-  carries two. Measured, not just derived: marginal peak RSS is 28 MiB per concurrent post from 1
-  to 8 posts, easing to ~21 MiB at 16 as GC keeps up over the longer wall time, and 16 concurrent
-  posts peak at 429–483 MiB RSS. So instance memory runs out first, somewhere around
-  **15 targets**, well before CPU or the KV read budget. The figure is post-`toBuffer()`, which
-  removed a transient duplicate that used to stack on top of it. See
-  [Output method](../docs/deck-rendering.md#output-method-tobuffer-vs-touint8array). The fix, when
-  it's needed, is `pooledMap` from `@std/async/pool`: already an installed dependency, zero runtime
-  imports (so it costs nothing at module eval, same as `@std/async/lazy`), and it yields in input
-  order, so `pollAll`'s index-aligned return survives. Note that it reports errors as an
-  `AggregateError`, harmless only because guarantee 3 keeps `poll()` from ever rejecting, which
-  would become the thing keeping that safe.
-- **A post ships 6.55 MiB of attachments against Discord's 10 MiB default**, or 65.5%, and
-  `PAYLOAD_REJECTED` self-heals an overflow by retrying text-only. See
-  [the deck-rendering doc](../docs/deck-rendering.md#output-size) before raising the grid's pixel
-  count.
-
-## Architecture
-
-Deno Deploy runs the app as a standard Deno process in a Linux microVM and stops an idle instance
-after as little as 5 seconds, so at one tick a minute the app cold-starts on essentially every tick
-and no module-level state survives from one tick to the next. The evidence is `Deno.serve`'s
-`onListen` callback, which logs on every tick in production and only fires when the listener binds,
-once per module evaluation. This is the premise behind the valibot bundling argument in
-[Dependencies](#dependencies) (module eval cost is paid every tick, not once) and the reason
-`src/deck-image.ts` keeps no render cache (see [Deck rendering notes](#deck-rendering-notes) and
-[the deck-rendering doc](../docs/deck-rendering.md#no-cache)).
-
-Cron tick → `config` (from `env.ts`, validated once at module load; `undefined` when the token is
-missing, which logs a heartbeat and skips) → `pollAll(targets, token)` → one `listLastBattles()`
-read → `poll()` per player concurrently → fetch
-battle log → compare newest eligible battle against the stored lastBattle value → post → advance
-lastBattle.
-
-| File                  | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/main.ts`         | Wiring only. Runs as a script (`deno run`, not `deno serve` — hence no default export). `Deno.serve` binds Hono (`GET /` health, `GET /kv/last-battle` lastBattle dump); `Deno.cron` drives polling and logs a per-tick outcome tally.                                                                                                                                                                                                                  |
-| `src/poll.ts`         | The polling domain. Owns the KV handle (private; reads go through `listLastBattles()`) and the `["lastBattle", tag]` key with its 30-day TTL. `pollAll` is the tick entry point: one lastBattle read, then a concurrent `poll()` per target, each resolving one of `POLL_OUTCOMES`: `posted` / `seeded` / `skipped` / `drifted` / `failed`.                                                                                                             |
-| `src/clash-royale.ts` | Battle-log fetch via the RoyaleAPI proxy, with an abort timeout. `latestBattle` takes the first eligible entry (the log arrives newest-first, with 2v2s and Duels excluded) and fully validates only that one.                                                                                                                                                                                                                                          |
-| `src/discord.ts`      | Builds and posts the webhook message: content line (result, crowns, HP margin — doubles as the push notification), then one embed per side with deck grid, trophies, and tower-troop thumbnail.                                                                                                                                                                                                                                                         |
-| `src/deck-image.ts`   | Composites cards into a bottom-aligned 4-column PNG grid via sharp.                                                                                                                                                                                                                                                                                                                                                                                     |
-| `src/schema.ts`       | Valibot schemas for the API shapes and both env vars. `isEligibleBattle` rejects 2v2s and Duels (a Duel concatenates 2–3 decks into one `cards` array) before full validation. Normalizes CR's compact ISO 8601 timestamps and canonicalizes tags to `#UPPERCASE`. Also owns `EVOLUTIONS`/`evolutionOf`, the one table mapping each `evolutionLevel` to its art suffix, `iconUrls` key, and display prefix — see [Evolution levels](#evolution-levels). |
-| `src/env.ts`          | Reads and validates env once at module load; exports `config`.                                                                                                                                                                                                                                                                                                                                                                                          |
-| `src/log.ts`          | Leveled console wrapper (`info`/`success`/`warn`/`error`/`debug`), plus `levelColor` (badge palette), `hl` (inline value highlighters), and `truncatedBody` (reads a failed response's body under a private truncation cap, shared with `clash-royale.ts` and `discord.ts`).                                                                                                                                                                            |
-
-Internal imports use the `@/` map with explicit `.ts` extensions.
-
-### Failure behavior
-
-- **Corrupt KV lastBattle value.** Logs a warning and re-seeds like a first run, rather than
-  re-posting every tick against a value that can never match. An expired lastBattle value re-seeds
-  silently.
-- **lastBattle read fails.** The tick reports every target `failed` and polls nobody. Falling
-  through with an empty map would be far worse: every player would read as a first run and get
-  seeded past their newest battle without a post.
-- **Schema drift.** The newest entry selected but failing full validation resolves `drifted`, not
-  `skipped`, so it doesn't read as a quiet tick. lastBattle stays put and the battle retries once
-  the schema catches up. An entry whose `team[0].cards` is missing or not an array, or that doesn't
-  carry exactly one `opponent`, fails the eligibility check during the battlelog scan itself, before
-  anything is selected as newest. That resolves `skipped`, not `drifted`, a small accepted
-  narrowing of drift detection. `EligibleBattleSchema` (`src/schema.ts`) carries why the `opponent`
-  check earns that narrowing.
-- **A battle older than the stored lastBattle.** `poll.ts` compares the two as `Temporal.Instant`s
-  and refuses to move lastBattle backwards: it warns and resolves `skipped`. Only reachable if the
-  battlelog's newest-first ordering breaks; see the guard in `poll.ts` for what that would cost.
-- **Deck render fails.** `discord.ts` posts a text-only embed instead.
-- **Evo/Hero card missing its CDN variant art.** `iconUrl` (`deck-image.ts`) throws rather than
-  silently substitute the card's un-evolved `medium` art, which would be the wrong picture, not a
-  neutral fallback. The throw rejects the whole `renderDeckGrid` call, so this is a deck render
-  failure like any other. One missing variant costs the post its images, not one tile its
-  correctness.
-- **Discord rejects the payload (400/413, `PAYLOAD_REJECTED`).** Retries once with the text-only
-  body, so an oversized post self-heals. A 5xx/429 still throws: Discord may already have accepted
-  it, and retrying could double-post.
-
-### Deck rendering notes
-
-[`docs/deck-rendering.md`](../docs/deck-rendering.md) is the authority on every constant's value and
-rationale. The source carries a short JSDoc per constant, with an `@see` anchor back to the
-relevant section where one exists. What to know before editing:
-
-- **Tiles are never individually resized.** They composite at native resolution into fixed
-  `CELL_WIDTH`×`CELL_HEIGHT` cells, so the grid's pixel dimensions stay constant across decks. The
-  composed grid is encoded directly, with no scaling step at all, so the grid ships at its native
-  resolution. Width, height, and row tops all come from the pure `planGrid(tileCount)` function,
-  with no sharp involvement, so the layout math is unit-testable without rendering pixels.
-  See [Cell sizing](../docs/deck-rendering.md#cell-sizing) and
-  [Output size](../docs/deck-rendering.md#output-size).
-- **Stay in raw memory, and stay on `Buffer`.** Tiles decode once to raw RGBA; `cropRaw` slices by
-  memcpy rather than running a second sharp pipeline. Every pixel buffer inside the module is a
-  `Buffer`: `RawImage.data`, `Tile.data`, `cropRaw`'s return, `renderDeckGrid`'s. That is what
-  keeps them assignable to `.composite()`'s `OverlayOptions.input` and to `BlobPart` without a cast.
-  `Uint8Array` appears only on inbound parameters, which accept a `Buffer` anyway. The mechanism is
-  `toBuffer()`, never `toUint8Array()`: the two differ only in a native branch, and switching every
-  output site cut peak RSS 2.4× with no change in render time or output bytes. See
-  [Output method](../docs/deck-rendering.md#output-method-tobuffer-vs-touint8array).
-- **No cache.** `renderDeckGrid` renders straight through every call; an earlier LRU keyed by the
-  deck's ordered mirror filenames was deleted because the cold-start-per-tick fact above means
-  cross-tick reuse, its whole premise, can't happen. See
-  [No cache](../docs/deck-rendering.md#no-cache) for the ceiling on same-tick reuse and the cheap
-  fallback (in-flight dedupe) if that ever turns out to matter. There is no per-tile cache; the OS
-  page cache covers local reads.
-
-### Evolution levels
-
-`EVOLUTIONS` in `src/schema.ts` is the single table deciding what an `evolutionLevel` means: the
-local-art filename suffix (`deck-image.ts`'s `tileName`), the `iconUrls` variant the CDN fallback
-picks (`iconUrl`), and the display prefix (`discord.ts`'s `formatDeck`). It replaced three parallel
-tables across two modules.
-
-**Level 0 is a real entry**, standing for an ordinary card, which is what lets all three consumers
-look a card up unconditionally instead of each branching on whether it evolved. `evolutionOf(card)`
-is the only accessor.
-
-The `satisfies Record<EvolutionLevel | 0, …>` clause is what enforces that: adding a level to
-`CardSchema`'s picklist without describing it here fails to compile at the table and at
-`evolutionOf`, both in this file, so there is one place to go and fix it. (Consumers error too, but
-only as fallout from `evolutionOf`'s return type.) Fanning out to every consumer is what the old
-three-table design did; failing in one file is the improvement. `EvolutionLevel` exists to guard
-exactly this and is not exported, since nothing outside `schema.ts` needs it.
-
-## Toolchain
-
-### Two TypeScript configs, deliberately
-
-oxlint and Deno need different libs, so neither config can be dropped:
-
-- **`tsconfig.json`.** oxlint and tsgolint read it (vanilla TypeScript). Sets no explicit `lib`, so
-  `target: "esnext"` pulls TS's default full lib (DOM included) for web globals; `Deno.*` resolves
-  through the vendored `deno.d.ts`.
-- **`deno.jsonc` `compilerOptions`.** `deno check` and `deno run` read it. Sets
-  `lib: ["deno.window", "deno.unstable"]` so the real `Deno` namespace (incl. `Deno.cron`,
-  `Deno.openKv`, `Temporal`) resolves. Without it, Deno falls back to `tsconfig.json`, whose lib
-  drops `deno.ns`.
-
-`deno.d.ts` is a vendored copy of Deno's own `lib.deno.d.ts`, consumed only as ambient types. It's
-excluded from `deno check`/`deno lint` (`deno.jsonc`) and from oxlint's file walk
-(`oxlint.config.ts` `ignorePatterns`) so it's never linted or double-declared. Re-sync with
-`pnpm sync-types` after a Deno version bump.
-
-### Dependencies
-
-Runtime deps live in **`package.json`**, now the only dependency manifest; `deno.jsonc`'s `imports`
-map holds only the `@/` alias. **pnpm installs and lays out `node_modules`; Deno only consumes
-it.** A JSR-only package is declared as an npm alias onto the JSR mirror
-(`"@std/async": "npm:@jsr/std__async@^1.5.0"`, `"@std/fmt": "npm:@jsr/std__fmt@^1.0.10"`), with
-`.npmrc` pointing the `@jsr` scope at `https://npm.jsr.io/` (registry and auth settings are the
-only thing pnpm still reads from `.npmrc`; everything else is `pnpm-workspace.yaml`). The
-alias is what keeps the import specifier `@std/async` while the package on disk is
-`@jsr/std__async`. Both Deno and oxlint/tsgolint (which only understands `node_modules`, not Deno's
-import map) then resolve against that one tree. Run `pnpm install` after cloning.
-
-This is a change of spelling, not of what ships. The old `deno.lock` already resolved those `jsr:`
-specifiers through the same `@jsr` npm mirror, down to the `npm.jsr.io` tarball URLs, so the module
-graph is byte-for-byte what it was. Do not read the alias as a cold-start regression.
-
-**Prefer the npm-native package wherever one exists.** `valibot` and `hono` are deliberately _not_
-declared against the JSR mirror, and moving them back to "match `@std/fmt`" is a silent cold-start
-regression, not a consistency fix. JSR publishes transpiled source with the original file layout,
-so the JSR mirror of valibot is 557 separate modules behind a single barrel export, and since its
-`exports` map has exactly one entry, `import * as v` resolves, links and evaluates all 557. The npm
-package ships a pre-built self-contained `dist/index.mjs` instead: one module, same 311 exports.
-Measured module-eval cost **29.8 ms → ~2–4 ms**, which at one cron tick a minute is ~2.5% of the
-free tier's monthly CPU budget.
-
-The rule generalizes by _entry-point shape_, not by registry: bundling only helps a library whose
-entry is a single barrel over its whole export list. `hono` ships unbundled on npm too (372 files,
-75 subpath exports, a 120-byte root entry), so importing it reaches only a couple dozen modules and
-the packaging barely matters. It moved for consistency, worth ~0.7 ms. `@std/fmt` stays on the JSR
-mirror because it has no first-party npm publication at all, and it costs nothing regardless: its
-four subpath entries are already self-contained single files with zero relative imports.
-
-`@std/async` fits the same doctrine with no new reasoning needed. Only `Lazy` is used, from
-`deck-image.ts`, and `@std/async/lazy` is the same self-contained shape as `@std/fmt`'s subpath
-entries, not valibot's JSR-mirror barrel: its `lazy.js` has zero runtime imports and defines a
-single class. Its package-level deps (`@std/data-structures`, `@std/assert`, `@std/internal`) land
-in `pnpm-lock.yaml`'s install graph, but nothing imports them, so they never enter the module graph.
-They are install cost only.
-
-`sharp` is the one dependency with a native component, a libvips addon shipped via
-platform-filtered `optionalDependencies` (Deno Deploy resolves the linux binaries from
-`pnpm-lock.yaml` at deploy time).
-Three gotchas:
-
-- **Its ESM entry exports only `default` at runtime.** The named exports its `.d.mts` declares
-  (`cache`, `format`, …) do not exist in `dist/index.mjs`. Always go through the default:
-  `sharp.cache(false)`, never `import { cache } from "sharp"`.
-- **It is loaded lazily through a `Lazy`** (`sharpModule` in `deck-image.ts`). `Lazy` was picked
-  for its rejection semantics rather than the memo alone. It clears its state when the initializer
-  rejects, so the next render retries. Caching the rejection would let one transient dlopen
-  failure silently poison every later render for the instance's lifetime.
-- **`toUint8Array()` is `toBuffer()` plus a memcpy.** The name suggests a different return shape;
-  both resolve a `Buffer` on Deno, and its `.d.mts` declares the wider `Uint8Array<ArrayBufferLike>`
-  that `BlobPart` rejects. Nothing in the codebase calls it. See the deck-rendering notes above.
-
-`@types/node` is a devDependency because the oxlint pass needs it for sharp's `Buffer`/`NodeJS.*`
-references (`deno check` doesn't).
-
-**The `@/` alias is declared in three places that must stay in sync:** `deno.jsonc` `imports`,
-`tsconfig.json` `paths`, and vitest via `resolve: { tsconfigPaths: true }` in `vitest.config.ts`.
-
-### Socket Firewall in CI
-
-The install step is `sfw env -u SSL_CERT_FILE -u SSL_CERT_DIR pnpm ci`, with `NO_PROXY: npm.jsr.io`.
-`sfw` runs a MITM proxy: it points `HTTP(S)_PROXY` at itself, hands the child its own CA, and
-inspects traffic to the registries in its hardcoded table. Neither wrapper is optional, and the
-install line shows neither reason.
-
-**Stripping `SSL_CERT_FILE` is not tidiness.** sfw sets it to a file holding only its own CA, and
-Linux pnpm loads its entire root store from that variable, so the public roots vanish.
-`registry.npmjs.org` still verifies, because sfw MITMs it with that CA — but any host sfw tunnels
-presents a real chain and dies on `invalid peer certificate: UnknownIssuer`. macOS pnpm uses the
-platform verifier and ignores the variable, so this reproduces only in CI: a local `sfw pnpm ci`
-passes. Verify a change to this line on a Linux runner, not locally.
-
-**`npm.jsr.io` is not in sfw's registry table, and the free tier cannot add it.** The
-registry-mapping feature exists in the binary, but the free config schema accepts only its six
-`SFW_*` variables. An unrecognized host takes `unknownHostAction`, which the free tier sets to
-`ignore` while the same binary's global default is `block`, so the jsr traffic is tunnelled straight
-through. `NO_PROXY` pins that routing instead of leaving it to a default that could flip.
-
-**Socket guards the npm dependencies only.** `@std/async` and `@std/fmt` resolve through
-`npm.jsr.io`, so they pass unscanned. A green CI run is not coverage of those two.
+- **One post per player per tick, for the newest battle.** `latestBattle` returns the first 1v1 in
+  the newest-first log, and `poll` posts only that one.
+- **lastBattle is written only after the post succeeds.** Keep `kv.set` after `notifyBattle` in
+  `poll`. A failed write re-posts on the next tick, which is the intended at-least-once delivery.
+- **`poll` and `pollAll` never reject.** `main.ts` awaits `pollAll` without a `catch`, then logs
+  the tally. An `await` added to `pollAll` goes inside its `try`.
+- **One KV read per tick.** `pollAll` calls `listLastBattles` once and hands each `poll` its value.
+  Never add a per-player `kv.get` to the polling path: KV read units are the free tier's tightest
+  quota.
+- **Every webhook body goes through `payloadJson`** in `discord.ts`, which adds
+  `allowed_mentions: { parse: [] }`. The message contains the opponent's name, which is untrusted
+  text.
+- **`log.ts` is the only module that imports `@std/fmt/colors`.** Color with `hl` and `levelColor`.
+- **`images/` must ship with every deploy.** The renderer reads card art from it and uses the CDN only
+  for a card with no file. After adding art, run `pnpm measure` and check `CELL_WIDTH`,
+  `CELL_HEIGHT` and `ROW_GAP` against it.
+- **A new `evolutionLevel` needs an `EVOLUTIONS` entry** in `schema.ts`. The `satisfies` clause
+  fails to compile until it has one.
 
 ## Testing
 
-Vitest runs **inside the Deno process**, so `Deno.*` (KV, cron, env) is the real ambient global and
-tests spy on it directly rather than mocking a wrapper. `environment: "node"` only selects vitest's
-non-DOM global set. It says nothing about the underlying runtime. Discovery is scoped to
-`dir: "./src"` (skips walking `images/` and `scripts/`). `restoreMocks`/`clearMocks`/`unstubGlobals`/
-`unstubEnvs` are all on; no test uses `.concurrent`, since several mutate shared `globalThis` state.
-
-- `src/testing/kv.ts` holds `spyMemoryKv()`, the shared `Deno.openKv` spy. It redirects a module's
-  top-level `await Deno.openKv()` to a fresh `:memory:` store and closes it via `onTestFinished`, so
-  the handle stays scoped to the test that opened it. Call it from inside a test body, never a hook.
-- `src/testing/fixtures.ts` holds raw (pre-validation) API shapes: `rawCard`/`rawPlayer`/`rawBattle`
-  factories, so a test overriding one field doesn't restate the rest; `driftedBattle` and
-  `duelBattle`, same-shaped factories for the two rejection paths; and the `BOB`/`WEBHOOK`
-  constants.
-- `src/__mocks__/log.ts` is the manual mock auto-applied by a factory-less
-  `vi.mock(import("@/log.ts"))`; `vitest/prefer-import-in-mock` enforces that form over a path
-  string everywhere. One canonical copy of the export list: a new export from `log.ts` means one
-  edit here, not one per test file.
-- `src/deck-image.test.ts` uses a default tile fixture that is **fully opaque**, so most tests
-  exercise `trimToArt`/`cropRaw` with the crop equal to the whole frame. `describe("trimToArt")`
-  covers a real crop via `insetFixture`. What stays uncovered is real card art, so verify crop
-  changes against it (`pnpm preview`, or diff `cropRaw` against `sharp().extract()` across
-  `images/`).
-
-**A throwaway probe script that imports project deps must live inside the repo root.** Deno resolves
-`node_modules` from there, so `deno run -A /tmp/probe.ts` fails with `Import "sharp" not a
-dependency`. Use `scripts/` (its `*.png` output is gitignored) and delete the probe afterward.
+- Vitest runs under Deno, so `Deno.*` is the real API. Spy on it directly
+  (`vi.spyOn(Deno, "openKv")`) instead of adding a wrapper to mock.
+- `poll.ts`, `main.ts` and `env.ts` do their work while the module is evaluated. Their tests
+  install spies or stub env vars, call `vi.resetModules()`, then import the module dynamically. Take
+  `log` from the same fresh import, or it will be a different instance.
+- `spyMemoryKv()` (`src/testing/kv.ts`) gives a test its own in-memory KV. Call it inside the test
+  body, not in a hook.
+- `vi.mock(import("@/log.ts"))` with no factory uses `src/__mocks__/log.ts`. Always pass
+  `import(...)`, not a path string; lint enforces it.
+- `src/testing/fixtures.ts` has raw, pre-validation API shapes: `rawCard`, `rawPlayer`,
+  `rawBattle`, `driftedBattle`, `duelBattle`, `BOB` and `WEBHOOK`.
+- No test uses `.concurrent`, because tests share stubbed globals.
+- The deck-image tests use generated fixtures, not real card art. After changing trimming or
+  cropping, check the result with `pnpm preview`.
+- A throwaway script that imports project dependencies must live inside the repo, such as in
+  `scripts/`, because Deno resolves `node_modules` from the repo root. Delete it afterwards.
 
 ## Code style
 
-- **Tabs** for indentation, trailing commas in ES5 positions (both enforced by oxfmt).
-- **Imports** sorted ascending, case-insensitive, grouped with blank lines: side effects → builtins
-  → external → internal (`@/`) → relative.
-- **No ambient globals for runtime values.** Import them (`import { Buffer } from "node:buffer"`,
-  in the builtins group), even where Deno's node compat resolves the bare global and lint stays
-  green. Genuine platform globals (`fetch`, `Response`, `Deno.*`, `Temporal`, `performance`) are
+- **Tabs** for indentation, and trailing commas where ES5 allows them. oxfmt enforces both.
+- **Imports** are sorted ascending, case-insensitive, in groups separated by a blank line: side
+  effects, builtins, packages, internal (`@/`), relative. Internal imports use the `@/` alias with an
+  explicit `.ts` extension. When a module has both a type import and a value import, write
+  `import type` first; oxfmt keeps the order you write.
+- **No ambient globals for runtime values.** Import them, such as
+  `import { Buffer } from "node:buffer"` in the builtins group, even where Deno would resolve the
+  global. Platform globals like `fetch`, `Response`, `Deno.*`, `Temporal` and `performance` are
   fine.
-- **Exports gathered at the bottom** of each module: plain declarations in the body, then a sorted
-  `export { … }` plus a separate `export type { … }`. No inline `export` on declarations. A module
-  whose export list is mostly not production API may split the value exports into a production
-  group and an `@internal` group (`deck-image.ts`, `discord.ts`), sorted within each.
-- **Return types and generic type arguments are inferred by default.** Write one explicitly only
-  when inference would produce a worse type: it erases a named alias from hover
-  (`Promise<BattleLog>` → `Promise<unknown[]>`), widens a literal union (`PollOutcome` → `string`),
-  or launders `any` into `unknown`. Otherwise it is noise. `new Lazy(init)` infers `T` from the
-  initializer's return type exactly as a function infers its own, and a cast or a callee's own
-  annotation usually carries the alias through already.
-- oxlint runs the `typescript`, `unicorn`, `oxc`, and `jsdoc` plugins with type-aware checking
-  (`options: { typeAware: true, typeCheck: true }`). Categories are set globally,
-  `correctness: "error"` and `perf: "warn"`, on top of a long explicit rule list; `**/*.test.ts`
-  adds the `vitest` plugin via an override. `jsdoc` contributes only `check-property-names` and
-  `check-tag-names`, both at `warn`: they catch a misspelled or invented tag, and deliberately
-  mandate no coverage. Add a tag only where it carries something the name and type don't.
+- **Exports go at the bottom** of each module: plain declarations in the body, then one sorted
+  `export { … }` and a separate `export type { … }`, with no inline `export`. A module may split its
+  exports into a production group and an `@internal` group for tests and scripts, as
+  `deck-image.ts` and `discord.ts` do.
+- **Return types and generic type arguments are inferred by default.** Write one only when inference
+  gives a worse type: when it loses a named alias (`Promise<BattleLog>` becoming
+  `Promise<unknown[]>`), widens a literal union (`PollOutcome` becoming `string`), or lets an `any`
+  through where the annotation can say `unknown`.
+- **Comments** explain the code as it is now: what it guarantees, why, and the measurements behind a
+  number. They don't describe how the code used to be. Every file in `src/` and `scripts/` starts
+  with an `@module` JSDoc.
