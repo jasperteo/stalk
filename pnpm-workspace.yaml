@@ -3,4 +3,8 @@ update:
 
 minimumReleaseAge: 0
 
+autoDedupe: true
+
 virtualStoreType: global
+
+saveTypes: true

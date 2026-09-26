@@ -12,23 +12,23 @@
 		"sync-types": "deno types > deno.d.ts"
 	},
 	"dependencies": {
-		"@std/async": "npm:@jsr/std__async@^1.5.0",
+		"@std/async": "npm:@jsr/std__async@^1.5.1",
 		"@std/fmt": "npm:@jsr/std__fmt@^1.0.10",
-		"hono": "^4.13.7",
+		"hono": "^4.13.9",
 		"sharp": "^0.35.4",
 		"valibot": "^1.5.0"
 	},
 	"devDependencies": {
-		"@types/node": "^26.5.1",
-		"oxfmt": "^0.67.0",
-		"oxlint": "^1.82.0",
-		"oxlint-tsgolint": "^7.0.2001",
-		"vitest": "5.0.0"
+		"@types/node": "^26.6.3",
+		"oxfmt": "^0.70.0",
+		"oxlint": "^1.85.0",
+		"oxlint-tsgolint": "^7.0.2003",
+		"vitest": "5.0.2"
 	},
 	"devEngines": {
 		"packageManager": {
 			"name": "pnpm",
-			"version": "12.3.4",
+			"version": "12.6.0",
 			"onFail": "download"
 		},
 		"runtime": {
