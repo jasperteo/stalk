@@ -341,7 +341,7 @@ const oxlintConfig = defineConfig({
 			files: ["**/*.test.ts"],
 			plugins: ["vitest"],
 			rules: {
-				// recommended
+				// The recommended set of @vitest/eslint-plugin.
 				"vitest/expect-expect": "error",
 				"vitest/no-commented-out-tests": "error",
 				"vitest/no-conditional-expect": "error",
@@ -359,16 +359,16 @@ const oxlintConfig = defineConfig({
 				"vitest/valid-expect": "error",
 				"vitest/valid-expect-in-promise": "error",
 				"vitest/valid-title": "error",
-				// additional
+				// Beyond the recommended set. `prefer-import-in-mock` requires `vi.mock(import("..."))`,
+				// which type-checks the path, over a bare string.
 				"vitest/hoisted-apis-on-top": "error",
 				"vitest/prefer-import-in-mock": "error",
 				"vitest/prefer-importing-vitest-globals": "error",
-				// disabled: arrives via the plugin's `correctness` set, not the lists above.
-				// `vi.fn(impl)` already infers the mock's signature from the implementation, so
-				// demanding an explicit type parameter restates what inference supplies. The mocks
-				// that genuinely need one still carry it, and for reasons this rule can't see: no
-				// implementation to infer from (`vi.fn<typeof fetch>()`), or a signature deliberately
-				// wider than the impl so the recorded call arguments stay typed (`deck-image.test.ts`).
+				// Turned off. oxlint puts this rule in the correctness category, which the top level
+				// enables. It requires a type parameter on every `vi.fn()`, but `vi.fn(impl)` already
+				// takes its type from the implementation. Mocks that need one still have it: a mock with
+				// no implementation (`vi.fn<typeof fetch>()`), or one typed wider than its
+				// implementation so its recorded calls keep their argument types (`deck-image.test.ts`).
 				"vitest/require-mock-type-parameters": "off",
 			},
 		},

@@ -2,20 +2,23 @@ import { defineConfig } from "vitest/config";
 
 const vitestConfig = defineConfig({
 	test: {
-		// All tests live in src/; scoping discovery there skips walking images/ (180 PNGs) and scripts/.
+		// Every test file is in src/. Limiting discovery to it keeps Vitest from walking the card art
+		// in images/ and the scripts in scripts/.
 		dir: "./src",
+		// Selects Vitest's environment without DOM globals. The tests still run under Deno, so
+		// `Deno.*` is the real API and tests spy on it directly.
 		environment: "node",
-		// No test in this suite uses `.concurrent`: several tests mutate real shared
-		// `globalThis` state (Deno.openKv/Deno.cron spies, stubbed fetch), which concurrent
-		// tests within a file would race on regardless of the settings below.
+		// These undo spies, global stubs and env stubs before each test. No test uses `.concurrent`:
+		// several tests replace shared globals (`fetch`, `Deno.openKv`, `Deno.cron`), and tests
+		// running at the same time in one file would overwrite each other's stubs.
 		restoreMocks: true,
 		unstubGlobals: true,
 		unstubEnvs: true,
-		// `clearMocks` is not set here because vitest 5 turns it on by default, and the suite needs it:
-		// `restoreMocks` alone only restores `vi.spyOn` originals, where `clearMocks` also wipes call
-		// history on the `vi.fn()` instances created inside `vi.mock` factories and manual mocks, which
-		// the discord and main tests assert call counts on across tests.
+		// `clearMocks` stays at Vitest's default, which is on. It clears the call history of every
+		// mock, including the `vi.fn()`s created in `vi.mock` factories and manual mocks, which
+		// `restoreMocks` leaves alone. The discord, poll and main tests count calls on those.
 	},
+	// Resolves the `@/` import alias from `tsconfig.json`'s `paths`.
 	resolve: { tsconfigPaths: true },
 });
 

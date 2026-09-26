@@ -1,44 +1,59 @@
 /**
  * @module
  *
- * Dev-only measuring tool: reports the transparent margins baked into a card icon, the numbers
- * deck-image.ts's `trimToArt`/`renderDeckGrid` are tuned against. Reads the renderer's own
- * `IMAGES_DIR` (not the CDN), so it measures exactly the directory the renderer reads and stays
- * offline and hermetic enough to run on a whim.
+ * Prints the transparent margins around the art in card icons: the numbers that `CELL_WIDTH`,
+ * `CELL_HEIGHT` and `ROW_GAP` in `src/deck-image.ts` are based on. It reads the renderer's own
+ * `IMAGES_DIR` and uses the renderer's own decoding and bounds scan, so its numbers match what a
+ * render sees. It never touches the network.
  *
- * Usage: `deno task measure 26000032 26000032-evo`. Bare card ids resolve to `images/<id>.png`; a
- * `-evo`/`-hero` suffix picks that variant. With no args it measures every icon in `images/` and
- * prints the aggregate row, which is what ROW_GAP's floor and the grid's cell width come from.
+ * `pnpm measure` measures every PNG in `images/` and ends with a line of ranges. `pnpm measure
+ * 26000032 26000032-evo` measures only the named files: a card id reads `images/<id>.png`, and an id
+ * with a `-evo` or `-hero` suffix reads that variant. Run it again after adding art to `images/`.
  */
 
 import type { RawImage } from "@/deck-image.ts";
 import { decodeToRaw, IMAGES_DIR, scanArtBounds } from "@/deck-image.ts";
 import { hl, log } from "@/log.ts";
 
-/** One icon's raw canvas, the trimmed art inside it, and the transparent margins between them. */
+/** One icon's canvas size, the size of the art inside it, and the transparent margins around it. */
 type Measurement = {
 	name: string;
 	width: number;
 	height: number;
-	/** Width of the art itself: what a side-trimmed tile occupies in the grid. */
+	/**
+	 * The width of the art. Tiles are trimmed on both sides, so this is also the tile's width in the
+	 * grid, and `CELL_WIDTH` must be at least the largest.
+	 */
 	trimmedWidth: number;
-	/** Height of the art itself, from its topmost to its lowest opaque pixel. */
+	/**
+	 * The height of the art alone, from its top row to its lowest opaque row. A tile is taller than
+	 * this, because it keeps the bottom padding.
+	 */
 	trimmedHeight: number;
+	/** Transparent columns left of the art. Trimming removes them. */
 	left: number;
+	/** Transparent columns right of the art. Trimming removes them. */
 	right: number;
-	/** Transparent band above the art. `trimToArt` cuts this. */
+	/**
+	 * Transparent rows above the art. Trimming removes them, so the tallest tile is the canvas height
+	 * minus the smallest `top`, and that sets `CELL_HEIGHT`.
+	 */
 	top: number;
 	/**
-	 * Transparent band below the art, from the card's lowest opaque pixel to the image's bottom edge.
-	 * `trimToArt` keeps it as the shared baseline, and the negative ROW_GAP overlaps into it.
+	 * Transparent rows below the art, down to the bottom edge of the canvas. The tile keeps them, and
+	 * the row overlap set by `ROW_GAP` has to stay smaller than the smallest.
 	 */
 	bottom: number;
 };
 
+/**
+ * Measures one decoded icon.
+ *
+ * @throws When the icon is fully transparent, which would mean a broken file in `images/`.
+ */
 function measure(name: string, image: RawImage): Measurement {
 	const { width, height } = image;
-	// The exact bounds scan the renderer trims with (`trimToArt` in deck-image.ts wraps this same
-	// function), so these margins are precisely what it sees. No risk of the two drifting.
+	// The same scan `trimToArt` uses in the renderer, so these bounds are the ones a render trims to.
 	const bounds = scanArtBounds(image);
 
 	if (bounds === undefined) {
@@ -60,11 +75,13 @@ function measure(name: string, image: RawImage): Measurement {
 	};
 }
 
+/** Reads and measures `images/<name>.png`. */
 async function measureFile(name: string) {
 	const file = new URL(`${name}.png`, IMAGES_DIR);
 	return measure(name, await decodeToRaw(await Deno.readFile(file)));
 }
 
+/** The name of every PNG in `images/`, without the extension, in sorted order. */
 async function listImages() {
 	const names: string[] = [];
 
@@ -101,7 +118,8 @@ if (measurements.length > 1) {
 	const heights = measurements.map(({ trimmedHeight }) => trimmedHeight);
 	const bottoms = measurements.map(({ bottom }) => bottom);
 
-	// The floor here is what bounds ROW_GAP: overlap deeper than the thinnest bottom band clips art.
+	// The width range bounds `CELL_WIDTH`, and the smallest bottom padding bounds the row overlap.
+	// The smallest `top`, which sets `CELL_HEIGHT`, is only in the per-icon lines above.
 	log.success(
 		`${String(measurements.length)} icons: trimmed width ${hl.value(`${String(Math.min(...widths))}–${String(Math.max(...widths))}px`)}, trimmed height ${hl.value(`${String(Math.min(...heights))}–${String(Math.max(...heights))}px`)}, bottom padding ${hl.value(`${String(Math.min(...bottoms))}–${String(Math.max(...bottoms))}px`)}`
 	);

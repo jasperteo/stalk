@@ -1,15 +1,15 @@
 {
-	// Copy this file to .vscode/settings.json (gitignored) for local editor setup.
+	// Copy this file to .vscode/settings.json, which git ignores, to set up VS Code for this repo.
 
-	// --- Deno extension (denoland.vscode-deno) ---
+	// Deno extension (denoland.vscode-deno). pnpm installs the Deno version pinned in package.json's
+	// devEngines at node_modules/deno/deno. Pointing the extension there keeps the editor on the same
+	// version as the pnpm scripts and CI, whether or not `deno` is on PATH.
 	"deno.enable": true,
-	// Use the pnpm-installed Deno so the editor matches CI and `pnpm` scripts.
 	"deno.path": "node_modules/deno/deno",
 	"deno.lint": true,
 
-	// --- Vitest extension (vitest.explorer) ---
-	// Tests run inside the Deno process; point the runner at the real binary
-	// (the `pnpm` shim on PATH exits 1) and load deno.jsonc for unstable KV/cron.
+	// Vitest extension (vitest.explorer). The tests must run under Deno, so the extension starts the
+	// same binary, with deno.jsonc passed explicitly for the unstable KV and cron APIs the tests use.
 	"vitest.runtime": "deno",
 	"vitest.nodeExecutable": "node_modules/deno/deno",
 	"vitest.nodeExecArgs": ["--config", "deno.jsonc"]

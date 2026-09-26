@@ -7,23 +7,19 @@ const oxfmtConfig = defineConfig({
 	useTabs: true,
 
 	/*
-	 * Mirrors eslint-plugin-simple-import-sort's default groups. oxfmt implements
-	 * eslint-plugin-perfectionist's algorithm, so the grouping translates but the comparator does
-	 * not. Three differences have no configuration:
+	 * Import groups, in the order of eslint-plugin-simple-import-sort's defaults, with a blank line
+	 * between groups:
 	 *
-	 * - simple-import-sort puts `import type` before the value import of the same source. oxfmt
-	 *   leaves same-source ties in author order, so write the type import first to match.
-	 * - simple-import-sort sorts the named specifiers inside `{ }`. oxfmt never touches them.
-	 * - simple-import-sort compares a transformed key through an ICU collator, so directory depth
-	 *   beats string length (`a.b` < `a/b` < `a_b` < `a-b` < `ab`). oxfmt compares raw code points
-	 *   (`a-b` < `a.b` < `a/b` < `a_b` < `ab`). Both are case-insensitive and numeric-aware.
+	 * 1. Side-effect imports (`import "x"`).
+	 * 2. Node builtins (`node:buffer`).
+	 * 3. Packages (`valibot`, `@std/fmt/colors`).
+	 * 4. The `@/` alias, `#` subpath imports, and anything unclassified.
+	 * 5. Relative imports.
 	 *
-	 * Grouping then differs only for shapes this repo doesn't use: a builtin written without the
-	 * `node:` prefix lands in `builtin` rather than with the packages, an absolute `/x.ts` lands in
-	 * `external` rather than the catch-all, and `style` covers both `./x.css` (grouped with the
-	 * relatives below, as simple-import-sort does) and `pkg/x.css` (which it would group with the
-	 * packages). customGroups splits none of them: `node:**` misses `node:fs/promises`, and a
-	 * `style` custom group pulls side-effect `.css` imports out of the first group.
+	 * Within a group, imports sort by module name, ascending and case-insensitive. Two things are
+	 * left to the author. oxfmt keeps an `import type` and a value import from the same module in
+	 * the order they are written, and this codebase writes the type import first. It also never
+	 * sorts the names inside `{ }`.
 	 */
 	sortImports: {
 		order: "asc",
