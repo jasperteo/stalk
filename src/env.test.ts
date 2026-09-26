@@ -1,3 +1,10 @@
+/**
+ * @module
+ *
+ * Tests for `env.ts`. The module reads the environment once, when it is evaluated, so every test
+ * stubs the env vars and then imports a fresh copy through {@link importEnv}.
+ */
+
 import { describe, expect, test, vi } from "vitest";
 
 import { TARGETS_VAR, TOKEN_VAR } from "@/env.ts";
@@ -5,13 +12,15 @@ import { WEBHOOK } from "@/testing/fixtures.ts";
 
 vi.mock(import("@/log.ts"));
 
-// `vi.stubEnv` mutates `process.env`, which Deno's node-compat live-backs with the real env. So
-// env.ts's `Deno.env.get` sees the stub, and `unstubEnvs` in vitest.config.ts restores the
-// original values before each test (stubbing to `undefined` deletes the variable).
-//
-// `env.ts` reads `Deno.env` once at module top level; resetting modules before each fresh dynamic
-// import gives every scenario its own clean module evaluation. The manual log mock is re-evaluated
-// along with it, so `log` must come from the same fresh registry env.ts saw.
+// `vi.stubEnv` writes to `process.env`, which Deno's Node compatibility layer backs with the real
+// environment, so `Deno.env.get` in `env.ts` sees the stub. Stubbing a var to `undefined` deletes it,
+// and `unstubEnvs` in `vitest.config.ts` restores every var before the next test.
+
+/**
+ * Resets the module registry and imports `env.ts` again, so it reads the env vars as the test
+ * stubbed them. The reset also re-evaluates the `@/log.ts` mock, so `log` has to come from the same
+ * fresh import to be the instance `env.ts` wrote to.
+ */
 async function importEnv() {
 	vi.resetModules();
 	const mod = await import("@/env.ts");
@@ -28,7 +37,7 @@ describe("config", () => {
 		const { config, log } = await importEnv();
 
 		expect(config).toBeUndefined();
-		// Unset reports at info, never error. See parseEnv's JSDoc for why the two are split.
+		// An unset var logs at info level and never at error level.
 		expect(log.info).toHaveBeenCalledWith(expect.stringContaining(TOKEN_VAR));
 		expect(log.error).not.toHaveBeenCalled();
 	});
@@ -45,8 +54,8 @@ describe("config", () => {
 	});
 
 	test("still reports an empty CR_API_TOKEN as an error, unlike an unset one", async () => {
-		// The distinction the unset path is drawing: "" is a value someone supplied and got wrong,
-		// which TokenEnvSchema's nonEmpty() rejects. That is a malformed var, not an absent one.
+		// An empty string is a value someone set, and `TokenEnvSchema` rejects it, so it counts as
+		// invalid rather than unset.
 		vi.stubEnv(TOKEN_VAR, "");
 		vi.stubEnv(TARGETS_VAR, undefined);
 
@@ -75,8 +84,8 @@ describe("config", () => {
 		const { config, log } = await importEnv();
 
 		expect(config).toEqual({ token: "my-token", targets: [] });
-		// Exactly once: `parseEnv` logs per var, so a second line here would mean the token var was
-		// dragged into the same failure.
+		// Exactly one error line, for TARGETS. A second one would mean the valid token was reported
+		// as well.
 		expect(log.error).toHaveBeenCalledExactlyOnceWith(
 			expect.stringContaining(TARGETS_VAR),
 			expect.anything()

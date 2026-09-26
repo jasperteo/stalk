@@ -1,3 +1,11 @@
+/**
+ * @module
+ *
+ * Tests for `main.ts`, the wiring: the HTTP routes, the cron registration, the listen banner, and
+ * the per-tick tally. `Deno.serve`, `Deno.cron` and `Deno.openKv` are spied so importing `main.ts`
+ * binds no port and schedules nothing, and each test drives the captured handlers directly.
+ */
+
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { notifyBattle } from "@/discord.ts";
@@ -10,8 +18,8 @@ vi.mock(import("@/log.ts"));
 
 const TAG = "#ABC123";
 
-// Common happy-path env for every test (`unstubEnvs` restores between tests); the missing-token
-// test re-stubs inside its own body.
+// A valid config with one target. `unstubEnvs` clears it after each test, and a test that needs a
+// different config stubs over it in its own body.
 beforeEach(() => {
 	vi.stubEnv(TOKEN_VAR, "test-token");
 	vi.stubEnv(TARGETS_VAR, JSON.stringify([{ tag: TAG, webhook: WEBHOOK }]));
@@ -19,18 +27,18 @@ beforeEach(() => {
 
 type CronHandler = () => Promise<void> | void;
 
-// Deno.ServeHandler also takes a ServeHandlerInfo, which the tests have no use for; typing the
-// captured handler by what they actually call keeps `app.fetch(request)` a one-argument call.
+// `Deno.ServeHandler` also receives a `ServeHandlerInfo`, which no test uses. Typing the captured
+// handler as a one-argument function lets the tests call `app.fetch(request)`.
 type FetchHandler = (request: Request) => Promise<Response>;
 
 type ServeOptions = { handler: FetchHandler; onListen?: (addr: Deno.NetAddr) => void };
 
-/** A stand-in bound address to hand `onListen`, which never inspects more than these two fields. */
+/** The address handed to `onListen`. `main.ts` reads only `hostname` and `port` from it. */
 const LOCAL_ADDR: Deno.NetAddr = { transport: "tcp", hostname: "localhost", port: 8000 };
 
 /**
- * Serves a distinct battle log per player tag, dispatching on the encoded tag in the request URL; a
- * tag with no entry gets a 500, standing in for that player's API being down.
+ * A `fetch` stub that serves a different battle log per player, matching the URL-encoded tag in the
+ * request URL. A tag with no entry gets a 500, as if that player's API request failed.
  */
 function battlelogFetchByTag(logs: Record<string, unknown[]>) {
 	return vi.fn<(input: string | URL | Request) => Promise<Response>>((input) => {
@@ -44,16 +52,17 @@ function battlelogFetchByTag(logs: Record<string, unknown[]>) {
 }
 
 /**
- * Spies `Deno.openKv` (via `spyMemoryKv`, redirecting to a fresh isolated `:memory:` store),
- * `Deno.cron` (capturing its handler instead of really scheduling it), and `Deno.serve` (capturing
- * its handler instead of really binding a port; every import would otherwise fight over the same
- * one). It then resets the module registry and freshly imports `main.ts` so its top-level `await
- * Deno.openKv()`/`Deno.cron(...)`/`Deno.serve(...)` side effects run against our spies.
+ * Imports a fresh `main.ts` with its side effects captured:
  *
- * `announceListen` invokes the captured `onListen` callback, which in production fires once per
- * instance start, i.e. once per cron tick on Deploy. `log` comes back too because
- * `vi.resetModules()` re-evaluates the manual `@/log.ts` mock, handing out a fresh `log` each time:
- * a statically imported one would be a stale instance main.ts is no longer bound to.
+ * - `Deno.openKv` opens an in-memory store (see `spyMemoryKv`).
+ * - `Deno.cron` records its arguments and handler instead of scheduling anything.
+ * - `Deno.serve` records its options instead of binding a port, which every import would otherwise
+ *   try to do on the same one.
+ *
+ * It returns the Hono app's `fetch`, the cron handler as `tick`, the cron registration arguments,
+ * and `announceListen`, which calls the captured `onListen` the way the server does once it
+ * listens. `log` comes from the same fresh import, because `vi.resetModules()` re-evaluates the
+ * `@/log.ts` mock and a statically imported `log` would not be the instance `main.ts` writes to.
  */
 async function importMain() {
 	const getKv = spyMemoryKv();
@@ -61,11 +70,9 @@ async function importMain() {
 	let cronHandler: CronHandler | undefined;
 	let cronArgs: unknown[] | undefined;
 
-	// `Deno.cron` is overloaded (with and without an options argument), and `mockImplementation`
-	// types its parameters against the options overload. So capture positionally-untyped rest args
-	// and take the handler from the end, where every overload puts it. The leading args are kept
-	// too, so the registration itself (name and schedule) can be asserted rather than only its
-	// handler's behavior.
+	// `Deno.cron` has overloads with and without an options argument, and `mockImplementation` types
+	// its parameters from one of them. Taking untyped rest arguments works for both: the handler is
+	// always last, and the name and schedule stay available for the registration test.
 	vi.spyOn(Deno, "cron").mockImplementation((...args: unknown[]) => {
 		cronArgs = args;
 		cronHandler = args.at(-1) as CronHandler;
@@ -74,8 +81,8 @@ async function importMain() {
 
 	let serveOptions: ServeOptions | undefined;
 
-	// `Deno.serve` is overloaded like `Deno.cron`, so capture positionally-untyped rest args; main.ts
-	// always calls the option-bag form. The returned handle is unused, so a stub suffices.
+	// `Deno.serve` is overloaded too. `main.ts` always passes a single options object, and nothing
+	// uses the returned server, so a minimal stub stands in for it.
 	vi.spyOn(Deno, "serve").mockImplementation((...args: unknown[]) => {
 		[serveOptions] = args as [ServeOptions];
 		return { shutdown: () => Promise.resolve() } as unknown as Deno.HttpServer<Deno.NetAddr>;
@@ -91,7 +98,7 @@ async function importMain() {
 	if (serveOptions === undefined) throw new Error("Deno.serve options were never captured");
 	const { handler, onListen } = serveOptions;
 	if (onListen === undefined) throw new Error("Deno.serve was given no onListen callback");
-	getKv(); // throws if the spy never captured a KV handle
+	getKv(); // Throws if `main.ts` never opened KV.
 
 	return {
 		app: { fetch: handler },
@@ -104,6 +111,7 @@ async function importMain() {
 	};
 }
 
+/** The `/kv/last-battle` response body. */
 async function lastBattles(app: Awaited<ReturnType<typeof importMain>>["app"]) {
 	const response = await app.fetch(new Request("http://localhost/kv/last-battle"));
 	return (await response.json()) as Record<string, unknown>;
@@ -120,9 +128,8 @@ describe("main", () => {
 	test("registers the poll job under its own name, once a minute", async () => {
 		const { cronArgs } = await importMain();
 
-		// Every other test here drives the captured handler directly, so none of them would notice the
-		// registration itself changing: a switch to hourly polling, or a renamed job, would leave the
-		// whole suite green. The tally line pins the name indirectly; nothing pins the schedule.
+		// The other tests call the captured handler directly, so they would all still pass if the
+		// schedule or the job name changed. This is the one test that checks both.
 		expect(cronArgs.slice(0, 2)).toEqual(["poll-battlelogs", { minute: { every: 1 } }]);
 	});
 
@@ -131,8 +138,8 @@ describe("main", () => {
 
 		announceListen();
 
-		// The one line a healthy deploy prints every tick, so it has to name the bound address and say
-		// how many players are being tracked.
+		// On Deno Deploy this line appears about once a tick, so it names the address and the number
+		// of tracked players.
 		expect(log.info).toHaveBeenCalledWith(expect.stringContaining("http://localhost:8000"));
 		expect(log.info).toHaveBeenCalledWith(expect.stringContaining("tracking 1 target(s)"));
 	});
@@ -145,8 +152,8 @@ describe("main", () => {
 		await tick();
 
 		expect(notifyBattle).not.toHaveBeenCalled();
-		// A misconfigured deploy must be loud in both places it can be: the skipped tick itself, and
-		// the listen banner that would otherwise claim it is tracking players.
+		// Both lines a deploy prints have to show the missing token: the tick's warning, and the
+		// listen banner, which says "idle" instead of claiming to track anyone.
 		expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("skipped tick"));
 
 		announceListen();
@@ -181,7 +188,7 @@ describe("main with multiple targets", () => {
 		);
 		await tick();
 
-		// The first tick seeds every target from the env-parsed TARGETS list, notifying nobody.
+		// The first tick seeds both targets and posts nothing.
 		expect(notifyBattle).not.toHaveBeenCalled();
 		expect(await lastBattles(app)).toEqual({
 			[TAG]: "2024-01-01T00:00:00.000Z",
@@ -202,7 +209,7 @@ describe("main with multiple targets", () => {
 			[TAG_B]: "2024-01-16T14:30:22.000Z",
 		});
 
-		// poll() runs concurrently, so assert the set of webhooks notified rather than call order.
+		// The polls run concurrently, so compare the set of webhooks, not the call order.
 		const notifiedWebhooks = new Set(
 			vi.mocked(notifyBattle).mock.calls.map(([webhook]) => webhook)
 		);
@@ -221,8 +228,7 @@ describe("main with multiple targets", () => {
 		);
 		await tick();
 
-		// TAG_B is omitted from the router, so its fetch 500s, standing in for that player's API being
-		// down, while TAG gets a new battle to post.
+		// TAG gets a new battle. TAG_B has no entry, so its request returns 500.
 		vi.stubGlobal(
 			"fetch",
 			battlelogFetchByTag({
@@ -237,9 +243,8 @@ describe("main with multiple targets", () => {
 			[TAG_B]: "2024-01-02T00:00:00.000Z",
 		});
 
-		// The whole tally, not fragments of it: the badge colors are identity functions under the log
-		// mock, so the line is exact. This also pins that every POLL_OUTCOMES entry is reported (at 0
-		// when unused) and in the declared order.
+		// The mocked colors are identity functions, so the whole line can be compared exactly. That
+		// also checks that every outcome appears, zeros included, in `POLL_OUTCOMES` order.
 		expect(log.info).toHaveBeenCalledWith(
 			"poll-battlelogs: 2 targets — posted 1, seeded 0, skipped 0, drifted 0, failed 1"
 		);
@@ -269,8 +274,8 @@ describe("main with multiple targets", () => {
 		);
 		await tick();
 
-		// Drift is its own column, not folded into `skipped`. The two seeded targets are what a quiet
-		// tick looks like, and TAG_C must not be counted among them.
+		// Two targets seed normally, and the drifted one gets its own count instead of being counted
+		// as skipped or seeded.
 		expect(log.info).toHaveBeenCalledWith(
 			"poll-battlelogs: 3 targets — posted 0, seeded 2, skipped 0, drifted 1, failed 0"
 		);

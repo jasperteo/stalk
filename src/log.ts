@@ -1,3 +1,15 @@
+/**
+ * @module
+ *
+ * Leveled console output for the whole app. Every line starts with a colored, fixed-width level
+ * badge, so a local run and the Deno Deploy log stream read the same way.
+ *
+ * This is the only module that imports `@std/fmt/colors`. The color functions check a module-level
+ * flag each time they run, and this module sets that flag before it paints anything. Every other
+ * module gets its colors from {@link levelColor} and {@link hl}, which means importing this module
+ * first, so no paint call anywhere can run before the flag is set.
+ */
+
 import {
 	bold,
 	brightBlue,
@@ -10,11 +22,15 @@ import {
 	yellow,
 } from "@std/fmt/colors";
 
-// `@std/fmt/colors` gates on NO_COLOR only, not on whether stdout is a terminal, so gate on both:
-// piped/captured output (CI, Deno Deploy logs) stays plain text. Runs before anything paints.
+// `@std/fmt/colors` only checks NO_COLOR by itself. Output that is piped rather than shown in a
+// terminal (the Deno Deploy log stream, CI, a test run) would still carry ANSI escape codes, so
+// require a terminal as well.
 setColorEnabled(!Deno.noColor && Deno.stdout.isTerminal());
 
-/** Level → color, the single source of the badge palette. */
+/**
+ * The color of each level's badge. `main.ts` colors its per-tick tally with the same functions, so
+ * an outcome appears in the color of the log level that reports it.
+ */
 const levelColor = {
 	info: cyan,
 	ok: green,
@@ -24,28 +40,29 @@ const levelColor = {
 } as const;
 
 /**
- * Inline highlighters for dynamic values: `entity` for the identifier a line is about, `value` for
- * a measurement or address, `strong` for bare emphasis. Defined here so no other file imports
- * `@std/fmt/colors` and paints before the gate above has run.
+ * Highlighters for values inside a message. `entity` marks what the line is about (a player tag, an
+ * env var name), `value` marks a measurement or an address, and `strong` marks a number that must
+ * stand out. They live here so that callers never import `@std/fmt/colors` themselves.
  */
 const hl = { entity: brightMagenta, value: brightBlue, strong: bold };
 
 /**
- * How much of an error body to echo into a log line. Not exported: {@link truncatedBody} is the only
- * consumer, so the cap cannot drift from the code that applies it. Generous, because a Discord
- * malformed-embed detail, or a Clash Royale API error message, can be buried deep inside a nested
- * JSON body, and that log line is the only record of it. Still capped, since an edge proxy's 5xx
- * returns a multi-KB HTML page that would otherwise flood the Deploy logs every tick of an outage.
+ * How many characters of a failed response's body {@link truncatedBody} keeps. Discord describes a
+ * malformed embed inside a nested JSON error, and the Clash Royale API puts its reason in the body,
+ * so the log line needs room for the part that explains the failure. The cap exists because an
+ * upstream HTML error page can run to several kilobytes and would be logged again on every tick of
+ * an outage.
  */
 const ERROR_BODY_CHARS = 2000;
 
 /**
- * Reads a failed response's body, capped at {@link ERROR_BODY_CHARS}. Applying the cap here rather
- * than restating `.slice(0, ERROR_BODY_CHARS)` at each call site keeps the policy next to the
- * constant that sets it. Callers supply their own message prefix.
+ * Reads a failed response's body for a log line or an error message. Callers write their own prefix
+ * (status, URL, player tag) around it.
  *
- * Consumes the body, which also releases the connection, so call it once per response and only on
- * the failure path.
+ * Reading the body consumes it and releases the connection, so call this at most once per response,
+ * and only on the failure path.
+ *
+ * @returns The body text, cut to {@link ERROR_BODY_CHARS} characters.
  */
 async function truncatedBody(response: Response) {
 	const body = await response.text();
@@ -53,15 +70,17 @@ async function truncatedBody(response: Response) {
 }
 
 /**
- * Builds one leveled logger: a bold, colored, 5-wide badge (so lines align) in front of every
- * message, optionally tinting the message itself in the same color.
+ * Builds one leveled logger. Its badge is the level name, padded to five characters so that
+ * messages line up across levels, printed bold in the level's color.
  *
- * @param write The console method to wrap, passed in rather than derived from `level` so `success`
- *   can route to `console.info` under its own badge.
- * @param tint Whether to paint the message itself, not just the badge. Extra args stay unpainted
- *   regardless, so an Error keeps its native console inspection.
- * @returns The logger, with its badge already painted. Computing it once here is what keeps every
- *   paint call after the `setColorEnabled` gate above.
+ * @param write The console method to call. It is a separate argument from `level` because `success`
+ *   writes through `console.info` under its own `ok` badge.
+ * @param level Selects the badge text and its color.
+ * @param tint Whether to paint the message in the level's color as well. Extra arguments are never
+ *   painted, so an `Error` passed after the message keeps the console's own formatting, stack trace
+ *   included.
+ * @returns A logger whose badge was painted once, when this function ran. `leveled` only runs while
+ *   this module builds {@link log}, after the `setColorEnabled` call above.
  */
 function leveled(
 	write: (...data: unknown[]) => void,
@@ -77,10 +96,8 @@ function leveled(
 }
 
 /**
- * Console wrapper: every line carries a colored level badge so local dev and Deno Deploy logs read
- * as one stream. warn/error/debug also tint their message, debug because it's verbose diagnostic
- * detail rather than something to act on. Extra args are left unpainted, so an Error handed to
- * `log.error` keeps its native console inspection (stack trace, etc.).
+ * The app's logger. `warn` and `error` tint the message text so it stands out, and `debug` tints it
+ * gray so that diagnostic detail reads as secondary. `info` and `success` leave the message plain.
  */
 const log = {
 	info: leveled(console.info, "info"),

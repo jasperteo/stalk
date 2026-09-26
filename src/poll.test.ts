@@ -1,3 +1,12 @@
+/**
+ * @module
+ *
+ * Tests for `poll.ts`, run against a real in-memory Deno KV store, with a stubbed `fetch` for the
+ * battle log and a mocked `notifyBattle`. They cover each poll outcome, the delivery rules (seed on
+ * first run, write only after a successful post), and the tick-wide rules in `pollAll`: one KV read
+ * per tick, and no rejection.
+ */
+
 import { describe, expect, test, vi } from "vitest";
 
 import { notifyBattle } from "@/discord.ts";
@@ -12,27 +21,26 @@ const TAG = "#ABC123";
 const TARGET: Target = { tag: TAG, webhook: WEBHOOK };
 const TOKEN = "test-token";
 
-/** Targets sharing one webhook. Only the tags vary in the fan-out tests. */
+/** Targets that share one webhook. The fan-out tests only vary the tags. */
 function targetsFor(...tags: string[]): Target[] {
 	return tags.map((tag) => ({ tag, webhook: WEBHOOK }));
 }
 
+/** A `fetch` stub that answers every request with the same battle log. */
 function battlelogFetch(entries: unknown[]) {
 	return vi.fn(() => Promise.resolve(Response.json(entries)));
 }
 
 /**
- * Spies `Deno.openKv` (via `spyMemoryKv`, redirecting to a fresh isolated `:memory:` store), then
- * resets the module registry and freshly imports `poll.ts` so its top-level `await Deno.openKv()`
- * runs against the spy.
+ * Points `Deno.openKv` at a fresh in-memory store (see `spyMemoryKv`), then resets the module
+ * registry and imports `poll.ts`, so its top-level `await Deno.openKv()` opens that store.
  *
- * Returns `tick`, a one-target `pollAll`. The tests drive the real tick entry point rather than
- * `poll` (which is module-private now), so each call re-reads lastBattle exactly as production does
- * and sequences of polls need no lastBattle plumbing.
+ * `tick` runs `pollAll` for a single target. Going through `pollAll`, the real tick entry point,
+ * means each call reads lastBattle from KV exactly as production does, so a test can run several
+ * polls in a row without passing values between them.
  *
- * `log` comes back with it because `vi.resetModules()` re-evaluates the manual `@/log.ts` mock,
- * handing out a fresh `log` each time: a statically imported one would be a stale instance poll.ts
- * is no longer bound to.
+ * `log` comes from the same fresh import. `vi.resetModules()` re-evaluates the `@/log.ts` mock, and
+ * a statically imported `log` would be a different instance from the one `poll.ts` writes to.
  */
 async function importPoll() {
 	const getKv = spyMemoryKv();
@@ -83,10 +91,10 @@ describe("poll", () => {
 		vi.mocked(notifyBattle).mockRejectedValueOnce(new Error("webhook down"));
 		expect(await tick()).toBe("failed");
 
-		// The failed post must not advance lastBattle. The battle is still owed.
+		// The post failed, so the battle has not been delivered and lastBattle must not move.
 		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-01T00:00:00.000Z"]]));
 
-		// The retry posts the same battle and only then advances lastBattle.
+		// The next poll posts the same battle and only then advances lastBattle.
 		expect(await tick()).toBe("posted");
 
 		expect(notifyBattle).toHaveBeenCalledTimes(2);
@@ -103,12 +111,11 @@ describe("poll", () => {
 		vi.spyOn(kv, "set").mockRejectedValueOnce(new Error("kv write failed"));
 		expect(await tick()).toBe("failed");
 
-		// The post happened, but the failed write leaves the old lastBattle. The battle is not
-		// marked done.
+		// The post went out, but the write failed, so lastBattle still holds the older battle.
 		expect(notifyBattle).toHaveBeenCalledTimes(1);
 		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-01T00:00:00.000Z"]]));
 
-		// At-least-once: the same battle posts again (a duplicate), then lastBattle finally advances.
+		// The next poll posts the battle a second time, and this time lastBattle advances.
 		expect(await tick()).toBe("posted");
 
 		expect(notifyBattle).toHaveBeenCalledTimes(2);
@@ -122,8 +129,8 @@ describe("poll", () => {
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240101T000000.000Z" })]));
 		await tick();
 
-		// Seed write (first run) must already carry the TTL, or a seeded-then-removed
-		// player's lastBattle would be the one entry that never expires.
+		// The seed write needs the TTL as well. Without it, a player seeded and then removed from
+		// TARGETS would leave an entry that never expires.
 		expect(setSpy).toHaveBeenCalledWith(["lastBattle", TAG], "2024-01-01T00:00:00.000Z", {
 			expireIn: 2_592_000_000,
 		});
@@ -149,7 +156,7 @@ describe("poll", () => {
 		expect(notifyBattle).toHaveBeenCalledTimes(1);
 	});
 
-	// Only reachable if the battlelog's newest-first order breaks. See the guard in poll.ts.
+	// This case only happens if the battle log stops arriving newest first.
 	test("skips an eligible battle older than the stored lastBattle, without rewinding it", async () => {
 		const { tick, listLastBattles, log } = await importPoll();
 
@@ -161,8 +168,8 @@ describe("poll", () => {
 
 		expect(notifyBattle).not.toHaveBeenCalled();
 		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-15T14:30:22.000Z"]]));
-		// Loud, unlike an ordinary skip: a quiet `skipped` here would be indistinguishable from a
-		// player who simply isn't playing, which is exactly the signal we'd need to notice.
+		// Unlike an ordinary skip, this one warns. Without the warning it would look the same as a
+		// player who is not playing.
 		expect(log.warn).toHaveBeenCalledWith(
 			expect.stringContaining("predates the stored lastBattle")
 		);
@@ -198,7 +205,7 @@ describe("poll", () => {
 
 		expect(notifyBattle).not.toHaveBeenCalled();
 		expect(await listLastBattles()).toEqual(new Map([[TAG, "2024-01-15T14:30:22.000Z"]]));
-		// A corrupt value is the loud case; an absent/expired one re-seeds silently (below).
+		// A corrupt value warns. An absent one re-seeds quietly, as the next test checks.
 		expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("Corrupt lastBattle value"));
 	});
 
@@ -208,8 +215,7 @@ describe("poll", () => {
 		vi.stubGlobal("fetch", battlelogFetch([rawBattle({ battleTime: "20240115T143022.000Z" })]));
 		expect(await tick()).toBe("seeded");
 
-		// First run and an expired entry are indistinguishable and both normal, so neither may warn.
-		// `readLastBattle` skips the parse entirely on `undefined` to keep that check exact.
+		// A first run and an expired entry look the same, and both are normal, so neither warns.
 		expect(log.warn).not.toHaveBeenCalled();
 	});
 
@@ -246,9 +252,9 @@ describe("poll", () => {
 });
 
 describe("pollAll", () => {
-	// The whole reason poll() takes its lastBattle value as an argument. KV reads are the free tier's
-	// binding limit, so a tick's read cost has to be flat in the number of targets. A regression to a
-	// per-player kv.get would be invisible in every other test here, since the outcomes are identical.
+	// KV read units are the free tier's scarcest quota, so a tick must cost one read no matter how
+	// many players it polls. A `kv.get` per player would produce the same outcomes, so only this test
+	// would catch it.
 	test("reads every lastBattle in one KV command regardless of target count", async () => {
 		const { pollAll, kv } = await importPoll();
 		const listSpy = vi.spyOn(kv, "list");
@@ -267,7 +273,7 @@ describe("pollAll", () => {
 	test("one target's failure doesn't reject the tick", async () => {
 		const { pollAll } = await importPoll();
 
-		// Every fetch 500s, so all three polls fail. pollAll must still resolve, not reject.
+		// Every request returns 500, so every poll fails, and `pollAll` still resolves.
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(() => Promise.resolve(new Response("down", { status: 500 })))
@@ -278,8 +284,8 @@ describe("pollAll", () => {
 		await expect(pollAll(targets, TOKEN)).resolves.toEqual(["failed", "failed"]);
 	});
 
-	// The lastBattle read runs before any poll(), so it is the one failure that isn't already
-	// contained by poll()'s own catch, and it hits every target at once. It must not reject the tick.
+	// The lastBattle read happens before any poll runs, outside `poll`'s own error handling, and a
+	// failure affects every target at once.
 	test("reports every target failed when the lastBattle read fails, without seeding any lastBattle", async () => {
 		const { pollAll, listLastBattles, kv, log } = await importPoll();
 
@@ -293,7 +299,7 @@ describe("pollAll", () => {
 
 		await expect(pollAll(targets, TOKEN)).resolves.toEqual(["failed", "failed"]);
 
-		// Nothing posted, and no lastBattle was seeded past anyone's newest battle.
+		// Nobody was posted to, and nobody was seeded past their newest battle.
 		expect(notifyBattle).not.toHaveBeenCalled();
 		expect(await listLastBattles()).toEqual(new Map());
 		expect(log.error).toHaveBeenCalled();

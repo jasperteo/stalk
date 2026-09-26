@@ -1,3 +1,16 @@
+/**
+ * @module
+ *
+ * The entry point. It runs under `deno run`, not `deno serve`, so it has no default export. It only
+ * wires the other modules together:
+ *
+ * - an HTTP server (Hono) with a health check and a read-only dump of the stored lastBattle values;
+ * - the `poll-battlelogs` cron job, which calls {@link pollAll} once a minute and logs a tally.
+ *
+ * Deno Deploy waits for an instance's HTTP server to start before it counts the instance as running,
+ * so the server has to exist even though the real work happens in the cron job.
+ */
+
 import { Hono } from "hono";
 
 import { config } from "@/env.ts";
@@ -9,14 +22,17 @@ import { listLastBattles, POLL_OUTCOMES, pollAll } from "@/poll.ts";
 
 const app = new Hono();
 
-/** Health check endpoint for Deno Deploy. */
+// Health check.
 app.get("/", (ctx) => ctx.json({ status: "ok" }));
 
-/** Read-only lastBattle dump; no secrets live in KV, so this is safe to expose. */
+// Every stored lastBattle value, keyed by tag, exactly as stored. KV holds only player tags and
+// battle times, which are public, so the route needs no authentication.
 app.get("/kv/last-battle", async (ctx) => ctx.json(Object.fromEntries(await listLastBattles())));
 
 Deno.serve({
 	handler: app.fetch,
+	// Runs once per instance, when the server starts listening. On Deno Deploy most ticks start a new
+	// instance, so this line appears about once a tick and shows whether the instance has a token.
 	onListen: ({ hostname, port }) => {
 		const status = config
 			? `tracking ${String(config.targets.length)} target(s)`
@@ -28,7 +44,11 @@ Deno.serve({
 
 // ═════════════════════════════════════════════ CRON ══════════════════════════════════════════════
 
-/** Each outcome borrows its level's badge color, so the tally stays in sync with the badges. */
+/**
+ * The color of each outcome in the tally line. `posted`, `seeded`, `drifted` and `failed` take the
+ * badge color of the level they are logged at (`success`, `info`, `warn` and `error`). `skipped` is
+ * the usual quiet result and takes the gray of `debug`.
+ */
 const outcomeColor: Record<PollOutcome, (str: string) => string> = {
 	posted: levelColor.ok,
 	seeded: levelColor.info,
@@ -38,11 +58,13 @@ const outcomeColor: Record<PollOutcome, (str: string) => string> = {
 };
 
 /**
- * Formats the tally as `posted 1, seeded 0, …`. It iterates {@link POLL_OUTCOMES} so a new outcome
- * can't go missing.
+ * Formats a tick's tally, such as `posted 1, seeded 0, skipped 7, drifted 0, failed 1`.
  *
- * @returns Every outcome in display order, each painted in its own badge color, including the ones
- *   that counted zero. A stable line shape reads better across ticks than a variable one.
+ * @param outcomes One outcome per target, as {@link pollAll} returns them.
+ * @returns Every outcome in {@link POLL_OUTCOMES} order, zero counts included, each in its own
+ *   color. Keeping the zeros gives every tick's line the same shape, so ticks compare at a glance.
+ *   Building the line from `POLL_OUTCOMES` means a new outcome appears here without a change to
+ *   this function.
  */
 function formatTally(outcomes: PollOutcome[]) {
 	const counts = new Map<PollOutcome, number>();
@@ -56,11 +78,12 @@ function formatTally(outcomes: PollOutcome[]) {
 	).join(", ");
 }
 
-// Voided, not awaited: the registration promise only surfaces registration errors, and the job runs
-// for the process's lifetime.
+// `Deno.cron` registers the job and returns at once. Its promise exists only to report a registration
+// error, and the job runs for as long as the process does, so the promise is not awaited. Deno Deploy
+// skips a run while the previous one is still going, and does not retry a failed run.
 void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
-	// Heartbeat so a misconfigured deploy shows up as a loud skipped tick in the logs, instead of
-	// failing silently with nothing to see on the dashboard.
+	// Without a token there is nothing to poll. Warn on every tick, so that a deploy missing its
+	// token shows a line each minute in the logs instead of going silent.
 	if (config === undefined) {
 		log.warn("poll-battlelogs: skipped tick — CR_API_TOKEN not set");
 		return;
@@ -68,7 +91,7 @@ void Deno.cron("poll-battlelogs", { minute: { every: 1 } }, async () => {
 
 	const { token, targets } = config;
 
-	// pollAll owns the fan-out and the tick's single lastBattle read; this stays wiring.
+	// `pollAll` never rejects, so the tally line below always runs.
 	const outcomes = await pollAll(targets, token);
 
 	log.info(`poll-battlelogs: ${String(targets.length)} targets — ${formatTally(outcomes)}`);

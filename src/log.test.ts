@@ -1,13 +1,21 @@
+/**
+ * @module
+ *
+ * Tests for `log.ts` against the real module, with the console spied.
+ *
+ * `log.ts` captures `console.info`, `warn`, `error` and `debug` in its loggers while it is evaluated.
+ * A spy installed after a static import would never be called, so each test installs the spies
+ * first, then resets the module registry and imports `log.ts` again.
+ */
+
 import { describe, expect, test, vi } from "vitest";
 
-// `log.ts` binds `console.info`/`warn`/`error`/`debug` into its closures once at module import
-// time, so a spy installed after a static top-level import is too late to intercept anything.
-// Each test spies first, then resets modules and re-imports fresh, so the module's closures
-// capture the spies instead of the native console methods.
+/** Silences one console method and returns its spy. */
 function spy(method: "info" | "warn" | "error" | "debug") {
 	return vi.spyOn(console, method).mockImplementation(() => undefined);
 }
 
+/** Spies the console, then evaluates a fresh copy of `log.ts` that captures those spies. */
 async function importLog() {
 	vi.resetModules();
 	const spies = { info: spy("info"), warn: spy("warn"), error: spy("error"), debug: spy("debug") };
@@ -18,8 +26,8 @@ async function importLog() {
 }
 
 describe("log", () => {
-	// The badges are padded to a shared fixed width so lines align. The table keeps them
-	// column-aligned here too, making a drifted pad width visible at a glance.
+	// The expected badges are padded to five characters. Lined up in the table, a wrong pad width is
+	// easy to see.
 	test.for([
 		{ level: "info", badge: "info ", via: "info" },
 		{ level: "success", badge: "ok   ", via: "info" },
@@ -47,10 +55,9 @@ describe("log", () => {
 	});
 });
 
-// One fact about two export groups: with color disabled, every paint function is identity. Merged
-// into a single test because splitting it paid two `vi.resetModules()` + re-import cycles to assert
-// the same thing twice. This is what justifies the identity stubs in `src/__mocks__/log.ts`, which
-// main.test.ts's exact tally-line assertion depends on.
+// Color is off under Vitest, even when the suite runs in a terminal. This test is what makes the
+// identity functions in `src/__mocks__/log.ts` a faithful mock, and `main.test.ts` depends on that
+// when it compares a whole tally line as a plain string.
 describe("hl and levelColor", () => {
 	test("every paint function is identity when color is disabled", async () => {
 		const { hl, levelColor } = await importLog();

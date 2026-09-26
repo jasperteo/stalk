@@ -1,19 +1,24 @@
 /**
  * @module
  *
- * Shared raw Clash Royale API shapes for tests: plain objects as the API would send them
- * (unnormalized lowercase tags, optional fields absent), pre-validation. Tests spread in only the
- * fields they assert on, and parse through `BattleSchema` where a validated `Battle` is needed.
+ * Raw Clash Royale API shapes for tests, as the API would send them before validation: lowercase
+ * tags without `#`, optional fields left out. Each factory takes overrides and fills in the rest, so
+ * a test states only the fields it cares about. Tests that need a validated `Battle` parse the result
+ * through `BattleSchema`.
  */
 
 import { DECK_SIZE } from "@/schema.ts";
 
-/** A syntactically valid Discord webhook URL for tests that need one. */
+/** A well-formed Discord webhook URL. Nothing is ever sent to it. */
 const WEBHOOK = "https://discord.com/api/webhooks/1/aaa";
 
-/** `rawBattle`'s default opponent identity, exported so tests overriding the opponent keep it. */
+/**
+ * The opponent's identity in {@link rawBattle}. Exported so a test that overrides the opponent can
+ * spread it in and change one field.
+ */
 const BOB = { tag: "def456", name: "Bob", crowns: 1 };
 
+/** A raw card; an ordinary Knight unless overridden. */
 function rawCard(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 26_000_000,
@@ -23,6 +28,10 @@ function rawCard(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+/**
+ * A raw player: Alice with 2 crowns and a one-card deck. The trophy and tower HP fields are left
+ * out, so the schema's defaults fill in the tower HP.
+ */
 function rawPlayer(overrides: Record<string, unknown> = {}) {
 	return {
 		tag: "abc123",
@@ -34,6 +43,7 @@ function rawPlayer(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+/** A raw 1v1 that Alice wins 2-1 against {@link BOB}, with a compact `battleTime` like the API's. */
 function rawBattle(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "PvP",
@@ -45,11 +55,10 @@ function rawBattle(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * A battle that passes the cheap eligibility check but fails full `BattleSchema` validation. This
- * is the API-schema-drift case, which `latestBattle` reports and `poll` surfaces as the "drifted"
- * outcome. A non-URL `iconUrls.medium` is the drift: eligibility only reads `team[].cards` (count,
- * not contents) and `battleTime`, never `iconUrls`, so this entry still wins selection and only
- * then fails.
+ * A battle that passes the eligibility check but fails full `BattleSchema` validation, standing in
+ * for a change in the API's shape. `latestBattle` reports it as drift, and `poll` as `drifted`. The
+ * broken field is a card's `iconUrls.medium`, which is not a URL. Eligibility counts a player's
+ * cards but never looks inside them, so the entry is still selected and only fails afterwards.
  */
 function driftedBattle(overrides: Record<string, unknown> = {}) {
 	return rawBattle({
@@ -59,9 +68,8 @@ function driftedBattle(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * A Duel entry: `team[0].cards` holds `deckCount` concatenated 8-card decks (16 or 24 entries)
- * rather than one, the structural tell `isEligibleBattle` (backed by `EligibleBattleSchema`)
- * rejects on.
+ * A Duel entry: one player per side, but `deckCount` whole decks in `team[0].cards`, 16 cards for
+ * two decks and 24 for three. The card count is what `isEligibleBattle` rejects it on.
  */
 function duelBattle(overrides: Record<string, unknown> = {}, deckCount = 2) {
 	return rawBattle({
