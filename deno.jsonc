@@ -22,6 +22,7 @@
 			"ffi": { "allow": true },
 			"net": {
 				"allow": [
+					"localhost",
 					"0.0.0.0:8000",
 					"proxy.royaleapi.dev",
 					"discord.com",
@@ -30,6 +31,8 @@
 			},
 			"read": { "allow": true },
 			"write": { "allow": true },
+			"run": { "allow": true },
+			"sys": { "allow": true },
 		},
 	},
 
