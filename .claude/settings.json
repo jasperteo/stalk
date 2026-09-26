@@ -10,7 +10,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "cd \"$CLAUDE_PROJECT_DIR\" && deno task fmt",
+						"command": "cd \"$CLAUDE_PROJECT_DIR\" && pnpm fmt",
 						"statusMessage": "Formatting..."
 					}
 				]
