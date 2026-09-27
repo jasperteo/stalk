@@ -186,22 +186,44 @@ leaves nothing behind in KV.
 
 ```
 src/
-  main.ts            HTTP routes and the cron job
-  poll.ts            One tick: read lastBattle, poll each player, post, write lastBattle
-  clash-royale.ts    Battle-log fetch and selection of the newest 1v1
-  discord.ts         The webhook message and its text-only fallback
-  deck-image.ts      Deck grid rendering with sharp
-  schema.ts          Valibot schemas for the API responses and the env vars
-  env.ts             Env var parsing
-  log.ts             Leveled, colored console output
-  testing/           Test fixtures and the KV spy
-  __mocks__/         The manual mock for log.ts
-images/              Card art, one 285×420 PNG per card and form
-scripts/             pnpm preview and pnpm measure
-docs/                The architecture diagram
-deno.jsonc           Deno settings, the local permission set, and the Deno Deploy build config
-package.json         Dependencies, scripts, and the pinned pnpm and Deno versions
+├── main.ts            Entry point: HTTP routes, the cron job, the per-tick tally
+├── poll.ts            One tick: read lastBattle, poll each player, post, write lastBattle
+├── clash-royale.ts    Fetches a battle log and picks the newest 1v1
+├── discord.ts         Builds and posts the webhook message, with the text-only fallback
+├── deck-image.ts      Renders a deck as a PNG grid with sharp
+├── schema.ts          Valibot schemas for the API responses and the env vars
+├── env.ts             Reads and validates CR_API_TOKEN and TARGETS
+├── log.ts             Leveled, colored console output
+├── testing/           Raw API fixtures and the in-memory KV spy
+└── __mocks__/         The manual Vitest mock for log.ts
+images/                Card art: <id>.png, <id>-evo.png and <id>-hero.png, all 285×420
+scripts/
+├── preview.ts         pnpm preview: renders a sample deck to scripts/preview.png
+└── measure.ts         pnpm measure: prints the card-art margins behind the grid constants
+docs/                  The architecture diagram, in light and dark versions
 ```
 
-Each module in `src/` has a test file next to it. The source comments explain each constant and
-design choice, including the measurements that support them.
+The modules in `src/` are listed in call order, from the cron job down to the renderer, followed by
+the modules they all share. Each one has a `*.test.ts` file beside it, and its comments explain
+each constant and design choice, including the measurements that support them.
+
+Configuration at the repository root:
+
+- `package.json` declares the dependencies and the `pnpm` scripts, and pins pnpm and Deno in
+  `devEngines`. `pnpm-lock.yaml` and `pnpm-workspace.yaml` are pnpm's lockfile and settings.
+- `.npmrc` resolves the `@jsr` scope from `npm.jsr.io`, where the `@std/*` packages come from.
+- `deno.jsonc` holds Deno's compiler options, the unstable KV and cron APIs, the `@/` import alias,
+  the permission set `pnpm start` uses, and the Deno Deploy build settings.
+- `tsconfig.json` is the TypeScript config for oxlint's type-aware rules, and Vitest takes the `@/`
+  alias from its `paths`. `deno check` reads `deno.jsonc` instead.
+- `deno.d.ts` is a copy of Deno's type declarations, so that oxlint can resolve `Deno.*`.
+  `pnpm sync-types` regenerates it.
+- `oxlint.config.ts`, `oxfmt.config.ts` and `vitest.config.ts` configure linting, formatting
+  (import order included) and tests.
+- `.github/workflows/ci.yml` installs dependencies through Socket Firewall, then checks formatting,
+  lints and runs the tests.
+- `.env.example` is the template for `.env`, and `.vscode/settings.json.example` sets up the Deno
+  and Vitest extensions in VS Code.
+- `.claude/`, `.agents/skills/` and `skills-lock.json` hold instructions and skills for AI coding
+  agents. `.claude/skills/` links into `.agents/skills/`, and `skills-lock.json` records where each
+  skill came from.
