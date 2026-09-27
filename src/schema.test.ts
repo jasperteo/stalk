@@ -1,3 +1,11 @@
+/**
+ * @module
+ *
+ * Tests for the schemas in `schema.ts`, run against raw fixtures shaped like the API's responses:
+ * normalization and defaults in `BattleSchema`, round trips through `LastBattleSchema`, the 1v1 check,
+ * and both env var schemas.
+ */
+
 import * as v from "valibot";
 import { describe, expect, test } from "vitest";
 
@@ -68,13 +76,14 @@ describe("BattleSchema", () => {
 		expect(result.success).toBe(false);
 	});
 
-	// The runtime half of the one-per-side tuples: a shape the type rules out must not parse either.
+	// The tuple types promise exactly one player per side. These rows check that parsing enforces it
+	// too.
 	describe("one player per side", () => {
 		test.for([
 			{ as: "an empty team", battle: { team: [] } },
 			{ as: "an empty opponent", battle: { opponent: [] } },
-			// `strictTuple`, not `tuple`, specifically for this row: a plain `v.tuple` would strip the
-			// second player and post a 2v2 as though it were a 1v1.
+			// A plain `v.tuple` would drop the second player and pass, posting a 2v2 as a 1v1. This row
+			// is why the schema uses `strictTuple`.
 			{ as: "a two-player team", battle: { team: [rawPlayer(), rawPlayer()] } },
 			{ as: "a two-player opponent", battle: { opponent: [rawPlayer(), rawPlayer()] } },
 		] as const)("rejects $as", ({ battle }) => {
@@ -90,9 +99,9 @@ describe("LastBattleSchema", () => {
 		);
 	});
 
-	// The property that matters now that the output is an Instant rather than a canonical string: a
-	// value stored by any version, whether compact as the API sends it or the extended form poll.ts
-	// writes, parses to the same instant, so it compares directly against a freshly fetched battle.
+	// A stored value can be in the compact form the API sends or the extended form that
+	// `serializeLastBattle` writes. Both have to parse to the same instant, or a stored value would
+	// not compare equal to the battle it came from.
 	test("parses the compact and extended forms to the same instant", () => {
 		expect(v.parse(LastBattleSchema, "20240115T143022.000Z")).toEqual(
 			v.parse(LastBattleSchema, "2024-01-15T14:30:22.000Z")
@@ -121,8 +130,8 @@ describe("isEligibleBattle", () => {
 		expect(isEligibleBattle(duelBattle())).toBe(false);
 	});
 
-	// Pinned because the gate, not BattleSchema, is what must reject this. See EligibleBattleSchema's
-	// JSDoc for the stuck state that would otherwise result.
+	// `BattleSchema` would reject this entry too, but that makes it `drifted`, and a drifted battle is
+	// retried every tick. It can never become valid, so it has to fail eligibility and be skipped.
 	test("rejects an entry with no opponent, so the scan skips it rather than reporting drift", () => {
 		expect(isEligibleBattle(rawBattle({ opponent: [] }))).toBe(false);
 	});

@@ -1,3 +1,12 @@
+/**
+ * @module
+ *
+ * Tests for `discord.ts`. `renderDeckGrid` is mocked and `fetch` is stubbed, so no image is drawn
+ * and nothing is sent. Formatting tests read the message objects directly, through
+ * {@link contextFor} and {@link fallbackFor}. Tests about sending decode the body that reached the
+ * stubbed `fetch`.
+ */
+
 import { Buffer } from "node:buffer";
 
 import * as v from "valibot";
@@ -14,7 +23,7 @@ import { BOB, rawBattle, rawCard, rawPlayer, WEBHOOK } from "@/testing/fixtures.
 vi.mock(import("@/deck-image.ts"), () => ({ renderDeckGrid: vi.fn<typeof renderDeckGrid>() }));
 vi.mock(import("@/log.ts"));
 
-/** A player with the tower HP fields the message's margin line is computed from. */
+/** A raw player with full tower HP, the fields the margin line is computed from. */
 function player(overrides: Record<string, unknown> = {}) {
 	return rawPlayer({
 		kingTowerHitPoints: 4008,
@@ -23,6 +32,7 @@ function player(overrides: Record<string, unknown> = {}) {
 	});
 }
 
+/** A validated Ladder battle between two {@link player}s, with overrides applied before parsing. */
 function makeBattle(overrides: Record<string, unknown> = {}): Battle {
 	return v.parse(
 		BattleSchema,
@@ -36,37 +46,36 @@ function makeBattle(overrides: Record<string, unknown> = {}): Battle {
 }
 
 /**
- * The shared battle context for a battle, built directly. Everything downstream of it is pure
- * formatting, so the tests below assert on it (and on {@link fallbackFor}) rather than posting a
- * message and decoding the strings back out of an HTTP body. The `fetch`-driven helpers further
- * down are for the tests that are genuinely about the send path.
+ * The `battleContext` for a battle. The content line and the embed bases are plain values, so tests
+ * of their formatting read them here instead of posting and decoding a request body. The helpers
+ * that read `fetch` calls are for tests about sending.
  */
 function contextFor(overrides: Record<string, unknown> = {}) {
 	return battleContext(makeBattle(overrides));
 }
 
 /**
- * The text-only message body for a battle, built directly. No render failure to stage, no POST.
+ * The text-only message for a battle, built directly, with no render failure to stage and no POST.
  *
- * The cast goes through `unknown` because {@link Payload} is the _post_-serialization shape, where
- * `timestamp` is a string; in memory it is still a `Temporal.Instant`, so the two are not
- * comparable and a single `as Payload` will not compile. That is the two shapes being correctly
- * different, not a missing type: production's own embed type lives in `discord.ts`.
+ * The cast goes through `unknown` because {@link Payload} describes the body after serialization,
+ * where `timestamp` is a string. Before serialization it is a `Temporal.Instant`, so TypeScript
+ * rejects a direct `as Payload`. The field reads in these tests don't touch `timestamp`.
  */
 function fallbackFor(overrides: Record<string, unknown> = {}) {
 	return buildFallbackMessage(contextFor(overrides)) as unknown as Payload;
 }
 
 /**
- * `form.get(...)`/`init.body` are broad union types (`string | File | …`); narrow to string before
- * parsing rather than `String(...)`-coercing a value that could be a `File`.
+ * Parses a request body part that should be a JSON string. `form.get()` and `init.body` have wide
+ * union types that include `File`, so this checks for a string instead of converting whatever
+ * arrives with `String()`.
  */
 function parseJsonString(value: unknown): unknown {
 	if (typeof value !== "string") throw new TypeError("expected a JSON string");
 	return JSON.parse(value);
 }
 
-/** The multipart body of the first webhook POST. */
+/** The `FormData` body of the first webhook POST, the image post. */
 function sentForm() {
 	const body = vi.mocked(fetch).mock.calls[0]?.[1]?.body;
 	if (!(body instanceof FormData)) throw new TypeError("expected a FormData body");
@@ -74,10 +83,9 @@ function sentForm() {
 }
 
 /**
- * A posted body as it comes back off the wire, derived from production's {@link Embed} rather than
- * restated, so a renamed embed field fails to compile here instead of silently leaving these tests
- * asserting the old shape. `timestamp` is the one genuine difference: in memory it is a
- * `Temporal.Instant`, and only `payloadJson`'s `JSON.stringify` turns it into the string below.
+ * A request body after serialization. The embed type comes from production's {@link Embed}, so
+ * renaming an embed field breaks these tests at compile time. The only change is `timestamp`, which
+ * `JSON.stringify` turns from a `Temporal.Instant` into a string.
  */
 type Payload = {
 	content: string;
@@ -85,23 +93,23 @@ type Payload = {
 	embeds: (Omit<Embed, "timestamp"> & { timestamp: string })[];
 };
 
-/** The decoded `payload_json` of the first webhook POST. */
+/** The parsed `payload_json` part of an image post's form, by default the first POST's. */
 function sentPayload(form: FormData = sentForm()) {
 	return parseJsonString(form.get("payload_json")) as Payload;
 }
 
-/** The decoded JSON body of the first webhook POST, for the text-only fallback path. */
+/** The decoded JSON body of the first webhook POST, when that POST is the text-only message. */
 function sentFallbackPayload() {
 	const [, init] = vi.mocked(fetch).mock.calls[0] ?? [];
 	return parseJsonString(init?.body) as Payload;
 }
 
-/** One embed field's value by name, or undefined when the embed didn't carry that field. */
+/** The value of the named field in one embed, or `undefined` when the embed has no such field. */
 function fieldValue(payload: Payload, name: string, embed = 0) {
 	return payload.embeds[embed]?.fields?.find((field) => field.name === name)?.value;
 }
 
-/** Every field name on an embed, in order, for asserting which fields were emitted at all. */
+/** The names of an embed's fields, in order, for checking which fields exist. */
 function fieldNames(payload: Payload, embed = 0) {
 	return payload.embeds[embed]?.fields?.map((field) => field.name) ?? [];
 }
@@ -127,8 +135,8 @@ describe("notifyBattle", () => {
 		expect(payload.embeds).toHaveLength(2);
 		expect(form.get("files[0]")).toBeInstanceOf(File);
 		expect(form.get("files[1]")).toBeInstanceOf(File);
-		// One render per side, so a regression that reused one grid for both embeds is caught here
-		// rather than only showing up as two identical images in Discord.
+		// One render per side. Reusing one grid for both embeds would otherwise only show up as two
+		// identical images in Discord.
 		expect(vi.mocked(renderDeckGrid)).toHaveBeenCalledTimes(2);
 		expect(init?.signal).toBeInstanceOf(AbortSignal);
 	});
@@ -168,7 +176,7 @@ describe("notifyBattle", () => {
 		await notifyBattle(WEBHOOK, makeBattle());
 
 		expect(fetchMock).toHaveBeenCalledTimes(2);
-		// The retry's body is the JSON text fallback, not the multipart FormData the first attempt sent.
+		// The retry sends the text-only JSON string, not the `FormData` of the first attempt.
 		expect(typeof vi.mocked(fetch).mock.calls[1]?.[1]?.body).toBe("string");
 	});
 
@@ -204,10 +212,9 @@ describe("notifyBattle", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
-	// battleTime is a Temporal.Instant in the domain and only becomes a string when payloadJson
-	// stringifies the body, via Instant.prototype.toJSON. Asserted on the serialized payload rather
-	// than on embedBase(), because what matters is the bytes Discord receives: reading the embed
-	// object directly would see the Instant and would not catch a serialization regression.
+	// The embed holds `battleTime` as a `Temporal.Instant`, and it only becomes a string when
+	// `payloadJson` serializes the body. The test reads the serialized body, since that string is
+	// what Discord parses; reading the embed object would only see the `Instant`.
 	test("serializes the embed timestamp as an ISO string Discord can parse", async () => {
 		await notifyBattle(WEBHOOK, makeBattle());
 
@@ -220,7 +227,7 @@ describe("notifyBattle", () => {
 	test("deep-links each side's embed to that side's own battle log", () => {
 		const { me, opponent, embedBase } = contextFor();
 
-		// Soft: the failure mode worth seeing whole is both sides pointing at the same player.
+		// Soft assertions, so that both sides linking to the same player shows up as two failures.
 		expect.soft(embedBase(me).author.url).toBe("https://royaleapi.com/player/ABC123/battles");
 		expect.soft(embedBase(opponent).author.url).toBe("https://royaleapi.com/player/DEF456/battles");
 	});
@@ -229,14 +236,14 @@ describe("notifyBattle", () => {
 		test("names the game mode, with its underscores spaced out", () => {
 			const { me, opponent, embedBase } = contextFor({ gameMode: { name: "Path_of_Legends" } });
 
-			// Both sides share one footer object, so both must read the same mode.
+			// Both embeds use the same footer object, so both show the mode.
 			expect.soft(embedBase(me).footer.text).toBe("Path of Legends");
 			expect.soft(embedBase(opponent).footer.text).toBe("Path of Legends");
 		});
 
 		test("falls back to the battle type when the entry carries no game mode", () => {
-			// gameMode is optional on BattleSchema (modes without one exist), and an empty footer would
-			// leave the embed with no indication of what was played.
+			// `gameMode` is optional in `BattleSchema`. Without this fallback the footer would not say
+			// what kind of battle it was.
 			const { me, embedBase } = contextFor({ gameMode: undefined, type: "PvP" });
 
 			expect(embedBase(me).footer.text).toBe("PvP");
@@ -244,9 +251,8 @@ describe("notifyBattle", () => {
 	});
 
 	describe("trophy fields", () => {
-		// One table rather than four near-identical tests: every row is the same call with a different
-		// trophyChange, and the sign rule (+ only when positive, nothing on 0 or on the already-signed
-		// negative) is easiest to read as a column.
+		// Each row changes only `trophyChange`. Side by side, the rows show the sign rule: `+` before a
+		// gain, nothing before 0, and a loss keeps the minus sign it already has.
 		test.for([
 			{ change: 31, as: "a positive change with a + sign", expected: "5,432 → 5,463 (+31)" },
 			{ change: -18, as: "a negative change with one minus sign", expected: "5,432 → 5,414 (-18)" },
@@ -275,9 +281,9 @@ describe("notifyBattle", () => {
 
 			const payload = sentPayload();
 
-			// Embed 0 is the tracked player's, embed 1 the opponent's. Each labels the same pair of
-			// numbers from its own side, so the two embeds' values are mirror images. Soft, so a
-			// swapped perspective reports all four cells at once rather than only the first mismatch.
+			// Embed 0 belongs to the tracked player and embed 1 to the opponent. Each labels the same
+			// two rows from its own side, so the values swap between them. Soft assertions report all
+			// four cells when the sides are mixed up.
 			expect.soft(fieldValue(payload, "Trophies", 0)).toBe("5,000 → 5,010 (+10)");
 			expect.soft(fieldValue(payload, "Opponent Trophies", 0)).toBe("4,800 → 4,795 (-5)");
 			expect.soft(fieldValue(payload, "Trophies", 1)).toBe("4,800 → 4,795 (-5)");

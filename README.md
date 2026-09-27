@@ -1,12 +1,10 @@
 # stalk
 
-Watches Clash Royale players and posts their matches to Discord.
+Posts Clash Royale players' battles to Discord.
 
-A [Deno](https://deno.com/) app (deployed on [Deno Deploy](https://deno.com/deploy), built with
-[Hono](https://hono.dev/)) that polls one or more players' battle logs every minute and posts each
-new result to that player's own webhook. The message text carries the outcome, crown score, and HP
-margin. Below it sits one embed per side, with trophies, tower troop, and the full deck rendered as
-a card-image grid.
+stalk is a [Deno](https://deno.com/) app for [Deno Deploy](https://deno.com/deploy). Once a minute it
+checks the battle log of every player you track and posts each player's newest 1v1 to that player's
+Discord webhook, with both decks drawn as card grids.
 
 <a href="docs/architecture-dark.png">
 	<picture>
@@ -16,79 +14,93 @@ a card-image grid.
 	</picture>
 </a>
 
+## What a post contains
+
+The message text is the result, the score and the HP margin, and it is also what the push
+notification shows:
+
+```
+# Victory
+## Alice  2 — 1  Bob
+Won by 1,400hp
+```
+
+The margin is the HP of the winner's weakest tower still standing. A draw has no margin line.
+
+Below the text are two embeds, one for each player. Each embed has:
+
+- the player's name, linked to their battle history on [RoyaleAPI](https://royaleapi.com/);
+- their deck, as a 1080×794 image of the eight cards in two rows;
+- their trophies before and after the battle, when the API reports them;
+- their tower troop as the thumbnail;
+- the game mode and the battle's time.
+
+If a deck image can't be rendered, or Discord rejects the upload, the battle posts as a single
+embed that lists both decks and tower troops as text.
+
 ## How it works
 
-1. `Deno.cron` fires every minute and polls every tracked player concurrently. One player's failure
-   can't sink the others, and each tick ends with a one-line tally
-   (`posted` / `seeded` / `skipped` / `drifted` / `failed`).
-2. `clash-royale.ts` fetches the battle log through the
-   [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy), which provides the stable outbound IP that
-   the Clash Royale API token is whitelisted against. Deno Deploy has none of its own.
-3. `poll.ts` compares the newest eligible battle's timestamp against a lastBattle value in Deno KV.
-   Each player gets its own key, `["lastBattle", tag]`, with a 30-day TTL, so entries for players
-   you stop tracking clean themselves up.
-4. **First run:** `poll.ts` seeds lastBattle without posting, so you don't get a notification about
-   a battle from last week.
-5. **After that:** it posts the new battle to the webhook, and only then advances lastBattle. If the
-   post succeeds but the write fails, the next tick re-posts rather than dropping the battle. A rare
-   duplicate beats a silent loss.
+Every minute, `Deno.cron` runs a tick:
 
-`src/schema.ts` ignores 2v2 and Duel battles (a Duel concatenates 2–3 decks into one battle, not a
-single 1v1 loadout). The log arrives newest-first, so the first entry to pass a cheap 1v1 check, one
-team entry holding at most one deck, is the newest one, and the scan stops there. Only that entry is
-fully validated, so validation runs once per log rather than once per entry.
+1. Read every player's stored lastBattle, the time of the last battle handled, from Deno KV in a
+   single command.
+2. For each player, at the same time: fetch the battle log from the Clash Royale API through the
+   [RoyaleAPI proxy](https://docs.royaleapi.com/proxy.html). The official API only accepts a token
+   from the IP addresses it was created for, and Deno Deploy has no fixed outbound IP, so the token
+   is created for the proxy's address instead.
+3. Take the first 1v1 in the log, which arrives newest first. 2v2s and Duels are skipped. Only this
+   entry is fully validated.
+4. Compare its time with the stored lastBattle:
+   - Nothing stored, for a new player or one inactive for 30 days: store the time without posting.
+     Adding a player never posts an old battle.
+   - The same time: nothing to do.
+   - A newer time: post the battle to the webhook, then store the time.
+5. Log one line per tick that counts each outcome: `posted`, `seeded`, `skipped`, `drifted` and
+   `failed`.
 
-The scan skips an entry that fails the cheap check. If the newest eligible entry then fails full
-validation, that's `drifted` rather than `skipped`: lastBattle stays put so the battle retries once
-the schema catches up, instead of the tick reading as a quiet one.
+Delivery rules that follow from this:
 
-**At most one battle posts per tick, and it is the newest one.** A player who finishes several
-battles between ticks has the intermediate ones skipped; lastBattle jumps straight to the newest.
-That's deliberate: it keeps a tick to a single fetch, a single validation, and a single post per
-player.
+- A player gets at most one post per tick, for their newest battle. If they finish two battles
+  within a minute, only the second one posts.
+- lastBattle is written only after the post succeeds. A failed post is retried on the next tick. If
+  the post succeeds but the write fails, the next tick posts the battle again: a duplicate is
+  preferred over a lost battle.
+- If the newest 1v1 doesn't match the expected schema, the tick reports `drifted` and logs the
+  validation issues. Nothing posts, and the battle is retried every tick until the schema in
+  `src/schema.ts` is fixed.
+- One player's failure doesn't affect the others.
 
 ## Setup
 
 ### Prerequisites
 
-- [Deno](https://deno.com/) 2.9.6 and [pnpm](https://pnpm.io/) 12.x — both pinned by
-  `package.json`'s `devEngines`, and pnpm will fetch the pinned Deno for you
-- A [Clash Royale API](https://developer.clashroyale.com/) token, whitelisted to the
-  [RoyaleAPI proxy](https://docs.royaleapi.com/#/proxy) IP
-- A Discord channel [webhook URL](https://support.discord.com/hc/en-us/articles/228383668) per
-  player you want to track
+- [pnpm](https://pnpm.io/) 12. `package.json` pins pnpm 12.6.0 and Deno 2.9.6 in `devEngines`, and
+  pnpm downloads that Deno into `node_modules`, so you don't need Deno installed.
+- A [Clash Royale API](https://developer.clashroyale.com/) token, created for the IP address listed
+  in the [RoyaleAPI proxy docs](https://docs.royaleapi.com/proxy.html).
+- A [Discord webhook URL](https://support.discord.com/hc/en-us/articles/228383668) for each player
+  you want to track. Several players can share one.
 
-### 1. Install
+### Install
 
 ```sh
 pnpm install
 ```
 
-pnpm owns `node_modules`; Deno only consumes it. Two files configure that. `.npmrc` points the
-`@jsr` scope at `https://npm.jsr.io/`, which is how the JSR-only `@std/*` packages resolve — they're
-declared in `package.json` as npm aliases (`"@std/async": "npm:@jsr/std__async@^1.5.0"`), so the
-import specifier stays `@std/async` while the package on disk is `@jsr/std__async`. Registry and
-auth settings belong in `.npmrc`; it's the only pnpm config file that still reads them. Everything
-else lives in `pnpm-workspace.yaml`, where `virtualStoreType: global` shares one virtual store
-across every project on the machine, leaving `node_modules` holding only symlinks into it. pnpm
-disables that automatically when it detects CI, where a cold cache would make it a slowdown rather
-than a speed-up.
-
-### 2. Configure
-
-Copy `.env.example` to `.env` (gitignored) and fill it in:
+### Configure
 
 ```sh
 cp .env.example .env
 ```
+
+Fill in `.env`:
 
 ```sh
 CR_API_TOKEN=...
 TARGETS='[{ "tag": "#A9AA008R", "webhook": "https://discord.com/api/webhooks/aaa/bbb" }]'
 ```
 
-`TARGETS` is a JSON array pairing each player tag (keep the leading `#`) with the webhook to notify.
-Add as many as you like:
+`TARGETS` is a JSON array with one entry per player:
 
 ```json
 [
@@ -97,126 +109,121 @@ Add as many as you like:
 ]
 ```
 
-> **Wrap the `TARGETS` value in single quotes.** The `#` in a player tag would otherwise start a
-> comment and silently truncate the value.
+Keep the single quotes around the `TARGETS` value. Without them, the value ends at the `#` of the
+first tag. Tags are case-insensitive, and the `#` is optional.
 
-A malformed `TARGETS` fails soft: it logs once and polls nobody, instead of throwing on every tick.
-A missing `CR_API_TOKEN` skips each tick with a heartbeat log, so a misconfigured deploy keeps
-writing a line every minute instead of going quiet.
+A missing or invalid `TARGETS` is logged and polls nobody. A missing `CR_API_TOKEN` logs a warning
+on every tick and skips it.
 
-### 3. Run locally
+### Run locally
 
 ```sh
 pnpm start
 ```
 
-Runs with `.env` loaded, serving `GET /` (health check) and `GET /kv/last-battle` (a read-only dump
-of the stored lastBattle values). `-P` loads the `default` permission set from `deno.jsonc` instead
-of prompting per-permission. `Deno.cron` registers at startup and fires on the minute against Deno's
-local scheduler.
+This starts the server on port 8000 with `.env` loaded and registers the cron job with Deno's local
+scheduler, which fires on the minute. Two routes are available:
 
-That permission set's `net.allow` list is the one entry worth knowing about, since a host missing
-from it stops the dev server on a permission prompt rather than failing fast. Where each entry comes
-from:
+- `GET /` returns `{ "status": "ok" }`.
+- `GET /kv/last-battle` returns every stored lastBattle value by tag. KV holds only player tags and
+  battle times, so the route has no authentication.
 
-| Host                         | Source                                                                                   |
-| ---------------------------- | ---------------------------------------------------------------------------------------- |
-| `0.0.0.0:8000`               | `Deno.serve`'s default bind — `src/main.ts` sets no port                                 |
-| `proxy.royaleapi.dev`        | `PROXY_BASE` in `src/clash-royale.ts`                                                    |
-| `discord.com`                | the `webhook` host in your `TARGETS`                                                     |
-| `api-assets.clashroyale.com` | the host inside the API's `iconUrls`, fetched by the CDN fallback in `src/deck-image.ts` |
+Locally, KV data lives in Deno's cache directory and persists between runs.
 
-Two caveats. `TARGETS` only validates that the webhook is a URL, so a webhook on `ptb.discord.com`,
-`canary.discord.com`, or `discordapp.com` needs its host added by hand. And this is a dev-only
-convenience. Deno Deploy never loads it, `pnpm test` runs without `-P`, and `ffi` is open in
-the same set (sharp's libvips addon needs it, and native code runs outside Deno's permission
-system). The list catches an unnoticed new outbound host. It is not a security boundary.
+`pnpm start` runs Deno with `-P`, which applies the `default` permission set in `deno.jsonc`. Its
+network allowlist covers the local server, `proxy.royaleapi.dev`, `discord.com` and
+`api-assets.clashroyale.com`, the CDN for card art that `images/` doesn't have. A webhook on another
+host, such as `ptb.discord.com` or `discordapp.com`, needs that host added; otherwise Deno prompts
+for permission in a terminal and refuses the request elsewhere. Deno Deploy ignores this set and
+runs the app with every permission.
 
-### 4. Deploy
+### Deploy
 
-Set `CR_API_TOKEN` and `TARGETS` in the Deno Deploy project (dashboard), then connect the project to
-this GitHub repo. Deno Deploy builds and deploys on every push, so there's no local deploy command.
-It also provisions Deno KV and `Deno.cron` for you, with no namespace to create. The `images/` card
-art lives in the repo and ships with it; the renderer depends on it in production.
+1. In the [Deno Deploy console](https://console.deno.com/), create an app from this GitHub
+   repository. `deno.jsonc` supplies the build settings: install with
+   `pnpm install --frozen-lockfile -P`, then run `src/main.ts`.
+2. Under Databases, provision a Deno KV database and assign it to the app.
+3. Add `CR_API_TOKEN` and `TARGETS` as environment variables in the Production context only.
+
+Each push to the default branch then deploys. The card art in `images/` ships with the code, and
+the renderer reads it from there.
+
+Deno Deploy gives every Git branch its own timeline, with its own KV database, and runs the cron
+job on each one. Branch timelines use the Development context, so with the variables set only for
+Production, a branch deployment skips every tick instead of posting battles a second time.
+
+On the free tier, one tick a minute is about 43,800 ticks a month. Each tick is one cron request
+and one KV read, well within the free quotas of 1,000,000 requests and 1,000,000 KV read units.
 
 ## Commands
 
 ```sh
-pnpm start  # Local dev server
-
-pnpm test     # Vitest suite
-pnpm preview  # Render a hardcoded deck to scripts/preview.png, for eyeballing layout changes
-pnpm measure  # Report the transparent margins baked into the card icons
-
-pnpm fmt         # Format (oxfmt)
-pnpm lint        # oxlint && deno lint && deno check
-pnpm lint-agent  # Same three checks, oxlint in --format=agent
-pnpm sync-types  # Regenerate the vendored deno.d.ts, after a Deno version change
+pnpm start       # Run locally with .env
+pnpm test        # Run the Vitest suite
+pnpm fmt         # Format with oxfmt (pnpm fmt --check to verify)
+pnpm lint        # oxlint, deno lint and deno check (type checking included)
+pnpm lint-agent  # The same checks, with oxlint output formatted for AI agents
+pnpm preview     # Render a sample deck to scripts/preview.png
+pnpm measure     # Print the transparent margins of the card art in images/
+pnpm sync-types  # Regenerate deno.d.ts after changing the Deno version
 ```
 
-`pnpm lint` covers linting _and_ typechecking. There's no separate `tsc` step. CI runs install,
-format check, lint, and test on every pull request and every push to `main`.
+CI runs `pnpm fmt --check`, `pnpm lint` and `pnpm test` on every pull request and every push to
+`main`.
 
-## Configuration reference
+## Configuration
 
-| Name           | Kind     | Purpose                                                                      |
-| -------------- | -------- | ---------------------------------------------------------------------------- |
-| `CR_API_TOKEN` | Env var  | Bearer token for the Clash Royale API, whitelisted to the RoyaleAPI proxy IP |
-| `TARGETS`      | Env var  | JSON array of `{ tag, webhook }` pairs, one per tracked player               |
-| Deno KV        | KV store | Holds the `["lastBattle", tag]` values, 30-day TTL                           |
+| Name           | Where   | Purpose                                                        |
+| -------------- | ------- | -------------------------------------------------------------- |
+| `CR_API_TOKEN` | Env var | Clash Royale API token, created for the RoyaleAPI proxy's IP   |
+| `TARGETS`      | Env var | JSON array of `{ tag, webhook }`, one entry per tracked player |
+| lastBattle     | Deno KV | Key `["lastBattle", tag]`: the time of the last handled battle |
 
-`src/env.ts` reads and validates both env vars once at module load, from `.env` locally and from the
-project settings in production. KV holds nothing secret, which is why the lastBattle route is safe
-to expose.
+Each lastBattle entry expires 30 days after its last write, so a player removed from `TARGETS`
+leaves nothing behind in KV.
 
 ## Project layout
 
 ```
-stalk/
-├── src/                    # application code — see the table below
-│   ├── __mocks__/          # manual module mocks for vi.mock
-│   └── testing/            # KV spy + raw API fixtures
-├── images/                 # 180 card-art PNGs, keyed by card id (plus -evo/-hero variants)
-├── scripts/
-│   ├── preview.ts          # pnpm preview — render a deck to preview.png
-│   └── measure.ts          # pnpm measure — card icons' transparent margins
-├── docs/
-│   └── deck-rendering.md   # every deck constant's value and rationale
-├── .github/
-│   └── workflows/
-│       └── ci.yml          # Socket-proxied install, fmt --check, lint, test — PRs and main
-├── deno.jsonc              # dev permission set, @/ alias, Deno compilerOptions, deploy config
-├── package.json            # scripts, deps, devEngines pins (@/ alias lives in deno.jsonc)
-├── pnpm-lock.yaml
-├── pnpm-workspace.yaml     # virtualStoreType, minimumReleaseAge
-├── .npmrc                  # @jsr scope → npm.jsr.io
-├── deno.d.ts               # vendored Deno types, for oxlint (pnpm sync-types)
-├── tsconfig.json           # read by oxlint/tsgolint, not by Deno
-├── oxlint.config.ts
-├── oxfmt.config.ts
-└── vitest.config.ts
+src/
+├── main.ts            Entry point: HTTP routes, the cron job, the per-tick tally
+├── poll.ts            One tick: read lastBattle, poll each player, post, write lastBattle
+├── clash-royale.ts    Fetches a battle log and picks the newest 1v1
+├── discord.ts         Builds and posts the webhook message, with the text-only fallback
+├── deck-image.ts      Renders a deck as a PNG grid with sharp
+├── schema.ts          Valibot schemas for the API responses and the env vars
+├── env.ts             Reads and validates CR_API_TOKEN and TARGETS
+├── log.ts             Leveled, colored console output
+├── testing/           Raw API fixtures and the in-memory KV spy
+└── __mocks__/         The manual Vitest mock for log.ts
+images/                Card art: <id>.png, <id>-evo.png and <id>-hero.png, all 285×420
+scripts/
+├── preview.ts         pnpm preview: renders a sample deck to scripts/preview.png
+└── measure.ts         pnpm measure: prints the card-art margins behind the grid constants
+docs/                  The architecture diagram, in light and dark versions
 ```
 
-The `src/` modules, each with a `*.test.ts` beside it:
+The modules in `src/` are listed in call order, from the cron job down to the renderer, followed by
+the modules they all share. Each one has a `*.test.ts` file beside it, and its comments explain
+each constant and design choice, including the measurements that support them.
 
-| Module            | Role                                                                                    |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| `main.ts`         | Entry point: HTTP routes, cron registration, per-tick tally                             |
-| `poll.ts`         | The polling loop — lastBattle read/compare/advance, one outcome per player              |
-| `clash-royale.ts` | Battle-log fetch and newest-eligible-battle selection                                   |
-| `discord.ts`      | Webhook message construction and delivery, with a text-only fallback                    |
-| `deck-image.ts`   | Deck grids composited from local card art via [sharp](https://sharp.pixelplumbing.com/) |
-| `schema.ts`       | Valibot schemas for the API shapes and the env vars                                     |
-| `env.ts`          | Env vars read and validated once at module load                                         |
-| `log.ts`          | Leveled, colored console output                                                         |
+Configuration at the repository root:
 
-`src/deck-image.ts` composites deck grids from the local `images/` mirror rather than fetching per
-render, and ships them at native resolution with no downscale step. An 8-card grid is 1080 px wide
-and about 3.28 MiB, stored uncompressed to keep encode CPU down. Nothing is cached between renders:
-Deno Deploy cold-starts the app on essentially every tick, so there is no state for a cache to live
-in. A CDN fetch is the fallback for a card too new to be in the mirror; if rendering fails outright,
-the battle still posts as a text-only embed.
-
-Working on the code? `.claude/CLAUDE.md` documents the toolchain setup, the guarantees, and the
-traps. [`docs/deck-rendering.md`](docs/deck-rendering.md) documents every deck-rendering
-constant's value and rationale.
+- `package.json` declares the dependencies and the `pnpm` scripts, and pins pnpm and Deno in
+  `devEngines`. `pnpm-lock.yaml` and `pnpm-workspace.yaml` are pnpm's lockfile and settings.
+- `.npmrc` resolves the `@jsr` scope from `npm.jsr.io`, where the `@std/*` packages come from.
+- `deno.jsonc` holds Deno's compiler options, the unstable KV and cron APIs, the `@/` import alias,
+  the permission set `pnpm start` uses, and the Deno Deploy build settings.
+- `tsconfig.json` is the TypeScript config for oxlint's type-aware rules, and Vitest takes the `@/`
+  alias from its `paths`. `deno check` reads `deno.jsonc` instead.
+- `deno.d.ts` is a copy of Deno's type declarations, so that oxlint can resolve `Deno.*`.
+  `pnpm sync-types` regenerates it.
+- `oxlint.config.ts`, `oxfmt.config.ts` and `vitest.config.ts` configure linting, formatting
+  (import order included) and tests.
+- `.github/workflows/ci.yml` installs dependencies through Socket Firewall, then checks formatting,
+  lints and runs the tests.
+- `.env.example` is the template for `.env`, and `.vscode/settings.json.example` sets up the Deno
+  and Vitest extensions in VS Code.
+- `.claude/`, `.agents/skills/` and `skills-lock.json` hold instructions and skills for AI coding
+  agents. `.claude/skills/` links into `.agents/skills/`, and `skills-lock.json` records where each
+  skill came from.

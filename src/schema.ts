@@ -1,21 +1,25 @@
 /**
  * @module
  *
- * Valibot schemas for the Clash Royale API shapes and the two env vars. Only the fields we actually
- * use are declared, and `v.object` strips unknown keys, so the API adding fields never breaks
- * parsing.
+ * Valibot schemas for the Clash Royale API responses the app reads and for its two env vars.
+ *
+ * The API schemas declare only the fields the app uses. `v.object` drops every other key, so a new
+ * field in the API never breaks parsing, and parsed values carry only what the app needs. The notes
+ * on individual fields describe what live battle logs, fetched through the RoyaleAPI proxy, actually
+ * contain.
  */
 
 import * as v from "valibot";
 
 // ══════════════════════════════════════════ PRIMITIVES ═══════════════════════════════════════════
 
-/** Any absolute URL: card art from the API, and the webhook in TARGETS. */
+/** An absolute URL. Used for card art from the API and for each webhook in `TARGETS`. */
 const UrlSchema = v.pipe(v.string(), v.url());
 
 /**
- * Canonical player tag: uppercase with a leading "#". Config and API tags both normalize here, so
- * consumers (player lookup, KV lastBattle keys) can compare them with plain `===`.
+ * A player tag in canonical form: uppercase, with a leading `#`. A `TARGETS` entry written as
+ * `abc123` or `#ABC123` therefore reaches the same KV key and the same API request, and tags parsed
+ * from battles have the same shape.
  */
 const TagSchema = v.pipe(
 	v.string(),
@@ -24,16 +28,16 @@ const TagSchema = v.pipe(
 );
 
 /**
- * Clash Royale sends compact ISO 8601 (e.g. "20240115T143022.000Z"); Temporal parses that and
- * rejects invalid dates, which is why the parse doubles as the validation. There is no cheaper
- * check to swap in. Valibot's `iso*` actions don't apply: they all reject the compact form, and
- * even on the extended form they are regex shape checks that accept impossible dates like Feb 31.
+ * A battle timestamp, parsed into a `Temporal.Instant`. The API sends compact ISO 8601, such as
+ * `20260925T194522.000Z`, which `Temporal.Instant.from` accepts. The parse doubles as the
+ * validation, since `Temporal` rejects a malformed string and an impossible date such as February
+ * 31 alike. Valibot's `iso*` actions can't replace it: their patterns require the extended form
+ * with `-` and `:` separators, and as regexes they accept February 31.
  *
- * Yields the `Temporal.Instant` itself rather than a formatted string. Consumers want the instant
- * (`poll.ts` compares two of them), so formatting here would only mean re-parsing there.
- * Serializing is left to the two boundaries that need it: `poll.ts`'s KV write, which must format
- * explicitly because Deno KV can't structured-clone an `Instant`, and `discord.ts`'s webhook body,
- * where `JSON.stringify` reaches `Temporal.Instant.prototype.toJSON` on its own.
+ * The output stays an `Instant` because `poll.ts` compares two of them. It becomes a string only
+ * where one is needed: {@link serializeLastBattle} formats it for the KV write, because Deno KV
+ * cannot store a `Temporal.Instant`, and the Discord payload gets one from `JSON.stringify`, which
+ * calls `Temporal.Instant.prototype.toJSON`.
  */
 const BattleTimeSchema = v.pipe(
 	v.string(),
@@ -51,21 +55,25 @@ const BattleTimeSchema = v.pipe(
 
 const CardSchema = v.object({
 	/**
-	 * Numeric card id (e.g. 28000011), always present on battle-log cards including `supportCards`.
-	 * The deck renderer's local-art lookup key (`<id>.png` in `images/`).
+	 * The card's numeric id. Every card in `cards` and `supportCards` has one. The deck renderer uses
+	 * it as the file name of the card's art in `images/`.
 	 */
 	id: v.number(),
 	name: v.string(),
 	/**
-	 * Evolutions report `evolutionLevel: 1`, Heroes report `2`; ordinary cards omit it. `fallback`
-	 * coerces any other/unknown value to `undefined`. `optional` nests inside `fallback`, not
-	 * outside, since a fallback's replacement value must match the wrapped schema's output type.
+	 * The form the card was played in: `1` for its Evolution, `2` for its Hero. The API omits the
+	 * field for a card played in its ordinary form. Any other value falls back to `undefined`, so a
+	 * level the API adds later renders as the ordinary card instead of failing the whole battle.
+	 *
+	 * `optional` sits inside `fallback` because a fallback value must match the output type of the
+	 * schema it wraps, and `undefined` is only part of that type once `optional` is.
 	 */
 	evolutionLevel: v.fallback(v.optional(v.picklist([1, 2])), undefined),
 	/**
-	 * CDN card art. `medium` is always present; `evolutionMedium`/`heroMedium` exist only on
-	 * Evolution/Hero cards (matching `evolutionLevel` 1/2), so the deck renderer picks the variant
-	 * and falls back to `medium`.
+	 * The card's art on the CDN. `medium` is always present. `evolutionMedium` and `heroMedium`
+	 * appear on cards that have those forms, whether or not this copy was played in one, and a card
+	 * played at `evolutionLevel` 1 or 2 always carries the matching key. The renderer reads these
+	 * URLs only for a card with no file in `images/`.
 	 */
 	iconUrls: v.object({
 		medium: UrlSchema,
@@ -75,13 +83,14 @@ const CardSchema = v.object({
 });
 
 /**
- * How each `evolutionLevel` manifests: the local-art filename suffix, the `iconUrls` variant the
- * CDN fallback prefers, and the display prefix. Level 0 stands for an ordinary card, which is what
- * lets consumers look a card up unconditionally instead of each branching on whether it evolved.
+ * What each `evolutionLevel` means to the rest of the app: the suffix on the card's art file in
+ * `images/`, the `iconUrls` key the CDN fallback fetches, and the prefix `discord.ts` puts before
+ * the card's name. Level 0 stands for an ordinary card, so every consumer looks a card up the same
+ * way and none of them branches on whether it evolved.
  *
- * One table rather than one per consumer. Adding a level to {@link CardSchema} fails to compile
- * here, at the single place that decides what a level means, instead of silently falling through to
- * base art in the renderer and a bare name in the Discord message.
+ * The `satisfies` clause requires an entry for every level {@link CardSchema} admits. A level added
+ * to that picklist without an entry here fails to compile in this file. Without the check, the new
+ * level would render the card's base art and print its bare name.
  */
 const EVOLUTIONS = {
 	0: { suffix: "", iconKey: "medium", prefix: "" },
@@ -92,7 +101,10 @@ const EVOLUTIONS = {
 	{ suffix: string; iconKey: keyof Card["iconUrls"]; prefix: string }
 >;
 
-/** The {@link EVOLUTIONS} entry for a card as it was played; an ordinary card resolves to level 0. */
+/**
+ * The {@link EVOLUTIONS} entry for a card as it was played. A card with no `evolutionLevel` gets the
+ * level 0 entry.
+ */
 function evolutionOf(card: Card) {
 	return EVOLUTIONS[card.evolutionLevel ?? 0];
 }
@@ -102,41 +114,56 @@ const PlayerSchema = v.object({
 	name: v.string(),
 	crowns: v.number(),
 	/**
-	 * Trophy progression for the match. Present on trophy-road/ladder games, absent in modes without
-	 * trophies (tournaments, friendlies, Path of Legend). Trophies after the match are derived as
-	 * `startingTrophies + trophyChange`.
+	 * The trophy count before the battle and the change the battle made to it. The API sends the two
+	 * independently, and either can be missing in any mode. Friendlies carry `startingTrophies`
+	 * without `trophyChange`, and some Path of Legend battles carry only `trophyChange`. `discord.ts`
+	 * shows a trophy row only when `startingTrophies` is present, and treats a missing `trophyChange`
+	 * as 0.
 	 */
 	startingTrophies: v.optional(v.number()),
 	trophyChange: v.optional(v.number()),
 	/**
-	 * Tower HP remaining at match end. The API omits destroyed towers, so we backfill them as 0. A
-	 * tower is destroyed exactly when its HP hits 0. King defaults to 0; the princess array is always
-	 * padded to its full two.
+	 * Tower HP left when the battle ended. The API reports a destroyed king tower as 0, so the
+	 * default of 0 only covers a missing field. It leaves destroyed princess towers out of the array:
+	 * two entries when both stand, one after the opponent's first crown, and `null` once both are
+	 * gone. The transform pads the array back to a pair, so a destroyed tower reads as 0 HP.
 	 */
 	kingTowerHitPoints: v.optional(v.number(), 0),
 	princessTowersHitPoints: v.pipe(
 		v.nullish(v.array(v.number()), []),
 		v.transform((hp): [number, number] => [hp[0] ?? 0, hp[1] ?? 0])
 	),
+	/**
+	 * The deck as played. That is 8 cards in a normal 1v1, but some modes send an empty array, for
+	 * example `All_Random_Princess_Friendly`.
+	 */
 	cards: v.array(CardSchema),
+	/** The tower troop: one card, or an empty array in modes that have none. */
 	supportCards: v.array(CardSchema),
 });
 
 const BattleSchema = v.object({
+	/**
+	 * The API's battle category, such as `PvP`, `pathOfLegend` or `friendly`. The embed footer falls
+	 * back to it when `gameMode` is missing.
+	 */
 	type: v.string(),
 	battleTime: BattleTimeSchema,
+	/**
+	 * The specific mode, such as `Ladder` or `Ranked1v1_NewArena2`. Every battle in the logs has one.
+	 * It stays optional so that a battle without it still posts, with `type` in the footer.
+	 */
 	gameMode: v.optional(v.object({ name: v.string() })),
 	/**
-	 * Exactly one player per side, which {@link EligibleBattleSchema} already enforces before this
-	 * schema ever runs. Declared as a tuple rather than `v.pipe(v.array(…), v.length(1))` so the
-	 * _type_ carries it too: `v.length` is an action and leaves the output `Player[]`, whereas a
-	 * tuple's index 0 is a known position, so `noUncheckedIndexedAccess` doesn't widen `team[0]` to
-	 * `Player | undefined`. That is what lets `discord.ts` stop re-checking a guarantee it has.
+	 * Exactly one player per side. As a tuple, `team[0]` is typed `Player` rather than `Player |
+	 * undefined` under `noUncheckedIndexedAccess`, so `discord.ts` destructures both sides without a
+	 * guard. `v.pipe(v.array(...), v.length(1))` would check the same thing at runtime but leave the
+	 * type as `Player[]`.
 	 *
-	 * `strictTuple`, not `tuple`, unlike the `v.object`s here that strip unknown keys: a plain
-	 * `v.tuple` would silently drop a second entry, posting a 2v2 as though it were a 1v1. Stripping
-	 * an unknown _key_ is harmless forward-compatibility; stripping a _player_ is a wrong post.
-	 * Rejecting instead surfaces it as `drifted`.
+	 * `strictTuple` rejects extra entries, where `v.tuple` would drop them silently and post a 2v2 as
+	 * if it were a 1v1. A battle with an extra player fails validation instead and reports as
+	 * `drifted`. {@link EligibleBattleSchema} filters out 2v2s before this schema runs, so this only
+	 * fails if the two schemas ever disagree.
 	 */
 	team: v.strictTuple([PlayerSchema]),
 	opponent: v.strictTuple([PlayerSchema]),
@@ -145,33 +172,38 @@ const BattleSchema = v.object({
 // ════════════════════════════════════════════ DERIVED ════════════════════════════════════════════
 
 /**
- * Cards in one deck; a Duel concatenates 2–3 decks into `cards`, so a longer array is the tell.
+ * The number of cards in one deck. A Duel puts two or three decks into a single `cards` array, 16
+ * or 24 cards, so any longer array marks the entry as a Duel.
  *
- * @internal Exported for tests only. Production reads it through {@link EligibleBattleSchema} in
- *   this file.
+ * @internal Exported for tests and their fixtures. Production code reads it only through
+ *   {@link EligibleBattleSchema}.
  */
 const DECK_SIZE = 8;
 
 /**
- * The cheap 1v1 gate run over the whole battlelog before full validation: exactly one `team` entry
- * whose `cards` is at most one deck, against exactly one `opponent`. A Duel is also a single `team`
- * entry, but concatenates 2–3 decks (16 or 24 cards) into `cards`. The card count, not
- * `gameMode.name` (which varies across duel variants), is the structural tell.
+ * The cheap check that decides which battle-log entries count as a 1v1. An eligible entry has
+ * exactly one `team` player whose `cards` hold at most one deck, exactly one `opponent`, and a
+ * valid `battleTime`. `latestBattle` scans the log with it and runs the full {@link BattleSchema}
+ * only on the first entry that passes.
  *
- * The `opponent` check is what keeps {@link BattleSchema}'s one-per-side tuples from creating a
- * stuck state. Without it, an entry missing its opponent would pass this gate, win selection, then
- * fail full validation as `drifted`. That holds lastBattle in place and retries forever against a
- * shape that can never become valid. Checked here instead, such an entry is merely ineligible, so
- * the scan walks past it like a 2v2. It only reads the length, leaving the contents to
- * `BattleSchema`, so genuine drift inside an opponent still reports as drift.
+ * What it rejects:
  *
- * `team` and `opponent` are declared before `battleTime` deliberately. `v.is` runs valibot with
- * abort-early config internally, and `v.object` checks entries in declaration order, stopping at
- * the first issue. So a 2v2 or Duel entry fails the cheap structural check before ever paying for
- * the `Temporal` parse. A malformed `battleTime` also counts as ineligible, so such an entry is
- * skipped rather than reported as schema drift. That is what makes the ordering (and abort-early
- * itself) purely an optimization. Reordering the fields, or a future valibot internals change that
- * stops short-circuiting on the first issue, would cost speed, not correctness.
+ * - A 2v2, which has two players in `team` and in `opponent`.
+ * - A Duel, which has one player per side but two or three decks in `cards`. The card count is the
+ *   test; the mode name is never checked.
+ * - An entry without exactly one `opponent`. It would otherwise pass here, fail `BattleSchema`'s
+ *   tuple, and report as `drifted`. A drifted battle holds lastBattle in place and is retried every
+ *   tick, and this one can never become valid, so it would block the player's newer battles for
+ *   good. Rejected here, it is skipped like a 2v2. Only the length is checked, so a malformed
+ *   opponent still reports as drift.
+ *
+ * An entry with an empty `cards` array passes. `All_Random_Princess_Friendly` sends those, and they
+ * post with the text-only fallback because there is no deck to render.
+ *
+ * The field order is deliberate. `v.is` runs with `abortEarly`, and `v.object` checks keys in
+ * declaration order and stops at the first issue, so a 2v2 or a Duel fails on `team` before the
+ * `Temporal` parse in `battleTime` runs. The order only affects speed: an entry with a bad
+ * `battleTime` is ineligible whichever field fails first.
  */
 const EligibleBattleSchema = v.object({
 	team: v.pipe(
@@ -183,26 +215,27 @@ const EligibleBattleSchema = v.object({
 });
 
 /**
- * Whether a raw battlelog entry is a 1v1 worth fully validating. See {@link EligibleBattleSchema}
- * for what passes and what a failure means.
+ * Whether a raw battle-log entry passes {@link EligibleBattleSchema}. `false` covers 2v2s, Duels and
+ * malformed entries alike, and the caller skips all of them.
  */
 function isEligibleBattle(entry: unknown): boolean {
 	return v.is(EligibleBattleSchema, entry);
 }
 
 /**
- * A stored lastBattle KV value. Reuses BattleTimeSchema, so the stored string parses into the same
- * `Temporal.Instant` a freshly fetched battle carries and the two compare directly, rather than
- * trusting a raw `kv.get<string>` cast. It also still validates: a corrupt stored value fails here,
- * which is what lets `readLastBattle` re-seed instead of re-posting forever.
+ * A lastBattle value read back from KV. It is {@link BattleTimeSchema} itself, so a stored value
+ * parses into the same `Temporal.Instant` type a fetched battle carries, and the two compare
+ * directly. It accepts both the compact form the API sends and the extended form
+ * {@link serializeLastBattle} writes. A corrupt stored value fails to parse, which is how `poll.ts`
+ * notices it and re-seeds.
  */
 const LastBattleSchema = BattleTimeSchema;
 
 /**
- * The write side of {@link LastBattleSchema}: formats an `Instant` into the string KV actually
- * stores, since KV can't structured-clone an `Instant` directly. Fixed `fractionalSecondDigits` so
- * the same instant always serializes to the same bytes. A read/write cycle never churns the stored
- * value, and `main.ts`'s lastBattle dump stays aligned.
+ * Formats an instant as the string stored under a lastBattle key, since Deno KV cannot store a
+ * `Temporal.Instant`. The precision is fixed at milliseconds, so one instant always produces the
+ * same string. `toString()` alone would drop `.000` from a whole second and give values of varying
+ * length. The `/kv/last-battle` route and the log lines show these strings unchanged.
  */
 function serializeLastBattle(instant: Temporal.Instant) {
 	return instant.toString({ fractionalSecondDigits: 3 });
@@ -210,30 +243,38 @@ function serializeLastBattle(instant: Temporal.Instant) {
 
 // ══════════════════════════════════════════════ ENV ══════════════════════════════════════════════
 
-/** CR_API_TOKEN: rejects both an unset env var and an empty string. */
+/**
+ * `CR_API_TOKEN`: any non-empty string. An empty value is invalid, which `env.ts` logs at error
+ * level, unlike an unset one.
+ */
 const TokenEnvSchema = v.pipe(v.string(), v.nonEmpty());
 
-/** A single player to track and the Discord webhook to notify for them. */
+/** One tracked player: the tag to poll and the Discord webhook that receives their battles. */
 const TargetSchema = v.object({
 	tag: TagSchema,
 	webhook: UrlSchema,
 });
 
 /**
- * The raw TARGETS env var: a JSON string of Target pairs. `parseJson` turns malformed JSON into a
- * normal validation issue rather than a thrown error; an unset env var fails the string step.
+ * The raw `TARGETS` value: a JSON array of {@link TargetSchema} objects. `v.parseJson` turns
+ * malformed JSON into an ordinary validation issue, so `env.ts` handles it the same way as any
+ * other invalid value.
  */
 const TargetsEnvSchema = v.pipe(v.string(), v.parseJson(), v.array(TargetSchema));
 
 // ═════════════════════════════════════════════ TYPES ═════════════════════════════════════════════
 
+/** One side of a validated battle. */
 type Player = v.InferOutput<typeof PlayerSchema>;
+/** A validated 1v1 battle, as `latestBattle` returns it. */
 type Battle = v.InferOutput<typeof BattleSchema>;
+/** One entry of the validated `TARGETS` list. */
 type Target = v.InferOutput<typeof TargetSchema>;
+/** A validated card, from a deck or from `supportCards`. */
 type Card = v.InferOutput<typeof CardSchema>;
 /**
- * The levels `CardSchema` admits. Its one use is guarding {@link EVOLUTIONS}, which is what makes a
- * level added here fail to compile until that table describes it.
+ * The `evolutionLevel` values {@link CardSchema} admits. Its one job is the `satisfies` clause on
+ * {@link EVOLUTIONS}, so it is not exported.
  */
 type EvolutionLevel = NonNullable<Card["evolutionLevel"]>;
 

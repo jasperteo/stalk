@@ -1,3 +1,11 @@
+/**
+ * @module
+ *
+ * Tests for `clash-royale.ts`: which entry {@link latestBattle} selects from a raw battle log, and
+ * how {@link fetchBattlelog} builds its request and handles a bad response. `fetch` is stubbed, so
+ * nothing reaches the network.
+ */
+
 import * as v from "valibot";
 import { describe, expect, test, vi } from "vitest";
 
@@ -8,11 +16,12 @@ import { duelBattle, rawBattle, rawCard, rawPlayer } from "@/testing/fixtures.ts
 
 vi.mock(import("@/log.ts"));
 
+/** A raw battle at `battleTime`. A `teamSize` of 2 makes it a 2v2 on the tracked player's side. */
 function battle(battleTime: string, teamSize = 1) {
 	return rawBattle({ battleTime, team: Array.from({ length: teamSize }, () => rawPlayer()) });
 }
 
-/** `BattleSchema` yields a `Temporal.Instant`, so selection assertions compare against one. */
+/** An `Instant` to compare a selected battle's `battleTime` against, since the schema outputs one. */
 function at(iso: string) {
 	return Temporal.Instant.from(iso);
 }
@@ -44,9 +53,9 @@ describe("latestBattle", () => {
 		);
 	});
 
-	// The battlelog arrives newest-first (verified against the live proxy), so selection trusts
-	// position rather than comparing timestamps. Pinned here because it is an assumption about an
-	// undocumented API ordering, not a property of the data.
+	// Selection relies on the API's newest-first order and never compares timestamps. Supercell does
+	// not document that order, so this test records the assumption: position wins even when a later
+	// entry is newer.
 	test("takes the first eligible entry, not the chronologically newest", () => {
 		const first = battle("20240101T000000.000Z");
 		const outOfOrder = battle("20240201T000000.000Z");
@@ -56,9 +65,8 @@ describe("latestBattle", () => {
 		);
 	});
 
-	// Both real Duel shapes hit the same `cards.length > DECK_SIZE` branch with a different multiple,
-	// so they are one table rather than two copy-pasted tests. The branch's exact boundary is pinned
-	// by the 8/9-card pair below, not here.
+	// A two-deck and a three-deck Duel fail the same `cards.length > DECK_SIZE` check. The exact
+	// boundary is covered by the 8-card and 9-card tests below.
 	test.for([
 		{ decks: 2, as: "16 concatenated cards" },
 		{ decks: 3, as: "24 concatenated cards (3-deck variant)" },
@@ -118,7 +126,7 @@ describe("fetchBattlelog", () => {
 
 		const result = await fetchBattlelog("#ABC123", "my-token");
 
-		// Exactly once: one tick is one fetch per player, and the tag is URL-encoded ("#" → "%23").
+		// One request per call, with the tag's `#` encoded as `%23`.
 		expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
 			"https://proxy.royaleapi.dev/v1/players/%23ABC123/battlelog",
 			{
@@ -131,15 +139,14 @@ describe("fetchBattlelog", () => {
 	});
 
 	test("rejects when the proxy returns JSON that isn't an array", async () => {
-		// An ok response whose body is an error object rather than a battlelog: `latestBattle` would
-		// otherwise call `.find` on a non-array. Rejecting here makes it the poll's "failed" outcome.
+		// An ok response whose body is an object, not a battle log. It has to fail here, where
+		// `poll.ts` reports it as `failed`, and not later as a TypeError from `.find` in
+		// `latestBattle`.
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(() => Response.json({ reason: "notFound" }))
 		);
 
-		// The class, not a message: what matters is that it fails validation here rather than surfacing
-		// later as a TypeError from `latestBattle`'s `.find`.
 		await expect(fetchBattlelog("#ABC123", "my-token")).rejects.toThrow(v.ValiError);
 	});
 

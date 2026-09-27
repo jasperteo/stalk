@@ -1,3 +1,15 @@
+/**
+ * @module
+ *
+ * Tests for `deck-image.ts`, with real sharp and generated PNG fixtures instead of real card art.
+ * `Deno.readFile` is spied to serve the local art, and `fetch` is stubbed to serve the CDN
+ * fallback, so no test reads `images/` or touches the network.
+ *
+ * Most fixtures are fully opaque, so trimming keeps them whole. `describe("trimToArt")` builds
+ * fixtures with transparent margins to test a real crop. None of this checks real card art; after a
+ * change to trimming or cropping, render the sample deck with `pnpm preview` and look at it.
+ */
+
 import { Buffer } from "node:buffer";
 
 import { Lazy } from "@std/async/lazy";
@@ -17,10 +29,11 @@ import type { Card } from "@/schema.ts";
 
 vi.mock(import("@/log.ts"));
 
-// A monotonic counter hands each `card()` call its own id, so decks built in different tests stay
-// distinguishable. Tests that render the same deck twice build the array once and reuse it.
+// Every `card()` call gets a new id, so cards from different tests never share one. A test that
+// renders the same deck twice builds the array once and passes it both times.
 let nextId = 1;
 
+/** A validated card with a fresh id; an ordinary Knight unless overridden. */
 function card(overrides: Partial<Card> = {}): Card {
 	return {
 		id: nextId++,
@@ -34,7 +47,7 @@ function card(overrides: Partial<Card> = {}): Card {
 const TILE_WIDTH = 20;
 const TILE_HEIGHT = 30;
 
-/** A fully-opaque solid-color PNG of the given size, the base shape of every fixture below. */
+/** A fully opaque PNG of one color. Every fixture in this file starts from one. */
 async function solidPng(width: number, height: number, color: { r: number; g: number; b: number }) {
 	return await sharp({
 		create: { width, height, channels: 4, background: { ...color, alpha: 1 } },
@@ -44,12 +57,12 @@ async function solidPng(width: number, height: number, color: { r: number; g: nu
 }
 
 /**
- * Whatever `toBuffer()` resolves to, carried through rather than restated: a bare `Buffer`
- * annotation widens to `Buffer<ArrayBufferLike>`, which `Response`'s `BodyInit` will not accept.
+ * The type `toBuffer()` resolves to, taken from {@link solidPng}. Writing `Buffer` instead would
+ * mean `Buffer<ArrayBufferLike>`, which `Response` does not accept as a body.
  */
 type Fixture = Awaited<ReturnType<typeof solidPng>>;
 
-/** Encodes a raw straight-alpha RGBA buffer to PNG. */
+/** Encodes raw RGBA pixels, with unpremultiplied alpha, as a PNG. */
 async function rawToPng(raw: Buffer, width: number, height: number) {
 	return await sharp(raw, { raw: { width, height, channels: 4 } })
 		.png()
@@ -57,27 +70,28 @@ async function rawToPng(raw: Buffer, width: number, height: number) {
 }
 
 /**
- * A small, fully-opaque solid-color PNG, encoded once for the whole file. It has no transparent
- * margin, so `trimToArt` keeps it at full size and its geometry is predictable. Nothing mutates the
- * bytes. The `readFile` mock hands out a fresh `Uint8Array` copy, as the real one would, and
- * `Response` snapshots its body, so both the local-mirror read and the CDN fallback can serve it.
+ * A small opaque PNG, encoded once and served for every card by default. With no transparent
+ * margin, trimming keeps it whole, so its size in the grid is known. The bytes are never modified:
+ * the `readFile` spy hands out a fresh copy each time, as the real one does, and `Response` copies
+ * its body, so the local read and the CDN fallback can both serve it.
  *
- * `Lazy` rather than a top-level `await`, which encoded it during collection on every run: only the
- * `renderDeckGrid` block needs it, so `vitest -t planGrid` or `-t trimToArt` now skips the encode
- * entirely. Same reason `deck-image.ts` wraps sharp itself.
+ * It is a `Lazy` so that only the tests that use it pay for the encode. A top-level `await` would
+ * encode it while Vitest collects the file, even for a run filtered to `planGrid` or `trimToArt`.
  */
 const FIXTURE = new Lazy(() => solidPng(TILE_WIDTH, TILE_HEIGHT, { r: 200, g: 30, b: 30 }));
 
 /**
- * A raw straight-alpha RGBA canvas (`width`×`height`, fully transparent) with an opaque solid-color
- * rectangle painted at `rect`, encoded to PNG. Unlike `FIXTURE` (fully opaque, so `trimToArt` never
- * actually crops it), this exercises a real crop: the transparent margin around `rect` gives
- * `scanArtBounds`/`cropRaw` a genuine region to derive, with bounds the caller controls by
- * construction (`rect`'s own coordinates), rather than needing to reverse-engineer them from a real
- * card icon.
+ * A pixel painted in its own color, so a test can tell where cropped bytes came from. The fill of
+ * an {@link insetFixture} is one flat color, so without marks a crop taken at the wrong offset would
+ * return the same bytes as the right one.
  */
 type Mark = { x: number; y: number; color: [r: number, g: number, b: number] };
 
+/**
+ * A transparent `width`×`height` PNG with an opaque rectangle at `rect` and optional marked pixels.
+ * The transparent margin around `rect` gives `scanArtBounds` and `cropRaw` a real crop to make, and
+ * the test knows the expected bounds because it chose `rect`.
+ */
 async function insetFixture(
 	width: number,
 	height: number,
@@ -96,9 +110,7 @@ async function insetFixture(
 		}
 	}
 
-	// Painted last, so a mark inside `rect` overwrites the fill. The fill is one flat color, which
-	// makes every pixel in it interchangeable — a crop landing at the wrong offset returns the same
-	// bytes as a correct one. Marks are what give the canvas distinguishable positions.
+	// Marks are painted after the fill, so a mark inside `rect` replaces the fill color.
 	for (const { x, y, color } of marks) {
 		const offset = (y * width + x) * 4;
 		[raw[offset], raw[offset + 1], raw[offset + 2]] = color;
@@ -108,16 +120,15 @@ async function insetFixture(
 	return await rawToPng(raw, width, height);
 }
 
-/** One pixel's RGBA out of a decoded tile, for asserting _where_ cropped bytes came from. */
+/** The RGBA values of one pixel in a tile, for checking where cropped bytes came from. */
 function pixelAt({ data, width }: { data: Buffer; width: number }, x: number, y: number) {
 	const offset = (y * width + x) * 4;
 	return [...data.subarray(offset, offset + 4)];
 }
 
 /**
- * A fully-opaque solid-color PNG bigger than the compose cell (`CELL_WIDTH`×`CELL_HEIGHT`) in both
- * dimensions, standing in for a brand-new card whose CDN art hasn't been downsized to the local
- * mirror's convention.
+ * An opaque PNG larger than a cell in both dimensions: art from the CDN for a card bigger than any
+ * in `images/`. {@link OVERSIZED_FIXTURE} is its lazily encoded PNG.
  */
 const OVERSIZED_WIDTH = CELL_WIDTH + 40;
 const OVERSIZED_HEIGHT = CELL_HEIGHT + 60;
@@ -126,10 +137,9 @@ const OVERSIZED_FIXTURE = new Lazy(() =>
 );
 
 /**
- * Spies `Deno.readFile`, the module's primary tile source (the local `images/` mirror), to serve
- * the fixture for every card. Same pattern as main.test.ts spying `Deno.openKv`/`Deno.cron`: vitest
- * runs inside Deno, so `Deno` is the real ambient global. `restoreMocks` puts the genuine
- * `readFile` back before each test, so each `beforeEach` installs a fresh spy.
+ * Spies `Deno.readFile`, the renderer's source for local art, to serve `fixture` for every card.
+ * Vitest runs inside Deno, so this replaces the real function. `restoreMocks` restores it before
+ * each test, so the `beforeEach` below installs a new spy every time.
  */
 function localArtReadFile(fixture: Fixture) {
 	return vi
@@ -138,9 +148,9 @@ function localArtReadFile(fixture: Fixture) {
 }
 
 /**
- * The CDN fallback source, stubbed onto global `fetch`. It only runs for a card missing from the
- * local mirror; installing it by default (serving the fixture) means tests can assert it is NOT
- * called for a fully-local render, and the fallback tests override it per-case.
+ * A `fetch` stub that serves `fixture`, standing in for the CDN. It is installed for every render
+ * test, so a test can check that a render used no network at all. The fallback tests change its
+ * response per test.
  */
 function fetchServingFixture(fixture: Fixture) {
 	return vi.fn<(url: string | URL, init?: RequestInit) => Promise<Response>>(() =>
@@ -152,9 +162,9 @@ let readFileMock: ReturnType<typeof localArtReadFile>;
 let fetchMock: ReturnType<typeof fetchServingFixture>;
 
 /**
- * Fully decodes a rendered grid through the renderer's own `decodeToRaw`, so these assertions cover
- * the whole pixel stream: a grid whose PNG header is valid but whose body is corrupt or truncated
- * fails here rather than passing a header-only check.
+ * The dimensions of a rendered grid, found by decoding every pixel with the renderer's own
+ * `decodeToRaw`. A grid with a valid header but a corrupt or truncated body fails here, where
+ * reading the header alone would pass.
  */
 async function dimensions(png: Uint8Array) {
 	const { width, height } = await decodeToRaw(png);
@@ -162,9 +172,8 @@ async function dimensions(png: Uint8Array) {
 }
 
 describe("renderDeckGrid", () => {
-	// Scoped to this block rather than the file: planGrid is pure geometry and trimToArt encodes its
-	// own inputs, so neither needs these stubs, and a file-scoped hook would force FIXTURE's encode
-	// for them anyway.
+	// Only this block needs the stubs. `planGrid` touches no pixels and the `trimToArt` tests encode
+	// their own input, so a file-wide hook would encode FIXTURE for them for nothing.
 	beforeEach(async () => {
 		const fixture = await FIXTURE.get();
 
@@ -176,22 +185,20 @@ describe("renderDeckGrid", () => {
 	test("lays out a 4-column grid at the fixed cell resolution", async () => {
 		const eightCards = Array.from({ length: 8 }, () => card());
 
-		// Nothing shared between the two renders (distinct ids), so they can run concurrently. This is
-		// the suite's most expensive test (9 tile decode round-trips).
+		// The two renders share no cards, so they run concurrently. They decode 9 tiles between them,
+		// which makes this the slowest test in the file.
 		const [grid, singleRow] = await Promise.all([
 			renderDeckGrid(eightCards).then((png) => dimensions(png)),
 			renderDeckGrid([card()]).then((png) => dimensions(png)),
 		]);
 
-		// Cell size is fixed (CELL_WIDTH/CELL_HEIGHT), not derived from the tiles in the deck, so even
-		// this small fixture (well under either dimension) composites into a full-size row, and a lone
-		// card still reserves the full 4-column width with trailing cells empty. Compose happens at
-		// native resolution with no downscale before encode, so the shipped dimensions equal
-		// `planGrid`'s.
+		// Cell size is fixed, so even this 20×30 fixture fills full-size cells, and a single card
+		// still gets the full 4-column width. The grid is encoded at its layout size, so the decoded
+		// dimensions equal `planGrid`'s.
 		expect(singleRow.height).toBe(planGrid(1).height);
 		expect(singleRow.width).toBe(planGrid(1).width);
-		// The full deck spans the same 4 columns and adds a second row. Asserted relative to the
-		// single-row render rather than against COLUMN_GAP/ROW_GAP, which are tuning knobs.
+		// A full deck has the same width and a second row. Comparing it with the single-row render,
+		// not with the gap constants, keeps the test valid when the gaps are tuned.
 		expect(grid.width).toBe(singleRow.width);
 		expect(grid.height).toBeGreaterThan(singleRow.height);
 	});
@@ -201,8 +208,8 @@ describe("renderDeckGrid", () => {
 
 		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Buffer);
 
-		// One local read per card and no CDN fallback. The mirror is meant to cover every playable
-		// card, so a fully-local deck must never hit the network.
+		// One local read per card and no CDN request. A deck whose cards all have local art never
+		// needs the network.
 		expect(readFileMock).toHaveBeenCalledTimes(cards.length);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
@@ -216,12 +223,12 @@ describe("renderDeckGrid", () => {
 
 		const paths = readFileMock.mock.calls.map((call) => String(call[0]));
 
-		// Soft: one suffix table drives all three, so a broken mapping should report every wrong
-		// filename in one run rather than one per re-run.
+		// Soft assertions: the three suffixes come from one table, so a mistake in it should report
+		// every wrong file name in a single run.
 		expect.soft(paths.some((path) => path.endsWith(`${String(evo.id)}-evo.png`))).toBe(true);
 		expect.soft(paths.some((path) => path.endsWith(`${String(hero.id)}-hero.png`))).toBe(true);
 		expect.soft(paths.some((path) => path.endsWith(`${String(base.id)}.png`))).toBe(true);
-		// No network for locally-mirrored cards, whatever their evolutionLevel.
+		// Local art is used whatever the evolution level, so there is no CDN request.
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
@@ -233,7 +240,7 @@ describe("renderDeckGrid", () => {
 
 		await expect(renderDeckGrid([missing])).resolves.toBeInstanceOf(Buffer);
 
-		// The fallback fetches the card's own icon URL, with the render's abort signal attached.
+		// The request goes to the card's own icon URL, with a timeout signal attached.
 		expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.clashroyale.com/fresh-release.png");
 		expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("GET");
 		expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({ Accept: "image/*" });
@@ -249,13 +256,11 @@ describe("renderDeckGrid", () => {
 			iconUrls: { medium: "https://api.clashroyale.com/oversized.png" },
 		});
 
-		// Deliberately not named as a test of the clamp: the grid's dimensions are fixed by
-		// CELL_WIDTH/CELL_HEIGHT regardless of tile content, so they would match here with or without
-		// it. What this does catch is the oversized path *rejecting* — an unclamped tile drives the
-		// overlay offsets negative (see renderDeckGrid) and sharp refuses the composite. The clamp's
-		// actual behavior is covered by the trim-before-fit test below and by `describe("trimToArt")`.
-		// Compared against planGrid rather than a second live render, which cost a full extra decode
-		// round-trip to restate a constant.
+		// The grid's size comes from the cell constants, so matching it proves little about the
+		// shrink itself. What this test catches is a rejection: without the shrink, the 465 px tile
+		// would be taller than the 405 px one-row canvas, and sharp rejects an overlay larger than the
+		// image it goes onto. The shrink's result is covered by the next test and by
+		// `describe("trimToArt")`.
 		const { width, height } = planGrid(1);
 
 		await expect(dimensions(await renderDeckGrid([oversized]))).resolves.toEqual({ width, height });
@@ -264,10 +269,9 @@ describe("renderDeckGrid", () => {
 	test("trims a CDN fallback icon before checking it against the cell, not after", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
 
-		// A canvas bigger than the cell (like OVERSIZED_FIXTURE) but padded around art small enough to
-		// need no scaling at all. This mirrors the local mirror's 285x420 frame around art that's well
-		// under the 261x405 cell once trimmed. Fitting the raw canvas to the cell first (the bug)
-		// would still warn and shrink; trimming first should do neither.
+		// A canvas larger than the cell with small art inside it, like a real 285×420 icon whose art
+		// trims to within 261×405. Fitting the whole canvas into the cell would warn and shrink it.
+		// Trimming first finds that the art already fits, so neither happens.
 		const padded = await insetFixture(OVERSIZED_WIDTH, OVERSIZED_HEIGHT, {
 			left: 40,
 			top: 60,
@@ -287,8 +291,8 @@ describe("renderDeckGrid", () => {
 		const permissionError = new Deno.errors.PermissionDenied("EACCES");
 		readFileMock.mockRejectedValue(permissionError);
 
-		// Only Deno.errors.NotFound means "not mirrored yet, try the CDN". Any other read failure
-		// (permissions, a corrupt mount, ...) must propagate as-is, with no fallback fetch attempted.
+		// Only `NotFound` means the card has no local art yet. Any other read error, such as a
+		// permission problem, propagates as it is, and no CDN request is made.
 		await expect(renderDeckGrid([card()])).rejects.toBe(permissionError);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
@@ -315,8 +319,8 @@ describe("renderDeckGrid", () => {
 
 		const urls = fetchMock.mock.calls.map((call) => call[0]);
 
-		// Soft: the pair of "took the variant" and "left medium alone" facts is one behavior per level,
-		// and seeing all four at once tells a wrong-key bug from a missing-guard bug immediately.
+		// Soft assertions report all four checks together. The pattern of failures separates a wrong
+		// icon key from a missing check.
 		expect.soft(urls).toContain("https://api.clashroyale.com/evo-variant.png");
 		expect.soft(urls).toContain("https://api.clashroyale.com/hero-variant.png");
 		expect.soft(urls).not.toContain("https://api.clashroyale.com/evo-icon.png");
@@ -326,8 +330,8 @@ describe("renderDeckGrid", () => {
 	test("rejects the render when an Evo/Hero card has no variant icon, without fetching medium", async () => {
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
 
-		// medium is the card's un-evolved art. That's the wrong picture for an Evolution/Hero, so a
-		// missing variant must fail the render rather than silently fetch it.
+		// `medium` is the card's base art, the wrong picture for an Evolution or a Hero, so a missing
+		// variant fails the render instead of fetching it.
 		await expect(
 			renderDeckGrid([
 				card({
@@ -349,18 +353,16 @@ describe("renderDeckGrid", () => {
 	test("recovers on the next render after a failed fallback", async () => {
 		const cards = [card()];
 
-		// Local art is missing throughout, so both renders take the CDN fallback; the first fetch 500s
-		// and every later one serves the fixture.
+		// There is no local art, so both renders use the CDN. The first request returns 500, and every
+		// later one serves the fixture.
 		readFileMock.mockRejectedValue(new Deno.errors.NotFound("no local art"));
 		fetchMock.mockImplementationOnce(() => Promise.resolve(new Response("nope", { status: 500 })));
 
 		await expect(renderDeckGrid(cards)).rejects.toThrow("Card icon 500 for");
 
-		// No module-level state outlives a call, so a failed render has no lasting side effect: the
-		// retry is just another independent render. Distinct from the no-cache test below, which only
-		// covers renders that succeed: a cache that remembered *failures* alone would pass that one and
-		// fail this one. That is the exact regression `sharpModule`'s `Lazy` exists to prevent, so the
-		// suite keeps a test for it at the renderDeckGrid level too.
+		// A failed render must leave nothing behind that fails the next one. The no-cache test below
+		// only renders successfully, so something that remembered failures, like a memoized rejected
+		// promise, would pass it and fail here.
 		await expect(renderDeckGrid(cards)).resolves.toBeInstanceOf(Buffer);
 	});
 
@@ -373,23 +375,22 @@ describe("renderDeckGrid", () => {
 
 		await renderDeckGrid(cards);
 
-		// The *identical* deck, rendered again: a cold start per tick means a cross-tick cache
-		// could never hit, so renderDeckGrid deliberately keeps none, and no per-tile cache either
-		// (local reads ride the OS page cache). Re-rendering a different deck would pass either way,
-		// so this only pins the decision when the decks match.
+		// The same deck again, so any render or tile cache would skip these reads. A different deck
+		// would be read again with or without a cache, which is why this test repeats the deck.
 		expect(readFileMock).toHaveBeenCalledTimes(cards.length * 2);
 	});
 
 	test("rejects an empty deck rather than encoding a zero-tile grid", async () => {
-		// discord.ts hands over `player.cards` unchecked, and planGrid(0) would still describe a
-		// 4-column canvas. The guard is what turns an empty deck into the text-only fallback.
+		// `discord.ts` passes `player.cards` without checking it, and an empty deck is a real case.
+		// Without this check it would encode a blank strip; the rejection sends the post down the
+		// text-only path instead.
 		await expect(renderDeckGrid([])).rejects.toThrow("No cards to render");
 		expect(readFileMock).not.toHaveBeenCalled();
 	});
 
 	test("warns that rows may clip when a tile keeps less bottom padding than the row overlap", async () => {
-		// FIXTURE is fully opaque, so trimToArt keeps it to the pixel: bottomPadding 0, under the 16px
-		// the row below overlaps by (ROW_GAP). Five tiles is the smallest deck with a row under another.
+		// FIXTURE is fully opaque, so its tile has no bottom padding, less than the 16 px the next row
+		// overlaps. Five cards is the smallest deck with a second row.
 		await renderDeckGrid(Array.from({ length: 5 }, () => card()));
 
 		expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("grid rows may clip"));
@@ -398,14 +399,14 @@ describe("renderDeckGrid", () => {
 	test("stays quiet about clipping when the whole deck fits on one row", async () => {
 		await renderDeckGrid(Array.from({ length: 4 }, () => card()));
 
-		// Nothing sits below the last row to clip into it, so the check has to skip that row.
-		// Otherwise the same zero-padding tiles would warn on every single-row post.
+		// No row sits below the last one, so the check skips it. Otherwise these same tiles would warn
+		// on every one-row grid.
 		expect(log.warn).not.toHaveBeenCalled();
 	});
 });
 
 describe("planGrid", () => {
-	// Pure geometry, no sharp. Cheap enough to check across many tile counts at once.
+	// Pure arithmetic with no sharp involved, so each test checks many tile counts.
 
 	test("keeps four columns (constant width) regardless of tile count", () => {
 		const widths = [1, 8, 16, 24].map((tileCount) => planGrid(tileCount).width);
@@ -424,8 +425,7 @@ describe("planGrid", () => {
 			const { rowTops } = planGrid(tileCount);
 			const pitches = rowTops.slice(1).map((top, i) => top - (rowTops[i] ?? 0));
 
-			// Every gap between consecutive row tops is the same pitch, with no wider gap at any
-			// point. That's what a block-boundary divider used to introduce.
+			// Every step from one row top to the next is the same positive distance.
 			expect(new Set(pitches).size).toBeLessThanOrEqual(1);
 			for (const pitch of pitches) {
 				expect(pitch).toBeGreaterThan(0);
@@ -435,19 +435,17 @@ describe("planGrid", () => {
 });
 
 describe("trimToArt", () => {
-	// A 30×40 canvas with an opaque rect whose right edge lands exactly on the canvas's own
-	// right edge (left + width === canvas width). This is the boundary `cropRaw`'s bounds guard
-	// has to accept rather than reject. `trimToArt` always keeps the native bottom edge (see its
-	// own doc comment), so the crop's bottom always reaches the canvas height regardless of the
-	// rect's own bottom; only left/top/right are meaningfully "trimmed" here.
+	// A 30×40 canvas whose opaque rectangle ends exactly at the canvas's right edge
+	// (left + width === canvas width), the boundary `cropRaw`'s bounds check must accept. Trimming
+	// keeps the bottom edge, so the tile always reaches the bottom of the canvas; only the left, top
+	// and right are trimmed.
 	const CANVAS_WIDTH = 30;
 	const CANVAS_HEIGHT = 40;
 	const RECT = { left: 5, top: 8, width: CANVAS_WIDTH - 5, height: 20 };
 
-	// Two positional markers, both outside `RECT`'s flat fill in the ways that matter. `ORIGIN` sits
-	// on the crop's own top-left corner and `LAST_ROW` on its final row; neither moves the bounds
-	// `scanArtBounds` derives (ORIGIN is already the rect's corner, and LAST_ROW shares its x and
-	// lies below, while trimToArt keeps the native bottom edge regardless).
+	// Two marked pixels that leave the bounds unchanged. ORIGIN is the rectangle's top-left corner,
+	// which is also the crop's first pixel. LAST_ROW is in the canvas's bottom row, below the
+	// rectangle but in the same column, which the kept bottom edge includes anyway.
 	const ORIGIN: Mark = { x: RECT.left, y: RECT.top, color: [10, 20, 30] };
 	const LAST_ROW: Mark = { x: RECT.left, y: CANVAS_HEIGHT - 1, color: [40, 50, 60] };
 
@@ -456,25 +454,24 @@ describe("trimToArt", () => {
 
 		const tile = await trimToArt(bytes);
 
-		// left trims to the rect's own left; width extends to the canvas's right edge (RECT was built
-		// to touch it); height always runs from the rect's top down to the native bottom.
+		// The left edge moves in to the rectangle, the right edge stays at the canvas edge, and the
+		// height runs from the rectangle's top to the bottom of the canvas.
 		expect(tile.width).toBe(CANVAS_WIDTH - RECT.left);
 		expect(tile.height).toBe(CANVAS_HEIGHT - RECT.top);
 		expect(tile.data.length).toBe(tile.width * tile.height * 4);
 
-		// Shape alone cannot see `cropRaw`'s copy loop at all: `Buffer.alloc` sizes the destination
-		// before the loop runs, so a loop that skips a row, or reads from the wrong offset, still
-		// yields exactly these dimensions. These two pixels are what pin the bytes. The first fails if
-		// the row start drops `region.left` or `region.top` (both read a transparent pixel instead);
-		// the second fails if the loop stops a row short, leaving alloc's zero-fill behind.
+		// The size checks cannot see `cropRaw`'s copy loop, because `Buffer.alloc` sizes the output
+		// before the loop runs. These two pixels check the bytes. The first fails if the copy
+		// ignores `region.left` or `region.top`, since it would read a transparent pixel. The second
+		// fails if the loop stops a row early, leaving zeros from `Buffer.alloc`.
 		expect(pixelAt(tile, 0, 0)).toEqual([...ORIGIN.color, 255]);
 		expect(pixelAt(tile, 0, tile.height - 1)).toEqual([...LAST_ROW.color, 255]);
 	});
 
 	test("keeps the whole frame for a fully transparent tile", async () => {
-		// scanArtBounds returns `undefined` here. Shouldn't happen for real card art, but the fallback
-		// has to be the untouched frame: cropping to an empty region would hand `.composite()` a
-		// zero-byte input and reject the whole render over one blank tile.
+		// `scanArtBounds` returns `undefined` for a blank image. Real card art is never blank, but
+		// the tile must still be the whole frame: an empty crop would give `.composite()` a zero-byte
+		// input and fail the render.
 		const blank = await insetFixture(CANVAS_WIDTH, CANVAS_HEIGHT, {
 			left: 0,
 			top: 0,
@@ -487,7 +484,7 @@ describe("trimToArt", () => {
 		expect(tile.width).toBe(CANVAS_WIDTH);
 		expect(tile.height).toBe(CANVAS_HEIGHT);
 		expect(tile.data.length).toBe(CANVAS_WIDTH * CANVAS_HEIGHT * 4);
-		// Every row counts as padding, so a blank tile also trips renderDeckGrid's clip warning.
+		// Every row counts as padding, so a blank tile never triggers the clip warning.
 		expect(tile.bottomPadding).toBe(CANVAS_HEIGHT);
 	});
 });

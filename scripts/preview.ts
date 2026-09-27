@@ -1,12 +1,12 @@
 /**
  * @module
  *
- * Dev-only preview tool: renders DECK and writes it next to this script for visual inspection. Edit
- * DECK below to whatever cards you want to preview. Rendering reads each tile from the local
- * `images/` mirror by card id (`<id>.png`/`<id>-evo.png`/`<id>-hero.png`), so a fully-local deck
- * never touches the network. But it's still not wired into `deno task test` (it writes a file and
- * isn't a hermetic assertion), so run it manually via `deno task preview`. To tune spacing, edit
- * COLUMN_GAP/ROW_GAP directly in deck-image.ts and rerun.
+ * Renders {@link DECK} with the real renderer and writes it to `scripts/preview.png`, which git
+ * ignores, for checking a layout change by eye. Edit `DECK` to see other cards, or change
+ * `COLUMN_GAP` or `ROW_GAP` in `src/deck-image.ts` and run `pnpm preview` again.
+ *
+ * Every card in `DECK` has local art, so a run never touches the network. The script writes a file
+ * and asserts nothing, so it is not part of `pnpm test`.
  */
 
 import { renderDeckGrid } from "@/deck-image.ts";
@@ -14,16 +14,15 @@ import { hl, log } from "@/log.ts";
 import type { Card } from "@/schema.ts";
 
 /**
- * A throwaway placeholder the `Card` type requires. Only read on the CDN-fallback path (a card
- * missing from `images/`), which a fully-local deck never reaches. So it just needs to be a valid
- * URL, never one that actually resolves.
+ * The icon URL every `Card` must carry. The renderer only reads it for a card without local art,
+ * which no card in {@link DECK} is, so it is never fetched. `.invalid` is a reserved top-level
+ * domain that never resolves.
  */
 const DUMMY_ICON = "https://example.invalid/card.png";
 
 /**
- * Real card ids, chosen to exercise every frame style in one grid: an Evolution (`evolutionLevel:
- * 1`), a Hero (`evolutionLevel: 2`), a champion's hexagonal frame, plus a spread of
- * common/rare/epic frames.
+ * Real card ids, picked so one grid shows each kind of frame: an Evolution (`evolutionLevel` 1), a
+ * Hero (`evolutionLevel` 2), a champion's hexagonal frame, and ordinary cards of several rarities.
  */
 const DECK: Card[] = [
 	{ id: 26_000_058, name: "Wall Breakers", evolutionLevel: 1, iconUrls: { medium: DUMMY_ICON } },
