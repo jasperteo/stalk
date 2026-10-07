@@ -34,6 +34,7 @@ const oxfmtConfig = defineConfig({
 			["parent", "sibling", "index", "style"],
 		],
 	},
+	ignorePatterns: ["**/.agents/"],
 });
 
 export default oxfmtConfig;
