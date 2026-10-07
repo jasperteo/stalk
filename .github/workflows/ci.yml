@@ -21,11 +21,12 @@ jobs:
         run: sfw env -u SSL_CERT_FILE -u SSL_CERT_DIR pnpm ci
         env:
           NO_PROXY: npm.jsr.io
-      - name: Format check
-        run: pnpm fmt --check
-      - name: Lint and typecheck
-        run: pnpm lint
-      - name: Test
-        run: pnpm test
-        env:
-          CI: "1"
+      - parallel:
+          - name: Format check
+            run: pnpm fmt --check
+          - name: Lint and typecheck
+            run: pnpm lint
+          - name: Test
+            run: pnpm test
+            env:
+              CI: "1"
