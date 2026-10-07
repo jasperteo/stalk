@@ -14,21 +14,21 @@
 	"dependencies": {
 		"@std/async": "npm:@jsr/std__async@^1.5.1",
 		"@std/fmt": "npm:@jsr/std__fmt@^1.0.10",
-		"hono": "^4.13.9",
-		"sharp": "^0.35.4",
+		"hono": "^4.13.13",
+		"sharp": "^0.35.5",
 		"valibot": "^1.5.0"
 	},
 	"devDependencies": {
-		"@types/node": "^26.6.3",
-		"oxfmt": "^0.70.0",
-		"oxlint": "^1.85.0",
+		"@types/node": "^26.6.4",
+		"oxfmt": "^0.72.0",
+		"oxlint": "^1.87.0",
 		"oxlint-tsgolint": "^7.0.2003",
-		"vitest": "5.0.2"
+		"vitest": "5.0.3"
 	},
 	"devEngines": {
 		"packageManager": {
 			"name": "pnpm",
-			"version": "12.6.0",
+			"version": "12.9.1",
 			"onFail": "download"
 		},
 		"runtime": {
