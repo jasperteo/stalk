@@ -12,8 +12,8 @@ pnpm start       # Local server and cron, with .env loaded
 pnpm test        # Vitest
 pnpm fmt         # oxfmt
 pnpm lint-agent  # oxlint (agent output) + deno lint + deno check
+pnpm tiles       # Build tiles/ from images/; fails if a tile doesn't fit the grid constants
 pnpm preview     # Render a sample deck to scripts/preview.png
-pnpm measure     # Card-art margins behind the cell constants in src/deck-image.ts
 pnpm sync-types  # Regenerate deno.d.ts after a Deno version change
 ```
 
@@ -24,7 +24,8 @@ pnpm sync-types  # Regenerate deno.d.ts after a Deno version change
 - Scripts live in `package.json`, not in `deno.jsonc` tasks.
 - A hook in `.claude/settings.json` runs `pnpm fmt` after every Write and Edit, so a file can change
   on disk right after you edit it.
-- CI runs `pnpm fmt --check`, `pnpm lint` and `pnpm test`.
+- CI runs `pnpm fmt --check`, `pnpm lint`, `pnpm test` and `pnpm tiles`, so art that overflows
+  the grid fails the PR, not the deploy.
 
 ## Modules
 
@@ -34,7 +35,9 @@ pnpm sync-types  # Regenerate deno.d.ts after a Deno version change
 | `src/poll.ts`         | One tick: read lastBattle from KV, poll each target, write lastBattle     |
 | `src/clash-royale.ts` | Battle-log fetch; picks the newest 1v1 and validates only that entry      |
 | `src/discord.ts`      | Builds and posts the webhook message, with a text-only fallback           |
-| `src/deck-image.ts`   | Renders a deck as a PNG grid with sharp, from the art in `images/`        |
+| `src/deck-image.ts`   | Renders a deck as a PNG grid from the pre-trimmed tiles in `tiles/`       |
+| `src/tile.ts`         | One card's pixels: trimming, shrinking and the `.tile` file format        |
+| `src/png.ts`          | Wraps scanlines as a PNG; decodes CDN fallback art with fast-png          |
 | `src/schema.ts`       | Valibot schemas for the API and the env vars, plus the `EVOLUTIONS` table |
 | `src/env.ts`          | Reads and validates `CR_API_TOKEN` and `TARGETS` once, into `config`      |
 | `src/log.ts`          | Leveled console output and color helpers                                  |
@@ -58,9 +61,14 @@ No single file shows these, and tests don't catch every way to break them.
   `allowed_mentions: { parse: [] }`. The message contains the opponent's name, which is untrusted
   text.
 - **`log.ts` is the only module that imports `@std/fmt/colors`.** Color with `hl` and `levelColor`.
-- **`images/` must ship with every deploy.** The renderer reads card art from it and uses the CDN only
-  for a card with no file. After adding art, run `pnpm measure` and check `CELL_WIDTH`,
-  `CELL_HEIGHT` and `ROW_GAP` against it.
+- **`tiles/` is built from `images/`, never committed.** `pnpm tiles` runs as Deno Deploy's
+  `deploy.build` and before `pnpm start` and `pnpm preview`. The renderer reads only `tiles/` and
+  uses the CDN only for a card with no tile. After adding art, run `pnpm tiles`: it fails when a
+  tile exceeds `CELL_WIDTH`/`CELL_HEIGHT` or keeps less bottom padding than `ROW_GAP` overlaps.
+- **Every PNG goes through `png.ts`, never a native image library.** `decodePng` (fast-png) reads
+  them in the renderer, `scripts/tiles.ts` and tests, and `encodePng` writes them. Keep native
+  addons out, so the deploy installs production dependencies only and the renderer can move to
+  Cloudflare Workers.
 - **A new `evolutionLevel` needs an `EVOLUTIONS` entry** in `schema.ts`. The `satisfies` clause
   fails to compile until it has one.
 
@@ -78,8 +86,10 @@ No single file shows these, and tests don't catch every way to break them.
 - `src/testing/fixtures.ts` has raw, pre-validation API shapes: `rawCard`, `rawPlayer`,
   `rawBattle`, `driftedBattle`, `duelBattle`, `BOB` and `WEBHOOK`.
 - No test uses `.concurrent`, because tests share stubbed globals.
-- The deck-image tests use generated fixtures, not real card art. After changing trimming or
-  cropping, check the result with `pnpm preview`.
+- The deck-image, tile and png tests use generated fixtures, not real card art: raw pixels, wrapped
+  with `serializeTile` or `encodePng`. Shared builders live in `src/testing/raw.ts` (`solidRaw`,
+  `pixelAt`) and `src/testing/png.ts` (`buildPng` for any color type and bit depth, `toScanlines`). After changing trimming, cropping or compositing, check the
+  result with `pnpm preview`.
 - A throwaway script that imports project dependencies must live inside the repo, such as in
   `scripts/`, because Deno resolves `node_modules` from the repo root. Delete it afterwards.
 

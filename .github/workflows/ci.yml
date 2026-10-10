@@ -30,3 +30,5 @@ jobs:
             run: pnpm test
             env:
               CI: "1"
+          - name: Build card tiles
+            run: pnpm tiles

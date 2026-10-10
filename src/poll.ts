@@ -198,10 +198,10 @@ async function listLastBattles() {
  * so an `await` added outside the `try` below could reject and cost the tick its tally line.
  *
  * The fan-out has no concurrency limit. Polling is light, but every player who posts in the same
- * tick renders two deck grids at once. Measured locally, peak memory grows by about 30 MiB per
- * concurrent post on a baseline of about 90 MiB, so a 768 MB Deno Deploy instance runs out at
- * roughly 20 posts in one tick. `pooledMap` from `@std/async/pool` would cap the concurrency while
- * keeping results in input order.
+ * tick renders two deck grids at once. Measured locally with ten renders at once, peak memory grows
+ * by about 4.4 MiB per render on a baseline of about 120 MiB, so about 9 MiB per post. Even at
+ * twice that, a 768 MB Deno Deploy instance holds more than 30 posts in one tick. A pool such as
+ * `p-map` would cap the concurrency while keeping results in input order.
  *
  * @returns One outcome per target, in the same order as `targets`.
  */

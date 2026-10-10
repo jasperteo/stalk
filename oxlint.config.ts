@@ -21,6 +21,7 @@ const oxlintConfig = defineConfig({
 		"**/deno.d.ts",
 		"**/.claude/worktrees/",
 		"**/.agents/",
+		"**/tiles/",
 	],
 	rules: {
 		"logical-assignment-operators": "off",
