@@ -7,8 +7,6 @@
  * stubbed `fetch`.
  */
 
-import { Buffer } from "node:buffer";
-
 import * as v from "valibot";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -115,7 +113,7 @@ function fieldNames(payload: Payload, embed = 0) {
 }
 
 beforeEach(() => {
-	vi.mocked(renderDeckGrid).mockResolvedValue(Buffer.from([1, 2, 3]));
+	vi.mocked(renderDeckGrid).mockResolvedValue(Uint8Array.of(1, 2, 3));
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(() => Promise.resolve(new Response()))

@@ -5,8 +5,9 @@
  * ignores, for checking a layout change by eye. Edit `DECK` to see other cards, or change
  * `COLUMN_GAP` or `ROW_GAP` in `src/deck-image.ts` and run `pnpm preview` again.
  *
- * Every card in `DECK` has local art, so a run never touches the network. The script writes a file
- * and asserts nothing, so it is not part of `pnpm test`.
+ * Every card in `DECK` has a local tile, and the `preview` script runs `pnpm tiles` first to generate
+ * them, so a run never touches the network. The script writes a file and asserts nothing, so it is
+ * not part of `pnpm test`.
  */
 
 import { renderDeckGrid } from "@/deck-image.ts";

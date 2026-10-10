@@ -43,6 +43,7 @@
 
 	"deploy": {
 		"install": "pnpm install --frozen-lockfile -P",
+		"build": "pnpm tiles",
 		"runtime": { "mode": "dynamic", "entrypoint": "src/main.ts" },
 	},
 }
